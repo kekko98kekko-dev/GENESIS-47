@@ -33,6 +33,10 @@ var legacy_cycles=0
 var total_deaths=0
 var total_births=0
 var projects_completed=0
+var crises_seen=0
+var active_crisis={}
+var crisis_history:Array=[]
+const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
 const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
  seed_value=s
@@ -62,6 +66,9 @@ func start(s:int,m:int):
  total_deaths=0
  total_births=0
  projects_completed=0
+ crises_seen=0
+ active_crisis.clear()
+ crisis_history.clear()
  weather_name="Sereno"
  season="Primavera"
  for i in range(2):
@@ -122,6 +129,7 @@ func daily():
  weather_name="Pioggia" if day%17<3 else ("Siccità" if day%39<5 else ("Neve" if season=="Inverno" and day%11<3 else "Sereno"))
  if day%30==1:log_event("Una nuova stagione: "+season+".")
  energy=minf(100,energy+3.5)
+ if mode==0 and day>=300:advance_crisis()
  var counts=[count(0),count(1)]
  for i in range(2):
   var v=villages[i]
@@ -129,6 +137,10 @@ func daily():
   if n==0:continue
   var weather=.58 if mode==3 and day<60 else 1.0
   weather*=.68 if weather_name=="Siccità" else (1.12 if weather_name=="Pioggia" else .89 if season=="Inverno" else 1.0)
+  if not active_crisis.is_empty() and int(active_crisis.clan)==i:
+   if active_crisis.kind==0:weather*=.50 if v.bonuses[0]<3 else .72
+   elif active_crisis.kind==3:weather*=.66
+   elif active_crisis.kind==4:weather*=1.15
   var productivity=1.20+float(v.era)*.15+minf(.22,float(v.bonuses[0])*.025)
   v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
   v.wood=minf(400,v.wood+n*.16)
@@ -207,6 +219,7 @@ func daily():
   a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0)+minf(.25,float(v.bonuses[2])*.035),0,100)
   a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
   if day%19==0 and rng.randf()<.045:a.sick=6
+  if not active_crisis.is_empty() and active_crisis.kind==1 and a.clan==active_crisis.clan and day%4==0 and rng.randf()<.08 and v.bonuses[2]<5:a.sick=6
   if int(a.get("sick",0))>0:
    a.sick=int(a.sick)-1
    a.health=maxf(0,a.health-(2 if v.tech>=5 else 5))
@@ -295,7 +308,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -338,6 +351,14 @@ func import_state(d:Dictionary)->bool:
  total_deaths=int(d.get("total_deaths",dead.size()))
  total_births=int(d.get("total_births",next_id-1))
  projects_completed=int(d.get("projects_completed",0))
+ active_crisis=d.get("active_crisis",{})
+ if not active_crisis is Dictionary:active_crisis={}
+ if not active_crisis.is_empty():
+  if not active_crisis.has("kind") or not active_crisis.has("clan") or not active_crisis.has("until") or int(active_crisis.kind)<0 or int(active_crisis.kind)>5 or int(active_crisis.clan)<0 or int(active_crisis.clan)>1:active_crisis={}
+  else:
+   for key in ["kind","clan","until"]:active_crisis[key]=int(active_crisis[key])
+ crises_seen=int(d.get("crises_seen",0))
+ crisis_history=d.get("crisis_history",[])
  if mode==0:ended=""
  rng.seed=seed_value
  rng.state=int(str(d.rng))
@@ -384,6 +405,7 @@ func answer_signal(index:int,choice:int)->bool:
  remember(a,["Forse possiamo vivere senza paura.","Non smetterò di cercare.","La scelta appartiene a noi.","Non dimenticherò queste parole."][choice])
  signal_data.answered=true
  decisions.append({"day":day,"name":a.name,"choice":choice,"text":words[choice]})
+ if decisions.size()>1000:decisions.pop_front()
  log_event("Risposta a "+a.name+": "+words[choice])
  return true
 
@@ -440,3 +462,41 @@ func advance_project(clan:int,n:int):
  changes.append({"kind":"project","clan":clan})
  v.project=-1
  v.progress=0.0
+
+func advance_crisis():
+ if not active_crisis.is_empty():
+  if day>=int(active_crisis.until):
+   log_event("Concluso: "+CRISIS_NAMES[int(active_crisis.kind)]+".")
+   active_crisis.clear()
+  return
+ if day%75!=0 or people.is_empty():return
+ var clan=0 if count(0)>0 else 1
+ if count(0)>0 and count(1)>0:clan=rng.randi_range(0,1)
+ var kind=crises_seen%CRISIS_NAMES.size()
+ var v=villages[clan]
+ active_crisis={"kind":kind,"clan":clan,"until":day+18}
+ crises_seen+=1
+ crisis_history.push_front({"day":day,"kind":kind,"clan":clan})
+ if crisis_history.size()>120:crisis_history.pop_back()
+ if kind==0:v.food*=.55 if v.bonuses[0]<3 else .8
+ elif kind==1:
+  for a in people:
+   if a.clan==clan and rng.randf()<.15:a.sick=6
+ elif kind==2:peace=maxf(0,peace-32)
+ elif kind==3:
+  v.wood*=.65
+  v.houses=maxi(3,int(v.houses)-2)
+  changes.append({"kind":"house","clan":clan})
+ elif kind==4:
+  v.knowledge+=50
+  for a in people:
+   if a.clan==clan:a.mood=minf(100,a.mood+12)
+ elif kind==5 and peace>40 and count(1-clan)>4:
+  for a in people:
+   if a.clan==1-clan and a.age>=18 and a.partner<0:
+    a.clan=clan
+    a.friend=-1
+    remember(a,"Ho raggiunto "+CLANs_name(clan)+".")
+    changes.append({"kind":"migration","id":a.id})
+    break
+ log_event(CLANs_name(clan)+" · "+CRISIS_NAMES[kind]+".")

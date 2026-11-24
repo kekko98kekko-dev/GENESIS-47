@@ -44,11 +44,13 @@ jobs:
           grep -q 'SELF_TEST PASS' smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' smoke.log; then exit 1; fi
       - name: Capture real rendered screenshot
-        continue-on-error: true
         run: |
           set -o pipefail
           timeout 100s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
+          test -s preview-gameplay.png
+          test -s preview-creature.png
+          if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
       - name: Export Windows x64
         run: |
           mkdir -p build

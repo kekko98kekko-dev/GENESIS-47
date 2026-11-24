@@ -106,6 +106,11 @@ var status_bar:ProgressBar
 var stats_bar:Label
 var day_label:Label
 var last_project_count=0
+var welcome_open=false
+var world_started=false
+var last_crises=0
+var path_shader=preload("res://shaders/path.gdshader")
+var health_fill:StyleBoxFlat
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -138,6 +143,7 @@ func _ready():
  elif "--capture" in OS.get_cmdline_user_args():
   call_deferred("capture_preview")
  else:
+  get_tree().auto_accept_quit=false
   open_welcome()
 
 func load_catalog():
@@ -713,7 +719,7 @@ func create_actor(a:Dictionary):
  var parent=Node3D.new()
  people_root.add_child(parent)
  parent.position=random_near(centers[a.clan],6.5)
- var visual=asset(parent,"creature",int(a.clan)*3+int(float(a.genes[2])*3),Vector3.ZERO,1.0)
+ var visual=asset(parent,"creature",int(a.clan)*4+mini(3,int(float(a.genes[2])*4)),Vector3.ZERO,1.0)
  var rig={}
  if visual==null:
   rig=original_creature(parent,a)
@@ -722,6 +728,8 @@ func create_actor(a:Dictionary):
   start_animation(visual,["walk","run","idle"])
   rig={"body":visual,"arms":[],"legs":[]}
  actors[a.id]={"node":parent,"body":rig.body,"arms":rig.arms,"legs":rig.legs,"target":random_near(centers[a.clan],7),"phase":rng.randf()*TAU}
+ actors[a.id]["animation"]=animation_player(visual) if visual!=null else null
+ actors[a.id]["moving"]=true
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -753,14 +761,22 @@ func apply_changes():
     rebuild_farms()
    "trade":spawn_caravan(int(e.clan))
    "project":rebuild_civic()
+   "migration":
+    var a=sim.find(int(e.id))
+    if not a.is_empty() and actors.has(a.id):
+     actors[a.id].target=random_near(centers[a.clan],5)
+     actors[a.id].activity_day=-1
  sim.changes.clear()
 
 func step_day():
  var old_tech=sim.discoveries.size()
  var previous_projects=sim.projects_completed
+ var previous_crises=sim.crises_seen
  sim.daily()
  apply_changes()
- if sim.discoveries.size()>old_tech:
+ if sim.crises_seen>previous_crises:
+  notify_event("CAMBIAMENTO NEL MONDO",sim.events[0])
+ elif sim.discoveries.size()>old_tech:
   var last=sim.discoveries.back()
   notify_event("NUOVA SCOPERTA",Sim.CLANS[last.clan]+" · "+last.name)
  elif sim.projects_completed>previous_projects:
@@ -817,7 +833,9 @@ func _process(delta:float):
    var r=actors[a.id]
    var n:Node3D=r.node
    var step=delta*minf(speed,5.0)
-   if n.position.distance_to(r.target)<.26 or int(r.get("activity_day",-1))!=sim.day:
+   var reached=Vector2(n.position.x-r.target.x,n.position.z-r.target.z).length()<.45
+   var resting=str(a.get("activity","Esplora")) in ["Riposa","Studia","Cerca cibo","Incontra la famiglia"]
+   if (reached and not resting) or int(r.get("activity_day",-1))!=sim.day:
     r.activity_day=sim.day
     var activity=str(a.get("activity","Esplora"))
     if activity=="Riposa":
@@ -837,7 +855,11 @@ func _process(delta:float):
     tag.text=a.name+" · "+str(a.get("activity","Esplora"))
    var direction:Vector3=r.target-n.position
    direction.y=0
-   if direction.length()>.04:
+   var moving=direction.length()>.35
+   if r.get("moving",true)!=moving:
+    r.moving=moving
+    if is_instance_valid(r.get("animation")):choose_motion(r.animation,moving)
+   if moving:
     var p=n.position+direction.normalized()*minf(step*.92,direction.length())
     for home in houses[a.clan]:
      var away=p-home.node.position
@@ -848,12 +870,12 @@ func _process(delta:float):
      n.position=p
      n.rotation.y=lerp_angle(n.rotation.y,atan2(direction.x,direction.z),minf(delta*7,1))
     else:r.target=centers[a.clan]
-   r.phase+=step*7
+   r.phase+=step*7 if moving else delta*1.8
    if not r.legs.is_empty():
-    r.body.position.y=absf(sin(r.phase))*.05
+    r.body.position.y=absf(sin(r.phase))*(.05 if moving else .015)
     for i in range(2):
-     r.legs[i].rotation.x=sin(r.phase+i*PI)*.46
-     r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*.32
+     r.legs[i].rotation.x=sin(r.phase+i*PI)*(.46 if moving else .025)
+     r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*(.32 if moving else .045)
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)
   for animal in animals:
    var n:Node3D=animal.node
@@ -870,7 +892,9 @@ func _process(delta:float):
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
   sun.light_energy=.14+daylight*.83
-  sun.light_color=Color("b3c9ff").lerp(Color("fff1d1"),daylight)
+  sun.light_color=Color("a4baff").lerp(Color("ffe7bd"),daylight)
+  sun.rotation_degrees=Vector3(-22-daylight*38,-37+sin(phase*TAU)*24,0)
+  env.ambient_light_color=Color("a4bdd8").lerp(Color("e2e7d3"),daylight)
   env.ambient_light_energy=.12+daylight*.31
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
   sky_material.sky_horizon_color=Color("495478").lerp(Color("cfdfd4"),daylight)
@@ -1301,6 +1325,14 @@ func setup_ui():
  status_bar.custom_minimum_size.y=12
  status_bar.show_percentage=false
  status_bar.max_value=100
+ var bg=StyleBoxFlat.new()
+ bg.bg_color=Color("263b3a")
+ bg.set_corner_radius_all(5)
+ status_bar.add_theme_stylebox_override("background",bg)
+ health_fill=StyleBoxFlat.new()
+ health_fill.bg_color=Color("83c8a4")
+ health_fill.set_corner_radius_all(5)
+ status_bar.add_theme_stylebox_override("fill",health_fill)
  rv.add_child(status_bar)
  stats_bar=text_label(rv,"",13)
  stats_bar.modulate=Color("a7d9bc")
@@ -1399,6 +1431,7 @@ func refresh():
  if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("activity","Esplora"))+" · "+("Malato" if int(a.get("sick",0))>0 else "In salute")
  if status_bar!=null:
   status_bar.value=sim.energy if a.is_empty() else float(a.health)
+  health_fill.bg_color=Color("e1bc78") if a.is_empty() else Color("d7796c").lerp(Color("83c8a4"),float(a.health)/100)
   stats_bar.text="Energia divina · %d%%"%int(sim.energy) if a.is_empty() else "Salute · %d%%"%int(a.health)
  if a.is_empty():
   var lines=[]
@@ -1414,10 +1447,14 @@ func refresh():
  if sim.mode==0:
   if sim.people.is_empty():objective.text="ETERNITÀ — Mondo disabitato. Usa Vita per ricominciare."
   elif sim.legacy_cycles>0:objective.text+="  ·  Cicli del futuro: "+str(sim.legacy_cycles)
+ if sim.mode==0 and not sim.active_crisis.is_empty():
+  objective.text=Sim.CRISIS_NAMES[int(sim.active_crisis.kind)]+" · "+Sim.CLANS[int(sim.active_crisis.clan)]+" · fino al giorno "+str(sim.active_crisis.until)
  if sim.ended!="":objective.text=sim.ended
  chronicle.text="\n".join(sim.events.slice(0,12))
 
 func open_welcome():
+ if welcome_open:return
+ welcome_open=true
  speed=0
  var dlg=ConfirmationDialog.new()
  hud.add_child(dlg)
@@ -1437,14 +1474,16 @@ func open_welcome():
  text_label(box,"Seme del mondo · TAB interfaccia ridotta · F10 cinema",13)
  for i in range(3):
   if FileAccess.file_exists(SAVE_PREFIX+str(i)+".json") or FileAccess.file_exists(SAVE_PREFIX+str(i)+".json.bak"):
-   button(box,"Riprendi slot "+str(i+1),func():slot=i;selected_slot.select(i);dlg.hide();load_game();dlg.queue_free())
+   button(box,"Riprendi slot "+str(i+1),func():welcome_open=false;world_started=true;slot=i;selected_slot.select(i);dlg.hide();load_game();dlg.queue_free())
  if FileAccess.file_exists("user://genesis47_auto.json") or FileAccess.file_exists("user://genesis47_auto.json.bak"):
-  button(box,"Riprendi l’ultimo salvataggio automatico",func():dlg.hide();load_path("user://genesis47_auto.json");dlg.queue_free())
+  button(box,"Riprendi l’ultimo salvataggio automatico",func():welcome_open=false;world_started=true;dlg.hide();load_path("user://genesis47_auto.json");dlg.queue_free())
  dlg.confirmed.connect(func():
+  welcome_open=false
+  world_started=true
   deformation.clear()
   new_world(maxi(1,abs(int(seed_input.text))),option.selected)
   dlg.queue_free())
- dlg.canceled.connect(func():speed=1;update_time_buttons();dlg.queue_free())
+ dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free())
  dlg.popup_centered(Vector2i(620,220))
 
 func open_dialog(heading:String,content:String):
@@ -1532,7 +1571,8 @@ func show_signals():
   var choices=["Proteggi e invita alla pace","Incoraggia la scienza","Rispetta il libero arbitrio","Imponi la tua autorità"]
   for i in range(4):
    button(box,choices[i],func():
-    sim.answer_signal(idx,i)
+    var stable_idx=sim.signals.find(q)
+    if stable_idx>=0:sim.answer_signal(stable_idx,i)
     selected=int(q.id)
     dlg.hide()
     dlg.queue_free()
@@ -1743,9 +1783,10 @@ func self_test():
  var eternal=Sim.new()
  eternal.start(47,0)
  for i in range(3000):eternal.daily()
- if eternal.ended!="" or eternal.day!=3000 or eternal.projects_completed<5:failed=true
+ if eternal.ended!="" or eternal.day!=3000 or eternal.projects_completed<5 or eternal.crises_seen<10:failed=true
+ print("CRISIS_TEST events=",eternal.crises_seen," history=",eternal.crisis_history.size())
  var eternal_copy=Sim.new()
- if not eternal_copy.import_state(JSON.parse_string(JSON.stringify(eternal.export_state()))) or eternal_copy.projects_completed!=eternal.projects_completed:failed=true
+ if not eternal_copy.import_state(JSON.parse_string(JSON.stringify(eternal.export_state()))) or eternal_copy.projects_completed!=eternal.projects_completed or eternal_copy.crises_seen!=eternal.crises_seen:failed=true
  print("PROJECT_TEST completed=",eternal.projects_completed," births=",eternal.total_births," deaths=",eternal.total_deaths)
  for inhabitant in eternal.people.duplicate():eternal.die(inhabitant,"test")
  for i in range(10):eternal.daily()
@@ -1806,6 +1847,8 @@ func capture_preview():
   await get_tree().create_timer(.4).timeout
   await RenderingServer.frame_post_draw
   get_viewport().get_texture().get_image().save_png("res://preview-creature.png")
+ speed=1
+ await get_tree().create_timer(.7).timeout
  print("CAPTURE ",err)
  get_tree().quit(0 if err==OK else 1)
 
@@ -1840,7 +1883,7 @@ func show_achievements():
  lines.append("\n60 abitanti · 5 scambi · 14 scoperte · 10 poteri · 4 generazioni")
  open_dialog("TRAGUARDI","\n\n".join(lines))
 func show_history():
- var lines=["NATI: %d   ·   DEFUNTI: %d   ·   OPERE: %d"%[sim.total_births,sim.total_deaths,sim.projects_completed],"","GIORNO        POPOLAZIONE        PACE"]
+ var lines=["NATI: %d   ·   DEFUNTI: %d   ·   OPERE: %d"%[sim.total_births,sim.total_deaths,sim.projects_completed],"Eventi storici: "+str(sim.crises_seen),"","GIORNO        POPOLAZIONE        PACE"]
  for row in sim.history.slice(maxi(0,sim.history.size()-30)):
   lines.append("%03d                   %03d                  %d%%"%[int(row.day),int(row.population),int(row.peace)])
  open_dialog("STORIA DEL MONDO","\n".join(lines))
@@ -1859,11 +1902,14 @@ func rebuild_roads():
    var q=house_location(i,j)
    var dir=Vector2(q.x-p.x,q.z-p.z)
    if dir.length()<1:continue
-   var perpendicular=dir.normalized().orthogonal()*.28
-   var segments=maxi(3,ceili(dir.length()/0.7))
+   var perpendicular=dir.normalized().orthogonal()*.25
+   var segments=maxi(3,ceili(dir.length()/0.55))
    for k in range(segments):
     var a=p.lerp(q,float(k)/segments)
     var b=p.lerp(q,float(k+1)/segments)
+    var bend=Vector3(perpendicular.x,0,perpendicular.y)*1.1
+    a+=bend*sin(float(k)/segments*PI)
+    b+=bend*sin(float(k+1)/segments*PI)
     var left_a=ground(a.x+perpendicular.x,a.z+perpendicular.y)+Vector3.UP*.13
     var right_a=ground(a.x-perpendicular.x,a.z-perpendicular.y)+Vector3.UP*.13
     var left_b=ground(b.x+perpendicular.x,b.z+perpendicular.y)+Vector3.UP*.13
@@ -1876,10 +1922,8 @@ func rebuild_roads():
  st.generate_normals()
  var mi=MeshInstance3D.new()
  mi.mesh=st.commit()
- var mat=StandardMaterial3D.new()
- mat.albedo_color=Color("89785b")
- mat.roughness=1.0
- mat.cull_mode=BaseMaterial3D.CULL_DISABLED
+ var mat=ShaderMaterial.new()
+ mat.shader=path_shader
  mi.material_override=mat
  mi.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
  roads_root.add_child(mi)
@@ -2209,3 +2253,19 @@ func rebuild_civic():
     var angle=j*TAU/6
     var offset=Vector3(cos(angle)*1.05,.36,sin(angle)*1.05)
     sphere(plaza,trim,offset,Vector3.ONE*.15,.4)
+
+func choose_motion(ap:AnimationPlayer,moving:bool):
+ var terms=["walk","run"] if moving else ["idle","rest"]
+ for term in terms:
+  for clip_name in ap.get_animation_list():
+   if str(clip_name).to_lower().contains(term):
+    if ap.current_animation!=clip_name:ap.play(clip_name,.18)
+    ap.speed_scale=1.0
+    return
+ ap.speed_scale=1.0 if moving else 0.0
+
+func _notification(what:int):
+ if what==NOTIFICATION_WM_CLOSE_REQUEST and not test_mode:
+  if world_started and autosave_enabled and sim.villages.size()==2:
+   save_path("user://genesis47_auto.json",false)
+  get_tree().quit()

@@ -27,3 +27,6 @@ Nessun limite di giorni o generazioni. Raggiungere l’era finale non arresta il
 
 ## 1.3 — Civiltà vive
 Opere civili ricorrenti con costi, effetti permanenti, monumenti in 3D e una schermata dedicata. Statistiche di nascite e morti; nomi delle parentele, indicatori di salute ed energia. Gli archivi recenti dei defunti sono limitati a 3000 schede per contenere il salvataggio; i conteggi complessivi continuano. Compatibilità dei salvataggi precedenti mantenuta tramite valori predefiniti.
+
+## 1.4 — Equilibrio dinamico
+Dopo il giorno 300, Eternità alterna crisi e rinascite con conseguenze reali. Le opere civili attenuano alcuni effetti. Animazioni di cammino/riposo, sentieri con materiale procedurale, luce solare variabile, indicatori di salute leggibili. Salvataggio automatico alla chiusura se attivo. Il collaudo richiede anche tre schermate renderizzate e un breve avvio grafico senza errori di script.
