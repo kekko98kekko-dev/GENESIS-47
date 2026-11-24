@@ -14,8 +14,10 @@ void fragment(){
  float r=sin(p.x*2.4+p.y*.61+q*5.0+TIME*.8)*.5+.5;
  float s=cos(p.x*.71-p.y*1.9+q*4.0-TIME*.65)*.5+.5;
  float f=pow(1.0-max(dot(NORMAL,VIEW),0.0),3.0);
+ float ripples=n2(p*3.8+vec2(TIME*.13,-TIME*.09));
  ALBEDO=mix(vec3(.012,.071,.102),vec3(.027,.164,.18),q);
  ALBEDO+=vec3(.025,.045,.046)*pow(r*s,4.0);
+ ALBEDO+=vec3(.020,.055,.052)*pow(ripples,3.0);
  ALBEDO=mix(ALBEDO,vec3(.19,.35,.39),f*.45);
  vec2 hu=(p+vec2(53.0))/106.0;
  if(hu.x>0.0 && hu.x<1.0 && hu.y>0.0 && hu.y<1.0){
@@ -25,6 +27,8 @@ void fragment(){
   ALBEDO=mix(ALBEDO,vec3(.045,.31,.27),shoal*.68);
   float foam=1.0-smoothstep(.03,.22,abs(d-(.19+.10*sin(TIME*1.2+q*11.0))));
   ALBEDO=mix(ALBEDO,vec3(.63,.76,.69),foam*(.5+.5*q));
+  float caustic=pow(abs(sin(p.x*3.3+p.y*2.2+q*4.0+TIME*.4)*cos(p.y*3.9-p.x*1.9-TIME*.32)),7.0);
+  ALBEDO+=vec3(.09,.13,.08)*caustic*shoal;
  }
  ROUGHNESS=.32;
  METALLIC=.05;

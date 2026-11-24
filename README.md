@@ -36,3 +36,6 @@ Strada commerciale 3D con ponti automatici su tratti allagati, carovane con merc
 
 ## 1.7 — Legami
 Biografie individuali, personalità derivata dai geni, fiducia nel Creatore, dialoghi consultabili e salvati, nomi personalizzabili, navigazione dei legami e selezione con doppio clic. Mercatini 3D e segni per preferiti/malati. Limiti: 40 eventi biografici e 30 messaggi recenti per abitante.
+
+## 1.8 — Natura e osservazione
+Vegetazione animata in un MultiMesh (fino a 4.200 ciuffi), materiale del suolo e acqua migliorati, tour panoramico F6, contatore FPS, ripristino di tempo, energia infinita e selezione nei salvataggi. Il profilo Prestazioni nasconde la vegetazione extra; Bilanciata usa fino a 2.600 istanze. Grafica stilizzata, compatibilità GL.

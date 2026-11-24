@@ -340,6 +340,13 @@ func import_state(d:Dictionary)->bool:
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
   if not d.has(key):return false
  if int(d.mode)<0 or int(d.mode)>3 or d.people.size()>LIMIT:return false
+ for key in ["dead","events","discoveries","signals"]:
+  if not d[key] is Array:return false
+ var seen={}
+ for citizen in d.people:
+  if not citizen is Dictionary or not citizen.has("id"):return false
+  if seen.has(int(citizen.id)):return false
+  seen[int(citizen.id)]=true
  for a in d.people:
   if not a is Dictionary:return false
   for key in ["id","name","clan","age","gen","health","hunger","faith","mood","genes","parents","partner","friend","role","goal","memories","favorite"]:

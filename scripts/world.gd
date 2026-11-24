@@ -126,6 +126,14 @@ var dialogue_view:RichTextLabel
 var dialogue_heading:Label
 var trust_bar:ProgressBar
 var settlement_root:Node3D
+var meadow:MultiMeshInstance3D
+var tour=false
+var tour_clock=0.0
+var tour_index=-1
+var tour_button:Button
+var fps_label:Label
+var fps_clock=0.0
+var unlimited_toggle:CheckButton
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -291,7 +299,7 @@ func setup_environment():
  sky_material.sky_horizon_color=Color("cfdfd4")
  sky_material.ground_bottom_color=Color("244a50")
  sky_material.ground_horizon_color=Color("becfc6")
- sky_material.sun_angle_max=22
+ sky_material.sun_angle_max=14
  sky.sky_material=sky_material
  env.sky=sky
  env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
@@ -310,6 +318,8 @@ func setup_environment():
  sun.light_energy=.90
  sun.shadow_enabled=true
  sun.directional_shadow_max_distance=115
+ sun.shadow_bias=.045
+ sun.shadow_normal_bias=.9
  camera=Camera3D.new()
  add_child(camera)
  camera.current=true
@@ -465,6 +475,9 @@ func make_terrain():
 
 func new_world(seed_value:int,which:int):
  reset_ai_request()
+ set_tour(false)
+ unlimited=false
+ if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
  planted.clear()
  sim.start(seed_value,which)
  last_auto_day=-1
@@ -478,7 +491,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -522,6 +535,7 @@ func reset_visuals():
  rebuild_farms()
  rebuild_civic()
  rebuild_settlement_details()
+ rebuild_meadow()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9) and away_from_route(p,1.65):
@@ -857,6 +871,11 @@ func update_camera():
 func _process(delta:float):
  if camera==null or centers.size()!=2 or test_mode:return
  visual_time+=delta
+ fps_clock+=delta
+ if fps_clock>=1.0:
+  fps_clock=0.0
+  if is_instance_valid(fps_label):fps_label.text=str(Engine.get_frames_per_second())+" FPS"
+ if tour:update_tour(delta)
  ai_cooldown=maxf(0,ai_cooldown-delta)
  if speed>0 and portable_ai and ai_autonomy and not ai_busy and sim.day>=12 and sim.day-last_ai_day>=12 and ai_cooldown<=0:
   ask_autonomous()
@@ -866,6 +885,7 @@ func _process(delta:float):
  var keyboard_ok=not (input.has_focus() or model.has_focus())
  var mov=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  if keyboard_ok and mov.length()>0:
+  set_tour(false)
   following=false
   var right=Vector3(cos(azimuth),0,-sin(azimuth))
   var back=Vector3(sin(azimuth),0,cos(azimuth))
@@ -873,9 +893,16 @@ func _process(delta:float):
   focus.x=clampf(focus.x,-50,50)
   focus.z=clampf(focus.z,-50,50)
   update_camera()
+ if is_instance_valid(meadow):
+  meadow.visible=quality_mode>0 and distance<82
+  meadow.multimesh.visible_instance_count=meadow.multimesh.instance_count if quality_mode==2 else mini(2600,meadow.multimesh.instance_count)
  if last_season!=sim.season:
   last_season=sim.season
   if is_instance_valid(season_material):season_material.set_shader_parameter("season_tint",{"Primavera":Color("e5ffd5"),"Estate":Color("fff2ca"),"Autunno":Color("f6ce96"),"Inverno":Color("c6dce3")}.get(last_season,Color.WHITE))
+ for a in sim.people:
+  if actors.has(a.id):
+   var anim=actors[a.id].get("animation")
+   if is_instance_valid(anim):anim.active=speed>0
  if speed>0:
   tick+=minf(delta,.1)*speed
   var loops=0
@@ -1004,6 +1031,7 @@ func _unhandled_input(event:InputEvent):
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
   if event.keycode==KEY_TAB:toggle_compact()
+  if event.keycode==KEY_F6:set_tour(not tour)
   if event.keycode==KEY_HOME:
    following=false
    focus=centers[0]
@@ -1020,6 +1048,7 @@ func _unhandled_input(event:InputEvent):
    update_time_buttons()
   if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh();populate_powers(power_category.selected)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+  set_tour(false)
   following=false
   var right=Vector3(cos(azimuth),0,-sin(azimuth))
   var back=Vector3(sin(azimuth),0,cos(azimuth))
@@ -1029,6 +1058,7 @@ func _unhandled_input(event:InputEvent):
   focus.z=clampf(focus.z,-50,50)
   update_camera()
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+  set_tour(false)
   azimuth-=event.relative.x*.006
   pitch=clampf(pitch+event.relative.y*.005,.24,1.48)
   update_camera()
@@ -1040,6 +1070,7 @@ func _unhandled_input(event:InputEvent):
    distance=minf(125,distance*1.16)
    update_camera()
   elif event.button_index==MOUSE_BUTTON_LEFT:
+   set_tour(false)
    if power=="Osserva":
     select_at(event.position)
     if event.double_click and actors.has(selected):follow_person(selected)
@@ -1175,6 +1206,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  rebuild_roads()
  rebuild_trade_route()
  rebuild_settlement_details()
+ rebuild_meadow()
 
 func divine(p:Vector3):
  if power=="Osserva":return
@@ -1385,6 +1417,8 @@ func setup_ui():
  button(row,"Salva",func():save_game(true))
  button(row,"Carica",load_game)
  button(row,"Foto",toggle_photo)
+ fps_label=text_label(row,"",12)
+ fps_label.modulate=Color("a7d9bc")
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
  var left=panel(hud,Rect2(14,104,190,650),.88)
@@ -1413,10 +1447,10 @@ func setup_ui():
  map_view.world=self
  map_view.custom_minimum_size=Vector2(155,135)
  lv.add_child(map_view)
- var infinite=CheckButton.new()
- infinite.text="Energia infinita"
- infinite.toggled.connect(func(on):unlimited=on)
- lv.add_child(infinite)
+ unlimited_toggle=CheckButton.new()
+ unlimited_toggle.text="Energia infinita"
+ unlimited_toggle.toggled.connect(func(on):unlimited=on)
+ lv.add_child(unlimited_toggle)
  var right=panel(hud,Rect2(1107,104,319,650),.88)
  right_panel=right
  var rv=VBoxContainer.new()
@@ -1531,10 +1565,12 @@ func setup_ui():
   tb.toggle_mode=true
   tb.set_meta("speed",s)
   time_buttons.append(tb)
- button(controls,"Mondo",func():following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
+ tour_button=button(controls,"Tour",func():set_tour(not tour))
+ tour_button.toggle_mode=true
+ button(controls,"Mondo",func():set_tour(false);following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
  for i in range(2):
-  button(controls,Sim.CLANS[i],func():following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
- hint=text_label(controls,"WASD · rotella · tasto destro · F10 foto",13)
+  button(controls,Sim.CLANS[i],func():set_tour(false);following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
+ hint=text_label(controls,"WASD · rotella · destro · F6 tour",13)
  hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  objective=text_label(bv,"",14)
@@ -1619,7 +1655,9 @@ func open_welcome():
  var seed_input=LineEdit.new()
  seed_input.text=str(rng.randi_range(1,999999))
  box.add_child(seed_input)
- text_label(box,"Seme del mondo · TAB interfaccia ridotta · F10 cinema",13)
+ text_label(box,"Seme del mondo · cambia il numero per creare una nuova isola",13)
+ button(box,"Seme casuale",func():seed_input.text=str(rng.randi_range(1,999999)))
+ text_label(box,"Clicca per osservare · F6 tour · F1 guida · F10 cinema",13)
  for i in range(3):
   if FileAccess.file_exists(SAVE_PREFIX+str(i)+".json") or FileAccess.file_exists(SAVE_PREFIX+str(i)+".json.bak"):
    button(box,"Riprendi slot "+str(i+1),func():welcome_open=false;world_started=true;slot=i;selected_slot.select(i);dlg.hide();load_game();dlg.queue_free())
@@ -1829,6 +1867,7 @@ func save_path(path:String,show_hint:bool)->bool:
   d.positions[str(id)]=[p.x,p.z]
  d["saved_at"]=Time.get_unix_time_from_system()
  d["camera"]=[focus.x,focus.z,azimuth,pitch,distance]
+ d["player"]={"speed":speed,"unlimited":unlimited,"selected":selected,"following":following,"tick":tick}
  var file=FileAccess.open(path+".tmp",FileAccess.WRITE)
  if file==null:
   if show_hint:hint.text="Impossibile salvare."
@@ -1864,6 +1903,7 @@ func load_path(p:String)->bool:
    hint.text="Salvataggio non valido."
    return false
  reset_ai_request()
+ set_tour(false)
  sim=candidate
  var advanced=0
  if absent_progress and not test_mode:
@@ -1881,11 +1921,16 @@ func load_path(p:String)->bool:
  for id in actors:
   var pos=data.get("positions",{}).get(str(id),[])
   if pos.size()==2:actors[id].node.position=ground(float(pos[0]),float(pos[1]))
- selected=-1
- following=false
+ var player=data.get("player",{})
+ if not player is Dictionary:player={}
+ selected=int(player.get("selected",-1))
+ if not actors.has(selected):selected=-1
+ following=bool(player.get("following",false)) and selected>=0
+ unlimited=bool(player.get("unlimited",false))
+ if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(unlimited)
  show_ending=sim.ended==""
- speed=1
- tick=0
+ speed=clampf(float(player.get("speed",1)),0,60)
+ tick=clampf(float(player.get("tick",0)),0,1.69)
  refresh()
  hint.text="Universo ripristinato."
  if advanced>0:
@@ -1948,6 +1993,8 @@ func self_test():
  eternal.daily()
  if eternal.people.is_empty() or eternal.ended!="" or eternal.day!=3011:failed=true
  print("ETERNITY_TEST day=",eternal.day," population=",eternal.people.size()," ending=",eternal.ended)
+ if not is_instance_valid(meadow) or meadow.multimesh.instance_count<500:failed=true
+ print("MEADOW_TEST instances=",meadow.multimesh.instance_count)
  var trade_test=Sim.new()
  trade_test.start(47,0)
  var food_before=float(trade_test.villages[1].food)
@@ -1974,7 +2021,7 @@ func self_test():
  var before=sim.people.size()
  var before_day=sim.day
  var before_trees=planted.size()
- if not load_path(test_path) or sim.people.size()!=before or sim.day!=before_day or planted.size()!=before_trees:failed=true
+ if not load_path(test_path) or sim.people.size()!=before or sim.day!=before_day or planted.size()!=before_trees or not unlimited:failed=true
  if not save_path(test_path,false):failed=true
  var corrupt=FileAccess.open(test_path,FileAccess.WRITE)
  if corrupt!=null:
@@ -2660,3 +2707,75 @@ func rebuild_settlement_details():
    var q=Vector3((j-2)*.35,.12,1.0)
    cone(market,Color("8c7052"),q,.13,.23,.15,8)
    sphere(market,Color("9db86e"),q+Vector3.UP*.18,Vector3(.26,.24,.26))
+
+func set_tour(on:bool):
+ tour=on
+ if is_instance_valid(tour_button):tour_button.set_pressed_no_signal(on)
+ if on:
+  tour_clock=0.0
+  tour_index=-1
+  following=false
+  selected=-1
+  power="Osserva"
+  refresh()
+  if is_instance_valid(power_category):populate_powers(power_category.selected)
+
+func update_tour(delta:float):
+ if centers.size()!=2:return
+ tour_clock-=delta
+ if tour_clock<=0:
+  tour_clock=12.0
+  tour_index=(tour_index+1)%4
+ var target=Vector3.ZERO
+ var zoom=70.0
+ var tilt=.85
+ if tour_index in [1,2]:
+  target=centers[tour_index-1]
+  zoom=17.0
+  tilt=.59
+ elif tour_index==3 and not trade_route.is_empty():
+  target=trade_route[int(trade_route.size()/2.0)]
+  zoom=28.0
+  tilt=.65
+ focus=focus.lerp(target,clampf(delta*.65,0,1))
+ distance=lerpf(distance,zoom,clampf(delta*.55,0,1))
+ pitch=lerpf(pitch,tilt,clampf(delta*.55,0,1))
+ azimuth+=delta*.045
+ update_camera()
+
+func rebuild_meadow():
+ if is_instance_valid(meadow):
+  remove_child(meadow)
+  meadow.queue_free()
+ var blade=SurfaceTool.new()
+ blade.begin(Mesh.PRIMITIVE_TRIANGLES)
+ for j in range(5):
+  var angle=float(j)*2.39996
+  var offset=Vector3(cos(angle)*.11,0,sin(angle)*.11)
+  var tangent=Vector3(cos(angle),0,sin(angle))*.028
+  var tip=offset*1.8+Vector3.UP*(.19+.045*(j%3))
+  for v in [offset-tangent,offset+tangent,tip]:blade.add_vertex(v)
+ blade.generate_normals()
+ var mesh=blade.commit()
+ var mat=ShaderMaterial.new()
+ mat.shader=preload("res://shaders/meadow.gdshader")
+ mesh.surface_set_material(0,mat)
+ var transforms:Array[Transform3D]=[]
+ var local=RandomNumberGenerator.new()
+ local.seed=sim.seed_value+734
+ for i in range(12500):
+  if transforms.size()>=4200:break
+  var p=ground(local.randf_range(-49,49),local.randf_range(-49,49))
+  if p.y<SEA+.7 or p.y>7.3 or not far_village(p,4.0) or not away_from_route(p,.8):continue
+  var scale_value=local.randf_range(.55,1.35)
+  var basis=Basis(Vector3.UP,local.randf()*TAU).scaled(Vector3.ONE*scale_value)
+  transforms.append(Transform3D(basis,p))
+ var mm=MultiMesh.new()
+ mm.transform_format=MultiMesh.TRANSFORM_3D
+ mm.mesh=mesh
+ mm.instance_count=transforms.size()
+ for i in range(transforms.size()):mm.set_instance_transform(i,transforms[i])
+ meadow=MultiMeshInstance3D.new()
+ meadow.multimesh=mm
+ meadow.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ add_child(meadow)
