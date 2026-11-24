@@ -2113,8 +2113,15 @@ func self_test():
   patient.hunger=75
   aid.day=posmod(-int(helper.id)-1,3)
   aid.villages[helper.clan].food=200
+  var control=Sim.new()
+  if not control.import_state(JSON.parse_string(JSON.stringify(aid.export_state()))):failed=true
+  var control_helper=control.find(int(helper.id))
+  control_helper.intention_until=control.day+2
+  control.daily()
+  var control_patient=control.find(int(patient.id))
   aid.daily()
-  if aid.aid_actions<1 or int(helper.social_target)!=int(patient.id) or not patient.has("last_aid_day") or patient.health<=44:failed=true
+  if aid.aid_actions<1 or int(helper.social_target)!=int(patient.id) or not patient.has("last_aid_day") or control_patient.is_empty() or patient.health<=control_patient.health or patient.hunger>=control_patient.hunger:failed=true
+  print("SOLIDARITY_CONTROL assisted=",patient.health," unassisted=",control_patient.get("health",-1)," hunger_assisted=",patient.hunger," hunger_control=",control_patient.get("hunger",-1))
   var aid_copy=Sim.new()
   if not aid_copy.import_state(JSON.parse_string(JSON.stringify(aid.export_state()))) or aid_copy.aid_actions!=aid.aid_actions:failed=true
   print("SOLIDARITY_TEST actions=",aid.aid_actions," patient_health=",patient.health," target=",helper.social_target)
