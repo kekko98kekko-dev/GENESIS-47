@@ -178,7 +178,7 @@ func daily():
    changes.append({"kind":"era","clan":i})
    v.government=["Consiglio","Anziani","Assemblea","Regno","Repubblica","Tecnocrazia","Federazione"][era]
    if era>=4:v.belief="Custodi del codice" if v.faith<50 else "Ordine della luce"
-  if v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
+  if day>=int(v.get("rebuild_after",0)) and v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
    v.wood-=22
    v.houses+=1
    changes.append({"kind":"house","clan":i})

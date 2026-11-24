@@ -21,6 +21,12 @@ var effects_root:Node3D
 var actors:Dictionary={}
 var animals:Array=[]
 var houses:Array=[[],[]]
+var house_sites:Array=[[],[]]
+var ruins:Array=[]
+var scars:Array=[]
+var ruin_root:Node3D
+var destroyed_total=0
+var world_centers:Array=[]
 var hubs:Array=[]
 var centers:Array=[]
 var effects:Array=[]
@@ -501,6 +507,11 @@ func new_world(seed_value:int,which:int):
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
  planted.clear()
+ house_sites=[[],[]]
+ ruins.clear()
+ scars.clear()
+ world_centers.clear()
+ destroyed_total=0
  sim.start(seed_value,which)
  sim.spatial_autonomy=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
  last_auto_day=-1
@@ -516,7 +527,7 @@ func new_world(seed_value:int,which:int):
 func reset_visuals():
  nav_dirty=true
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -538,7 +549,11 @@ func reset_visuals():
  noise.seed=sim.seed_value
  noise.frequency=.044
  noise.fractal_octaves=4
- centers=[land_near(-15,9),land_near(19,-6)]
+ if world_centers.size()!=2:
+  var c0=land_near(-15,9)
+  var c1=land_near(19,-6)
+  world_centers=[[c0.x,c0.z],[c1.x,c1.z]]
+ centers=[ground(float(world_centers[0][0]),float(world_centers[0][1])),ground(float(world_centers[1][0]),float(world_centers[1][1]))]
  make_terrain()
  scenery=Node3D.new()
  villages_root=Node3D.new()
@@ -552,7 +567,8 @@ func reset_visuals():
  route_root=Node3D.new()
  settlement_root=Node3D.new()
  landmark_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root]:add_child(n)
+ ruin_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -563,6 +579,7 @@ func reset_visuals():
  rebuild_civic()
  rebuild_settlement_details()
  rebuild_landmarks()
+ rebuild_ruins()
  rebuild_meadow()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
@@ -577,7 +594,7 @@ func reset_visuals():
    make_rock(p,rng.randf_range(.45,1.3),i)
  for i in range(110):
   var p=ground(rng.randf_range(-40,40),rng.randf_range(-38,38))
-  if p.y>SEA+.4 and p.y<6.8 and far_village(p,2.0):
+  if p.y>SEA+.4 and p.y<6.8 and far_village(p,2.0) and not scarred(p):
    for j in range(3):
     var q=p+Vector3(rng.randf_range(-.4,.4),.18,rng.randf_range(-.4,.4))
     sphere(scenery,Color("ebc777") if i%3==0 else Color("91aa67"),q,Vector3(.11,.28,.11))
@@ -632,11 +649,16 @@ func far_village(p:Vector3,r:float)->bool:
  return true
 
 func make_tree(p:Vector3,h:float,i:int):
+ var rotation_value=rng.randf()*TAU
+ if scarred(p):return
  timber_points.append(p)
- var n=asset(scenery,"tree",i,p,h,rng.randf()*TAU)
- if n!=null:return
+ var n=asset(scenery,"tree",i,p,h,rotation_value)
+ if n!=null:
+  n.set_meta("vegetation",true)
+  return
  n=Node3D.new()
  scenery.add_child(n)
+ n.set_meta("vegetation",true)
  n.position=p
  n.scale=Vector3.ONE*h/3.2
  cone(n,Color("795d47"),Vector3(0,.9,0),.15,1.8,.08,7)
@@ -690,7 +712,8 @@ func house_location(i:int,j:int)->Vector3:
  return land_near(centers[i].x+cos(a)*r,centers[i].z+sin(a)*r)
 
 func make_house(i:int,j:int,era:int):
- var p=house_location(i,j)
+ var site=house_sites[i][j]
+ var p=ground(float(site.x),float(site.z))
  var n=Node3D.new()
  villages_root.add_child(n)
  n.position=p
@@ -747,16 +770,36 @@ func make_house(i:int,j:int,era:int):
 
 func sync_houses(i:int):
  var v=sim.villages[i]
- while houses[i].size()>int(v.houses):
-  var old=houses[i].pop_back()
-  old.node.queue_free()
- for j in range(int(v.houses)):
-  if j<houses[i].size():
-   if houses[i][j].era==v.era:continue
-   houses[i][j].node.queue_free()
-   houses[i][j]={"node":make_house(i,j,v.era),"era":v.era}
-  else:
-   houses[i].append({"node":make_house(i,j,v.era),"era":v.era})
+ while house_sites[i].size()>int(v.houses):
+  house_sites[i].pop_back()
+ while house_sites[i].size()<int(v.houses):
+  var site={}
+  for old in ruins:
+   if int(old.clan)!=i or sim.day<int(old.until):continue
+   var q=ground(float(old.x),float(old.z))
+   if q.y>SEA+.7 and not occupied_site(i,q):
+    site={"x":q.x,"z":q.z}
+    ruins.erase(old)
+    rebuild_ruins()
+    break
+  if site.is_empty():
+   for j in range(180):
+    var q=house_location(i,j)
+    if q.y>SEA+.7 and not occupied_site(i,q) and not blocked_site(q):
+     site={"x":q.x,"z":q.z}
+     break
+  if site.is_empty():
+   v.houses=house_sites[i].size()
+   break
+  house_sites[i].append(site)
+ for old in houses[i]:
+  if is_instance_valid(old.node):
+   old.node.hide()
+   old.node.queue_free()
+ houses[i].clear()
+ for j in range(house_sites[i].size()):
+  houses[i].append({"node":make_house(i,j,v.era),"era":v.era})
+ nav_dirty=true
  rebuild_roads()
 
 func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
@@ -1164,7 +1207,7 @@ func spark(p:Vector3,c:Color,scale_value=1.0):
   q.set_meta("velocity",Vector3(cos(a)*1.9,rng.randf_range(1,3),sin(a)*1.9)*scale_value)
  effects.append({"node":n,"life":1.7,"max":1.7,"kind":"spark","scale":scale_value})
 
-func meteor(p:Vector3):
+func meteor(p:Vector3,destructive=false):
  var n=Node3D.new()
  effects_root.add_child(n)
  n.position=p+Vector3(-12,24,-6)
@@ -1172,7 +1215,7 @@ func meteor(p:Vector3):
  sphere(n,Color("ffe4a2"),Vector3(.1,.05,.03),Vector3.ONE*.95,1.9)
  for i in range(8):
   sphere(n,Color("ef7c42").lerp(Color("ffd48b"),float(i)/8),Vector3(-.3*i,.62*i,-.15*i),Vector3.ONE*(1.05-float(i)*.095),1.1)
- effects.append({"node":n,"life":1.1,"max":1.1,"kind":"meteor","dest":p,"from":n.position})
+ effects.append({"node":n,"life":1.1,"max":1.1,"kind":"meteor","dest":p,"from":n.position,"destructive":destructive})
 
 func wave(p:Vector3):
  var n=Node3D.new()
@@ -1217,6 +1260,9 @@ func update_effects(delta:float):
    if e.life<=0:
     spark(e.dest,Color("f6a14e"),2.8)
     impact_cloud(e.dest)
+    if e.get("destructive",false):
+     e.destructive=false
+     disaster(e.dest,"Meteorite",7.0,125.0,-3.0,5.0)
   elif e.kind=="wave":
    e.node.scale=Vector3(1+frac*10,1+sin(frac*PI)*2.2,1+frac*10)
   elif e.kind=="impact":
@@ -1239,7 +1285,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  if deformation.size()>=48:deformation.pop_front()
  deformation.append({"x":p.x,"z":p.z,"h":amount,"r":r})
  make_terrain()
- for collection in [scenery,villages_root,people_root,animals_root,civic_root,farms_root]:
+ for collection in [scenery,villages_root,people_root,animals_root,civic_root,farms_root,ruin_root]:
   for n in collection.get_children():
    if n is Node3D:n.position.y=height_at(n.position.x,n.position.z)
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
@@ -1254,6 +1300,9 @@ func divine(p:Vector3):
  var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago"] else 9.0
  if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=Sim.LIMIT:
   hint.text="Limite della popolazione raggiunto."
+  return
+ if power=="Foresta" and scarred(p):
+  hint.text="Terreno danneggiato: attendi la rigenerazione."
   return
  if power=="Resurrezione" and sim.dead.is_empty():
   hint.text="Nessun abitante da resuscitare."
@@ -1293,13 +1342,7 @@ func divine(p:Vector3):
     sim.remember(a,"Il Creatore mi ha guarito.")
   "Meteorite":
    color=Color("eb713b")
-   meteor(p)
-   for a in near:
-    a.health-=80
-    if a.health<=0:sim.die(a,"meteorite")
-   v.food=maxf(0,v.food-60)
-   if v.houses>2:v.houses-=1;sync_houses(clan)
-   alter_ground(p,-1.5,4)
+   meteor(p,true)
   "Conoscenza":v.knowledge+=65
   "Pace":sim.peace=minf(100,sim.peace+22)
   "Mutazione":
@@ -1327,19 +1370,15 @@ func divine(p:Vector3):
   "Fulmine":
    lightning(p)
    color=Color("ceebff")
-   for a in near:a.health=maxf(1,a.health-35)
+   disaster(p,"Fulmine",2.4,70.0,0.0,0.0)
   "Tsunami":
    wave(p)
    color=Color("7fc9dd")
-   for a in near:a.health=maxf(1,a.health-50)
-   v.food*=.55
+   disaster(p,"Tsunami",11.0,90.0,0.0,0.0)
   "Vulcano":
-   alter_ground(p,5,7)
-   meteor(p)
    impact_cloud(p)
    color=Color("e67f43")
-   v.food*=.7
-   for a in near:a.health=maxf(1,a.health-65)
+   disaster(p,"Vulcano",9.0,110.0,5.0,7.0)
   "Resurrezione":
    if not sim.dead.is_empty():
     var old=sim.dead.pop_back()
@@ -1350,8 +1389,8 @@ func divine(p:Vector3):
      sim.remember(a,"Sono tornato dalla morte.")
      create_actor(a)
      actors[a.id].node.position=p
-  "Montagna":alter_ground(p,3.8,6)
-  "Lago":alter_ground(p,-4.8,6)
+  "Montagna":disaster(p,"Montagna",5.0,35.0,3.8,6.0)
+  "Lago":disaster(p,"Lago",6.0,80.0,-4.8,6.0)
   "Profeta":
    for a in near:
     a.role="Profeta"
@@ -1667,7 +1706,7 @@ func refresh():
  if dialogue_view!=null:refresh_dialogue(a)
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
  if social_summary!=null:social_summary.text="Vita sociale: %d azioni · %d aiuti · %d incontri"%[sim.social_actions,sim.aid_actions,sim.meet_actions]
- if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate"%[sim.shipments.size(),sim.trades]
+ if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate\nEdifici distrutti: %d · macerie: %d"%[sim.shipments.size(),sim.trades,destroyed_total,ruins.size()]
  if a.is_empty():
   var lines=[]
   for i in range(2):
@@ -1920,6 +1959,14 @@ func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
+ d["house_sites"]=house_sites
+ d["ruins"]=ruins
+ d["scars"]=scars
+ d["world_centers"]=world_centers
+ d["destroyed_total"]=destroyed_total
+ d["pending_meteors"]=[]
+ for e in effects:
+  if e.kind=="meteor" and e.get("destructive",false):d.pending_meteors.append([e.dest.x,e.dest.z])
  d["positions"]={}
  for id in actors:
   var p:Vector3=actors[id].node.position
@@ -1972,7 +2019,15 @@ func load_path(p:String)->bool:
   for person in sim.people:person.task="";person.task_stage="Decide"
  deformation=data.get("deformation",[])
  planted=data.get("planted",[])
+ house_sites=data.get("house_sites",[[],[]])
+ if not house_sites is Array or house_sites.size()!=2:house_sites=[[],[]]
+ ruins=data.get("ruins",[])
+ scars=data.get("scars",[])
+ world_centers=data.get("world_centers",[])
+ destroyed_total=int(data.get("destroyed_total",0))
  reset_visuals()
+ for pending in data.get("pending_meteors",[]):
+  if pending is Array and pending.size()==2:meteor(ground(float(pending[0]),float(pending[1])),true)
  var cam=data.get("camera",[])
  if cam.size()==5:
   focus=Vector3(float(cam[0]),0,float(cam[1]))
@@ -2126,6 +2181,7 @@ func self_test():
  print("ONBOARDING_TEST complete=",not onboarding.visible)
  if not test_autonomy():failed=true
  if not test_spatial_meal():failed=true
+ if not test_destruction():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
@@ -2230,7 +2286,7 @@ func rebuild_roads():
  for i in range(2):
   for j in range(houses[i].size()):
    var p=centers[i]
-   var q=house_location(i,j)
+   var q:Vector3=houses[i][j].node.position
    var dir=Vector2(q.x-p.x,q.z-p.z)
    if dir.length()<1:continue
    var perpendicular=dir.normalized().orthogonal()*.25
@@ -2318,6 +2374,7 @@ func rebuild_farms():
   if sim.villages[i].era<2:continue
   for j in range(2):
    var p=land_near(centers[i].x+(5.0 if i==0 else -5.0)+j*(2.5 if i==0 else -2.5),centers[i].z+5.8)
+   if blocked_site(p):continue
    farm_points[i].append(p)
    var n=asset(farms_root,"farm",j,p,.65,0)
    if n==null:
@@ -2881,7 +2938,7 @@ func rebuild_meadow():
  for i in range(12500):
   if transforms.size()>=4200:break
   var p=ground(local.randf_range(-49,49),local.randf_range(-49,49))
-  if p.y<SEA+.7 or p.y>7.3 or not far_village(p,4.0) or not away_from_route(p,.8):continue
+  if p.y<SEA+.7 or p.y>7.3 or not far_village(p,4.0) or not away_from_route(p,.8) or scarred(p):continue
   var scale_value=local.randf_range(.55,1.35)
   var basis=Basis(Vector3.UP,local.randf()*TAU).scaled(Vector3.ONE*scale_value)
   transforms.append(Transform3D(basis,p))
@@ -3099,7 +3156,8 @@ func task_destination(a:Dictionary)->Vector3:
  var offset=Vector3(cos(angle),0,sin(angle))
  match a.task:
   "sleep","heal":
-   var h=house_location(a.clan,int(a.id)%maxi(1,houses[a.clan].size()))
+   if houses[a.clan].is_empty():return c+offset*2.0
+   var h:Vector3=houses[a.clan][int(a.id)%houses[a.clan].size()].node.position
    return h+(c-h).normalized()*2.0
   "eat":return c+offset*2.1
   "farm":
@@ -3280,3 +3338,128 @@ func test_spatial_meal()->bool:
  print("SPATIAL_MEAL_TEST ",passed," travelled=",travelled," worked=",worked," hunger=",a.hunger," completed=",a.tasks_done)
  sim.spatial_autonomy=false
  return passed
+
+func flat_dist(a:Vector3,b:Vector3)->float:
+ return Vector2(a.x-b.x,a.z-b.z).length()
+
+func occupied_site(clan:int,q:Vector3)->bool:
+ for site in house_sites[clan]:
+  if Vector2(q.x-float(site.x),q.z-float(site.z)).length()<2.7:return true
+ return false
+
+func blocked_site(p:Vector3)->bool:
+ for old in ruins:
+  if Vector2(p.x-float(old.x),p.z-float(old.z)).length()<2.0:return true
+ return scarred(p)
+
+func scarred(p:Vector3)->bool:
+ for mark in scars:
+  if sim.day<int(mark.until) and Vector2(p.x-float(mark.x),p.z-float(mark.z)).length()<float(mark.r):return true
+ return false
+
+func rebuild_ruins():
+ if not is_instance_valid(ruin_root):return
+ for child in ruin_root.get_children():
+  ruin_root.remove_child(child)
+  child.queue_free()
+ for old in ruins:
+  var pos=ground(float(old.x),float(old.z))
+  if pos.y<SEA+.1:continue
+  var n=Node3D.new()
+  ruin_root.add_child(n)
+  n.position=pos
+  block(n,Color("443d36"),Vector3(0,.04,0),Vector3(2.1,.08,1.8))
+  for j in range(9):
+   var angle=float(j)*2.39996
+   var q=Vector3(cos(angle)*(.35+.08*j),.15,sin(angle)*(.35+.08*j))
+   var chunk=block(n,Color("74675a").lerp(Color("a79a85"),float(j%3)/3),q,Vector3(.38,.19+.07*(j%3),.32))
+   chunk.rotation=Vector3(.12*j,angle,.15)
+  var post=block(n,Color("4b3930"),Vector3(-.7,.38,.52),Vector3(.16,.76,.18))
+  post.rotation.z=.33
+
+func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:float,terrain_radius:float):
+ var losses=[0,0]
+ var destroyed=0
+ var dead_count=0
+ for i in range(2):
+  for j in range(houses[i].size()-1,-1,-1):
+   var home=houses[i][j]
+   var pos:Vector3=home.node.position
+   var dist=flat_dist(pos,p)
+   if dist>radius+0.85:continue
+   if kind=="Fulmine" and dist>2.4:continue
+   ruins.append({"x":pos.x,"z":pos.z,"clan":i,"until":sim.day+14})
+   house_sites[i].remove_at(j)
+   home.node.hide()
+   home.node.queue_free()
+   houses[i].remove_at(j)
+   losses[i]+=1
+   destroyed+=1
+   spark(pos+Vector3.UP*.4,Color("d4a16f"),1.1)
+  if losses[i]>0:
+   var v=sim.villages[i]
+   v.houses=house_sites[i].size()
+   v.wood=maxf(0,float(v.wood)-losses[i]*8)
+   v.food=maxf(0,float(v.food)-losses[i]*10)
+   v["rebuild_after"]=sim.day+7
+   for a in sim.people:
+    if a.clan==i:
+     a.mood=maxf(0,a.mood-8)
+     sim.remember(a,"Il nostro villaggio è stato colpito da "+kind+".")
+ for a in sim.people.duplicate():
+  if not actors.has(a.id):continue
+  var dist=flat_dist(actors[a.id].node.position,p)
+  if dist>radius:continue
+  a.health-=damage*(1.0-.65*dist/radius)
+  if a.health<=0:
+   sim.die(a,kind.to_lower())
+   dead_count+=1
+  else:
+   sim.adjust_trust(a,-10)
+   sim.remember(a,"Sono sopravvissuto a "+kind+".")
+ scars.append({"x":p.x,"z":p.z,"r":radius,"until":sim.day+28})
+ if scars.size()>256:scars.pop_front()
+ for child in scenery.get_children():
+  if child.has_meta("vegetation") and flat_dist(child.position,p)<=radius:
+   child.hide()
+   child.queue_free()
+ for q in timber_points.duplicate():
+  if flat_dist(q,p)<=radius:timber_points.erase(q)
+ for row in planted.duplicate():
+  if Vector2(p.x-float(row.x),p.z-float(row.z)).length()<=radius:planted.erase(row)
+ destroyed_total+=destroyed
+ if terrain_radius>0:alter_ground(p,terrain_delta,terrain_radius)
+ rebuild_ruins()
+ rebuild_roads()
+ rebuild_farms()
+ rebuild_meadow()
+ nav_dirty=true
+ sim.log_event("%s: %d edifici distrutti, %d vittime."%[kind,destroyed,dead_count])
+ apply_changes()
+ refresh()
+ notify_event(kind.to_upper(),"%d edifici distrutti · %d vittime"%[destroyed,dead_count])
+
+func test_destruction()->bool:
+ deformation.clear()
+ new_world(47,0)
+ if houses[0].is_empty() or houses[1].is_empty():return false
+ var target:Vector3=houses[0][0].node.position
+ var other_count=houses[1].size()
+ var height=height_at(target.x,target.z)
+ unlimited=true
+ power="Meteorite"
+ divine(target)
+ if not ruins.is_empty():return false
+ update_effects(1.2)
+ if destroyed_total<1 or ruins.is_empty() or houses[1].size()!=other_count or height_at(target.x,target.z)>=height-2:return false
+ for home in houses[0]:
+  if flat_dist(home.node.position,target)<7:return false
+ var expected=destroyed_total
+ var file="user://genesis47_disaster_test.json"
+ if not save_path(file,false) or not load_path(file):return false
+ if destroyed_total!=expected or ruins.is_empty() or houses[1].size()!=other_count:return false
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
+ print("DESTRUCTION_TEST destroyed=",destroyed_total," ruins=",ruins.size()," untouched_other=",other_count)
+ power="Osserva"
+ return true
