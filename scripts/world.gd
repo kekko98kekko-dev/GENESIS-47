@@ -59,6 +59,8 @@ var cursor:MeshInstance3D
 var weather_timer=0.0
 var test_mode=false
 var visual_time=0.0
+var roads_root:Node3D
+var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
 var show_labels=false
@@ -242,6 +244,22 @@ func setup_environment():
  camera.fov=45
  camera.far=300
  camera.near=.12
+ precipitation=CPUParticles3D.new()
+ add_child(precipitation)
+ precipitation.emitting=false
+ precipitation.amount=600
+ precipitation.lifetime=1.65
+ precipitation.emission_shape=CPUParticles3D.EMISSION_SHAPE_BOX
+ precipitation.emission_box_extents=Vector3(18,1,18)
+ precipitation.direction=Vector3(.1,-1,.04)
+ precipitation.spread=8
+ precipitation.gravity=Vector3(0,-12,0)
+ precipitation.initial_velocity_min=7
+ precipitation.initial_velocity_max=10
+ var drop=BoxMesh.new()
+ drop.size=Vector3(.027,.32,.027)
+ drop.material=material(Color("b7d8df"),.65,.1)
+ precipitation.mesh=drop
  audio=AudioStreamPlayer.new()
  add_child(audio)
  if not test_mode and not "--capture" in OS.get_cmdline_user_args():
@@ -350,6 +368,13 @@ func make_terrain():
   add_child(sea)
   sea.position.y=SEA
   sea.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ var depth_image=Image.create(128,128,false,Image.FORMAT_RGB8)
+ for dz in range(128):
+  for dx in range(128):
+   var h=height_at(float(dx)/127*106-53,float(dz)/127*106-53)
+   var v=clampf((h+5.0)/20.0,0,1)
+   depth_image.set_pixel(dx,dz,Color(v,v,v))
+ sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
 
 func new_world(seed_value:int,which:int):
  sim.start(seed_value,which)
@@ -363,7 +388,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -387,11 +412,13 @@ func reset_visuals():
  people_root=Node3D.new()
  animals_root=Node3D.new()
  effects_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root]:add_child(n)
+ roads_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root]:add_child(n)
  for i in range(2):
   make_hub(i)
   sync_houses(i)
- for i in range(250):
+ rebuild_roads()
+ for i in range(310):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9):
    make_tree(p,rng.randf_range(2.3,4.8),i)
@@ -464,7 +491,7 @@ func make_hub(i:int):
  villages_root.add_child(n)
  n.position=centers[i]
  hubs.append(n)
- cone(n,Color("c2ad83"),Vector3(0,.025,0),2.0,.12,2.0,24)
+ cone(n,Color("978668"),Vector3(0,.025,0),1.85,.12,1.85,24)
  if asset(n,"prop",i,Vector3(0,.1,0),1.0)==null:
   for j in range(7):
    var a=j*TAU/7
@@ -474,8 +501,8 @@ func make_hub(i:int):
  n.add_child(l)
  l.position.y=1.25
  l.light_color=Color("ffc18b")
- l.light_energy=.8
- l.omni_range=6
+ l.light_energy=.25
+ l.omni_range=4.5
  var flag=Color("6eb5a1") if i==0 else Color("d0a068")
  cone(n,Color("80684d"),Vector3(-1.6,1.6,0),.045,3.2,.035,7)
  block(n,flag,Vector3(-1.17,2.65,0),Vector3(.85,.53,.045))
@@ -553,6 +580,7 @@ func sync_houses(i:int):
    houses[i][j]={"node":make_house(i,j,v.era),"era":v.era}
   else:
    houses[i].append({"node":make_house(i,j,v.era),"era":v.era})
+ rebuild_roads()
 
 func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  var skin=Color("67ac97") if a.clan==0 else Color("c89c62")
@@ -736,6 +764,9 @@ func _process(delta:float):
    focus=focus.lerp(n.position,clampf(delta*6,0,1))
    update_camera()
  else:cursor.hide()
+ if is_instance_valid(precipitation):
+  precipitation.position=Vector3(focus.x, maxf(focus.y+10,14),focus.z)
+  precipitation.emitting=sim.weather_name=="Pioggia" and speed>0 and distance<65
  update_effects(delta)
 
 func _unhandled_input(event:InputEvent):
@@ -870,6 +901,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
   for n in collection.get_children():
    if n is Node3D:n.position.y=height_at(n.position.x,n.position.z)
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
+ rebuild_roads()
 
 func divine(p:Vector3):
  if power=="Osserva":return
@@ -1342,6 +1374,25 @@ func capture_preview():
  await RenderingServer.frame_post_draw
  var image=get_viewport().get_texture().get_image()
  var err=image.save_png("res://preview.png")
+ hud.show()
+ focus=centers[0]
+ distance=22
+ pitch=.58
+ selected=sim.people[0].id if not sim.people.is_empty() else -1
+ refresh()
+ update_camera()
+ await get_tree().create_timer(.4).timeout
+ await RenderingServer.frame_post_draw
+ get_viewport().get_texture().get_image().save_png("res://preview-gameplay.png")
+ hud.hide()
+ if actors.has(selected):
+  focus=actors[selected].node.position
+  distance=4.8
+  pitch=.30
+  update_camera()
+  await get_tree().create_timer(.4).timeout
+  await RenderingServer.frame_post_draw
+  get_viewport().get_texture().get_image().save_png("res://preview-creature.png")
  print("CAPTURE ",err)
  get_tree().quit(0 if err==OK else 1)
 
@@ -1380,3 +1431,42 @@ func show_history():
  for row in sim.history.slice(maxi(0,sim.history.size()-30)):
   lines.append("%03d                   %03d                  %d%%"%[int(row.day),int(row.population),int(row.peace)])
  open_dialog("STORIA DEL MONDO","\n".join(lines))
+
+func rebuild_roads():
+ if not is_instance_valid(roads_root) or centers.size()!=2:return
+ for child in roads_root.get_children():
+  roads_root.remove_child(child)
+  child.queue_free()
+ var st=SurfaceTool.new()
+ st.begin(Mesh.PRIMITIVE_TRIANGLES)
+ var triangle_count=0
+ for i in range(2):
+  for j in range(houses[i].size()):
+   var p=centers[i]
+   var q=house_location(i,j)
+   var dir=Vector2(q.x-p.x,q.z-p.z)
+   if dir.length()<1:continue
+   var perpendicular=dir.normalized().orthogonal()*.38
+   var segments=maxi(3,ceili(dir.length()/0.7))
+   for k in range(segments):
+    var a=p.lerp(q,float(k)/segments)
+    var b=p.lerp(q,float(k+1)/segments)
+    var left_a=ground(a.x+perpendicular.x,a.z+perpendicular.y)+Vector3.UP*.13
+    var right_a=ground(a.x-perpendicular.x,a.z-perpendicular.y)+Vector3.UP*.13
+    var left_b=ground(b.x+perpendicular.x,b.z+perpendicular.y)+Vector3.UP*.13
+    var right_b=ground(b.x-perpendicular.x,b.z-perpendicular.y)+Vector3.UP*.13
+    if minf(minf(left_a.y,right_a.y),minf(left_b.y,right_b.y))<SEA+.1:continue
+    for v in [left_a,right_a,left_b,right_a,right_b,left_b]:
+     st.add_vertex(v)
+    triangle_count+=2
+ if triangle_count==0:return
+ st.generate_normals()
+ var mi=MeshInstance3D.new()
+ mi.mesh=st.commit()
+ var mat=StandardMaterial3D.new()
+ mat.albedo_color=Color("b59c74")
+ mat.roughness=1.0
+ mat.cull_mode=BaseMaterial3D.CULL_DISABLED
+ mi.material_override=mat
+ mi.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ roads_root.add_child(mi)

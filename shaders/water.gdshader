@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 varying vec3 wp;
+uniform sampler2D height_map : filter_linear, repeat_disable;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float n2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 void vertex(){
@@ -16,6 +17,15 @@ void fragment(){
  ALBEDO=mix(vec3(.012,.071,.102),vec3(.027,.164,.18),q);
  ALBEDO+=vec3(.025,.045,.046)*pow(r*s,4.0);
  ALBEDO=mix(ALBEDO,vec3(.19,.35,.39),f*.45);
+ vec2 hu=(p+vec2(53.0))/106.0;
+ if(hu.x>0.0 && hu.x<1.0 && hu.y>0.0 && hu.y<1.0){
+  float h=texture(height_map,hu).r*20.0-5.0;
+  float d=max(0.0,-.4-h);
+  float shoal=1.0-smoothstep(0.0,2.1,d);
+  ALBEDO=mix(ALBEDO,vec3(.045,.31,.27),shoal*.68);
+  float foam=1.0-smoothstep(.03,.22,abs(d-(.19+.10*sin(TIME*1.2+q*11.0))));
+  ALBEDO=mix(ALBEDO,vec3(.63,.76,.69),foam*(.5+.5*q));
+ }
  ROUGHNESS=.32;
  METALLIC=.05;
  NORMAL_MAP=vec3(.5+.035*(r-.5),.5+.035*(s-.5),1.0);

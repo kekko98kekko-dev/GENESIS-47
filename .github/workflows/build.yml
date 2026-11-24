@@ -55,20 +55,20 @@ jobs:
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
           cp README.md ASSET-CREDITS.md build/
-          if [ -f preview.png ]; then cp preview.png build/; fi
+          for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
       - uses: actions/upload-artifact@v4
         with:
           name: GENESIS-47-Windows
           path: build/
-          retention-days: 7
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-logs
           path: |
             *.log
-            preview.png
+            preview*.png
             assets/generated/catalog.json
           retention-days: 7
   windows-smoke:
