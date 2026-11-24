@@ -28,6 +28,8 @@ var history:Array=[]
 var decisions:Array=[]
 var diplomacy_state="Neutralità"
 var autonomous_decisions=0
+var extinction_noted=false
+var legacy_cycles=0
 func start(s:int,m:int):
  seed_value=s
  mode=m
@@ -51,6 +53,8 @@ func start(s:int,m:int):
  decisions.clear()
  diplomacy_state="Neutralità"
  autonomous_decisions=0
+ extinction_noted=false
+ legacy_cycles=0
  weather_name="Sereno"
  season="Primavera"
  for i in range(2):
@@ -70,6 +74,9 @@ func birth(c:int,parents:Array)->Dictionary:
  var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0}
  next_id+=1
  people.append(a)
+ if extinction_noted:
+  extinction_noted=false
+  log_event("Una nuova scintilla: la vita ritorna.")
  changes.append({"kind":"birth","id":a.id})
  return a
 func find(id:int)->Dictionary:
@@ -222,6 +229,10 @@ func daily():
  if day%5==0:
   history.append({"day":day,"population":people.size(),"peace":peace})
   if history.size()>150:history.pop_front()
+ if day%60==0 and not people.is_empty() and mode==0 and villages.any(func(v):return v.era>=6):
+  legacy_cycles+=1
+  var theme=["Una nuova filosofia","Una scuola di astronomia","Un nuovo patto sociale","Una ricerca sull’origine della vita"][legacy_cycles%4]
+  log_event("Ciclo del futuro %d · %s"%[legacy_cycles,theme])
  if ended!="":award("Un destino scritto")
  if people.size()>=60:award("Un mondo vivo")
  if trades>=5:award("La via del commercio")
@@ -235,6 +246,12 @@ func award(name_value:String):
   log_event("Traguardo: "+name_value)
 func CLANs_name(i:int)->String:return CLANS[i]
 func check_ending():
+ if mode==0:
+  ended=""
+  if people.is_empty() and not extinction_noted:
+   extinction_noted=true
+   log_event("Estinzione: il mondo continua. Il Creatore può generare nuova vita.")
+  return
  if ended!="":return
  if people.is_empty():ended="ESTINZIONE — Il cielo è rimasto solo."
  elif mode==1 and day>=90 and peace>=70 and villages[0].era>=3 and villages[1].era>=3:ended="L'ALLEANZA — Due popoli, un futuro condiviso."
@@ -261,7 +278,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -299,6 +316,9 @@ func import_state(d:Dictionary)->bool:
  decisions=d.get("decisions",[])
  diplomacy_state=str(d.get("diplomacy","Neutralità"))
  autonomous_decisions=int(d.get("autonomous_decisions",0))
+ extinction_noted=bool(d.get("extinction_noted",false))
+ legacy_cycles=int(d.get("legacy_cycles",0))
+ if mode==0:ended=""
  rng.seed=seed_value
  rng.state=int(str(d.rng))
  changes.clear()
@@ -354,7 +374,7 @@ func advance_absence(elapsed_seconds:float)->int:
  var amount=clampi(int(elapsed_seconds/180.0),0,60)
  var advanced=0
  for i in range(amount):
-  if ended!="" or people.is_empty():break
+  if mode!=0 and (ended!="" or people.is_empty()):break
   daily()
   advanced+=1
  if advanced>0:log_event("Durante la tua assenza sono trascorsi "+str(advanced)+" giorni.")

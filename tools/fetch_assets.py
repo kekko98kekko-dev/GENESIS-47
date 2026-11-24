@@ -20,8 +20,8 @@ def safe_call(fn,*args):
     try:fn(*args)
     except Exception as e:print("ASSET WARNING:",str(e),file=sys.stderr)
 def tree(repo):
-    data=json.loads(get(f"https://api.github.com/repos/{repo}/git/trees/main?recursive=1"))
-    return data["sha"],[x["path"] for x in data["tree"] if x.get("type")=="blob"]
+    data=json.loads(pathlib.Path("tools/asset_manifest.json").read_text())[repo]
+    return data["ref"],data["paths"]
 # Quaternius showcase: converted GLB models, CC0 per upstream pack licenses.
 def showcase():
     repo="trebeljahr/quaternius-showcase"
@@ -107,3 +107,5 @@ for f in (showcase,creatures):safe_call(f)
 if not catalog["tree"] or not catalog["rock"]:safe_call(kenney)
 (root/"catalog.json").write_text(json.dumps(catalog))
 print("ASSET COUNTS", {k:len(v) for k,v in catalog.items()})
+if sum(map(len,catalog.values()))<60 or any(not v for v in catalog.values()):
+    raise SystemExit("Required art missing: refusing to publish a visually degraded build.")

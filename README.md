@@ -21,3 +21,6 @@ Atlante ricercabile, autosalvataggio separato e recupero copia precedente, impos
 
 ## Gioco con AI portatile
 Apri GENESIS47.exe per giocare subito offline. Per il modello linguistico reale, avvia GIOCA-CON-AI.bat: al primo avvio scarica 491 MB del modello Qwen2.5-0.5B-Instruct-GGUF (Apache-2.0), verifica SHA256 e avvia llama.cpp b6000 (MIT), incluso nel pacchetto. Nessun account o servizio a pagamento; non richiede amministratore o Ollama. Il server ascolta soltanto su 127.0.0.1 ed è terminato alla chiusura del gioco. Il modello piccolo può produrre risposte imperfette. La simulazione offline non dipende dall’AI.
+
+## Eternità (modalità principale)
+Nessun limite di giorni o generazioni. Raggiungere l’era finale non arresta il gioco; i cicli del futuro continuano. Se tutte le creature muoiono, il tempo continua e puoi creare nuovi abitanti con Vita. Le tre sfide narrative hanno epiloghi facoltativi. Il limite tecnico è 160 abitanti contemporanei, non la durata.

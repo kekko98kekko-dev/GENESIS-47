@@ -1382,8 +1382,11 @@ func refresh():
   details.text="\n\n".join(lines)+"\n\nClicca una creatura per conoscerla."
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),str(a.parents),str(a.partner),a.goal,"\n".join(a.memories)])
- objective.text=["ETERNITÀ  —  Il destino non è scritto.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
+ objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
+ if sim.mode==0:
+  if sim.people.is_empty():objective.text="ETERNITÀ — Mondo disabitato. Usa Vita per ricominciare."
+  elif sim.legacy_cycles>0:objective.text+="  ·  Cicli del futuro: "+str(sim.legacy_cycles)
  if sim.ended!="":objective.text=sim.ended
  chronicle.text="\n".join(sim.events.slice(0,12))
 
@@ -1396,9 +1399,10 @@ func open_welcome():
  dlg.cancel_button_text="Continua"
  var box=VBoxContainer.new()
  dlg.add_child(box)
- text_label(box,"Hai creato la vita. Nessuno ti promette che ti venererà.",16)
+ text_label(box,"Eternità: nessun finale obbligatorio, nemmeno dopo l’estinzione.",16)
+ text_label(box,"Oppure scegli una sfida narrativa facoltativa.",14)
  var option=OptionButton.new()
- for s in ["Eternità — sandbox","L'alleanza — pace","Oltre il cielo — contatto","L'ultima scintilla — sopravvivenza"]:option.add_item(s)
+ for s in ["Eternità — mondo infinito","L'alleanza — pace","Oltre il cielo — contatto","L'ultima scintilla — sopravvivenza"]:option.add_item(s)
  box.add_child(option)
  var seed_input=LineEdit.new()
  seed_input.text=str(rng.randi_range(1,999999))
@@ -1672,6 +1676,12 @@ func load_path(p:String)->bool:
 
 func self_test():
  var failed=false
+ var asset_count=0
+ for kind in ["tree","rock","house","industrial","future","animal","creature","prop","farm","early","cart"]:
+  var n=art_catalog.get(kind,[]).size()
+  asset_count+=n
+  if n==0:failed=true
+ if asset_count<60:failed=true
  for mode in [0,1,2,3]:
   var t=Sim.new()
   t.start(47+mode,mode)
@@ -1703,6 +1713,18 @@ func self_test():
  if not test_sim.adopt_intention(candidate,"RICERCA","Scelgo di studiare.") or test_sim.adopt_intention(candidate,"INVALIDO",""):failed=true
  var count_days=test_sim.advance_absence(1800)
  if count_days!=10 or test_sim.day!=10 or test_sim.autonomous_decisions!=1:failed=true
+ var eternal=Sim.new()
+ eternal.start(47,0)
+ for i in range(3000):eternal.daily()
+ if eternal.ended!="" or eternal.day!=3000:failed=true
+ for inhabitant in eternal.people.duplicate():eternal.die(inhabitant,"test")
+ for i in range(10):eternal.daily()
+ if eternal.ended!="" or eternal.day!=3010 or not eternal.people.is_empty():failed=true
+ eternal.birth(0,[])
+ eternal.birth(0,[])
+ eternal.daily()
+ if eternal.people.is_empty() or eternal.ended!="" or eternal.day!=3011:failed=true
+ print("ETERNITY_TEST day=",eternal.day," population=",eternal.people.size()," ending=",eternal.ended)
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
