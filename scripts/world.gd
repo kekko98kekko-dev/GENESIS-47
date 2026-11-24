@@ -212,7 +212,7 @@ func setup_environment():
  env.sky=sky
  env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
  env.ambient_light_color=Color("d2e2e7")
- env.ambient_light_energy=.72
+ env.ambient_light_energy=.40
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
  env.fog_density=.0018
@@ -223,7 +223,7 @@ func setup_environment():
  add_child(sun)
  sun.rotation_degrees=Vector3(-53,-37,0)
  sun.light_color=Color("fff0cc")
- sun.light_energy=1.55
+ sun.light_energy=.90
  sun.shadow_enabled=true
  sun.directional_shadow_max_distance=115
  camera=Camera3D.new()
@@ -687,9 +687,9 @@ func _process(delta:float):
     else:animal.target=animal.center
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.63+.48*sin(phase*TAU+.8),.16,1)
-  sun.light_energy=.30+daylight*1.3
+  sun.light_energy=.14+daylight*.83
   sun.light_color=Color("b3c9ff").lerp(Color("fff1d1"),daylight)
-  env.ambient_light_energy=.28+daylight*.44
+  env.ambient_light_energy=.12+daylight*.31
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
   sky_material.sky_horizon_color=Color("495478").lerp(Color("cfdfd4"),daylight)
   env.fog_light_color=Color("374f68").lerp(Color("afc8cf"),daylight)

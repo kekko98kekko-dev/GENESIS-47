@@ -32,7 +32,9 @@ def showcase():
       "prop":("medieval_village_pack/",["Well","Barrel","Cart","MarketStand_1","Bonfire_Lit"]),
       "animal":("animals_pack/",["Deer","Fox","Sheep","Rabbit","Cow","Horse"]),
       "industrial":("buildings_pack_2/",[]),
-      "future":("cyberpunk_pack/",[])}
+      "future":("ultimate_space_pack/",["Base_Large-transformed","Building_L-transformed","GeodesicDome-transformed","House_Cylinder-transformed","House_Long-transformed","House_Single-transformed"]),
+      "tree":("nature_pack/",["BirchTree_1","BirchTree_2","CommonTree_1","CommonTree_2","CommonTree_3","PineTree_1","PineTree_2","PineTree_3"]),
+      "rock":("nature_pack/",["Rock_1","Rock_2","Rock_3","Rock_4","Rock_Moss_1","Rock_Moss_2"])}
     for kind,(folder,names) in groups.items():
         candidates=[p for p in paths if p.startswith(prefix+folder) and p.lower().endswith(".glb")]
         if names:candidates=[p for p in candidates if pathlib.PurePosixPath(p).stem in names]
@@ -98,6 +100,7 @@ def creatures():
             target.write_text(json.dumps(obj))
             add("creature",target)
         except Exception as e:print("CREATURE WARNING",e)
-for f in (showcase,kenney,creatures):safe_call(f)
+for f in (showcase,creatures):safe_call(f)
+if not catalog["tree"] or not catalog["rock"]:safe_call(kenney)
 (root/"catalog.json").write_text(json.dumps(catalog))
 print("ASSET COUNTS", {k:len(v) for k,v in catalog.items()})
