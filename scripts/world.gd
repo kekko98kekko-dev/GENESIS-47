@@ -122,6 +122,10 @@ var route_root:Node3D
 var terrain_revision=0
 var selected_marker:Label3D
 var route_status:Label
+var dialogue_view:RichTextLabel
+var dialogue_heading:Label
+var trust_bar:ProgressBar
+var settlement_root:Node3D
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -474,7 +478,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -507,7 +511,8 @@ func reset_visuals():
  ambient_root=Node3D.new()
  civic_root=Node3D.new()
  route_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root]:add_child(n)
+ settlement_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -516,6 +521,7 @@ func reset_visuals():
  rebuild_roads()
  rebuild_farms()
  rebuild_civic()
+ rebuild_settlement_details()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9) and away_from_route(p,1.65):
@@ -773,6 +779,17 @@ func create_actor(a:Dictionary):
  name_tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
  name_tag.hide()
  activity_labels[a.id]=name_tag
+ var signet=Label3D.new()
+ parent.add_child(signet)
+ signet.position=Vector3(0,.94,0)
+ signet.text="◆"
+ signet.font_size=25
+ signet.outline_size=5
+ signet.pixel_size=.005
+ signet.modulate=Color("b9f4dd") if a.clan==0 else Color("ffdb9b")
+ signet.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ signet.hide()
+ actors[a.id]["signet"]=signet
 
 func apply_changes():
  for e in sim.changes:
@@ -791,6 +808,7 @@ func apply_changes():
    "house","era":
     sync_houses(int(e.clan))
     rebuild_farms()
+    rebuild_settlement_details()
    "trade":spawn_caravan(int(e.id))
    "trade_arrived":remove_caravan(int(e.id))
    "project":rebuild_civic()
@@ -913,7 +931,10 @@ func _process(delta:float):
     for i in range(2):
      r.legs[i].rotation.x=sin(r.phase+i*PI)*(.46 if moving else .025)
      r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*(.32 if moving else .045)
-   n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)
+   n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
+   if is_instance_valid(r.get("signet")):
+    r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
+    r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -942,7 +963,7 @@ func _process(delta:float):
   cursor.position=n.position+Vector3(0,.045,0)
   selected_marker.position=n.position+Vector3.UP*1.42
   selected_marker.text="◆"
-  selected_marker.visible=distance<35 and not photo_mode
+  selected_marker.visible=distance>=20 and distance<35 and not photo_mode
   if following:
    focus=focus.lerp(n.position,clampf(delta*6,0,1))
    update_camera()
@@ -1019,7 +1040,9 @@ func _unhandled_input(event:InputEvent):
    distance=minf(125,distance*1.16)
    update_camera()
   elif event.button_index==MOUSE_BUTTON_LEFT:
-   if power=="Osserva":select_at(event.position)
+   if power=="Osserva":
+    select_at(event.position)
+    if event.double_click and actors.has(selected):follow_person(selected)
    else:
     var p=ground_at(event.position)
     if p.y>SEA-.5 and absf(p.x)<51 and absf(p.z)<51:divine(p)
@@ -1151,6 +1174,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
  rebuild_roads()
  rebuild_trade_route()
+ rebuild_settlement_details()
 
 func divine(p:Vector3):
  if power=="Osserva":return
@@ -1270,6 +1294,10 @@ func divine(p:Vector3):
     create_actor(a)
     actors[a.id].node.position=p
   "Carestia":v.food*=.22
+ for a in near:
+  if sim.find(int(a.id)).is_empty():continue
+  if power in ["Guarigione","Provviste","Pace","Pioggia"]:sim.adjust_trust(a,5)
+  elif power in ["Meteorite","Fulmine","Tsunami","Vulcano","Carestia"]:sim.adjust_trust(a,-12)
  spark(p,color,1.5)
  if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
@@ -1419,7 +1447,8 @@ func setup_ui():
  selected_status.modulate=Color("a7d9bc")
  mood_bar=small_meter(inspect,"Umore",Color("79bda2"))
  hunger_bar=small_meter(inspect,"Sazietà",Color("e1bc78"))
- details=rich(inspect,265)
+ trust_bar=small_meter(inspect,"Fiducia",Color("9eb9ed"))
+ details=rich(inspect,235)
  details.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var line=HBoxContainer.new()
  inspect.add_child(line)
@@ -1437,6 +1466,11 @@ func setup_ui():
  button(line,"Preferito",func():
   var a=sim.find(selected)
   if not a.is_empty():a.favorite=not a.favorite;refresh())
+ var personal=HBoxContainer.new()
+ inspect.add_child(personal)
+ button(personal,"Biografia",show_biography)
+ button(personal,"Famiglia",show_family)
+ button(personal,"Rinomina",rename_selected)
  var archive=VBoxContainer.new()
  archive.name="Mondo"
  inspector_tabs.add_child(archive)
@@ -1461,7 +1495,10 @@ func setup_ui():
  var chat=VBoxContainer.new()
  chat.name="Dialogo"
  inspector_tabs.add_child(chat)
- text_label(chat,"PARLA CON LA VITA",15)
+ dialogue_heading=text_label(chat,"PARLA CON LA VITA",15)
+ dialogue_view=rich(chat,225)
+ dialogue_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ dialogue_view.scroll_following=true
  input=LineEdit.new()
  input.placeholder_text="Scrivi al tuo universo..."
  input.max_length=400
@@ -1535,6 +1572,9 @@ func refresh():
   hunger_bar.value=sim.energy if a.is_empty() else 100.0-float(a.hunger)
   mood_bar.get_parent().visible=not a.is_empty()
   hunger_bar.get_parent().visible=not a.is_empty()
+  trust_bar.value=float(a.get("trust",50))
+  trust_bar.get_parent().visible=not a.is_empty()
+ if dialogue_view!=null:refresh_dialogue(a)
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
  if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate"%[sim.shipments.size(),sim.trades]
  if a.is_empty():
@@ -1546,6 +1586,7 @@ func refresh():
   details.text="\n\n".join(lines)+"\n\nClicca una creatura per conoscerla."
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
+  details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.mode==0:
@@ -1737,6 +1778,9 @@ func ask_ai():
   ai_is_autonomous=false
   if ai_button!=null:ai_button.disabled=true
   sim.remember(a,"Il Creatore: "+input.text.left(300))
+  sim.record_dialogue(a,"Creatore",input.text)
+  input.clear()
+  refresh_dialogue(a)
   hint.text="AI locale in elaborazione..."
  else:hint.text="AI locale occupata o assente."
 
@@ -1767,6 +1811,7 @@ func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
     refresh()
     return
    sim.remember(a,reply)
+   sim.record_dialogue(a,a.name+" · AI",reply)
    sim.log_event(a.name+" [AI]: "+reply)
    hint.text="Risposta generativa ricevuta."
  refresh()
@@ -1915,6 +1960,15 @@ func self_test():
  if trade_copy.trades!=1 or not trade_copy.shipments.is_empty() or absf(float(trade_copy.villages[1].food)-food_before-12)>.01:failed=true
  if trade_route.size()<10:failed=true
  print("TRADE_TEST delivered=",trade_copy.trades," route_points=",trade_route.size())
+ var life=Sim.new()
+ life.start(91,0)
+ var citizen=life.people[0]
+ life.apply_reply(citizen,"Pace e amore")
+ if citizen.dialogue.size()!=2 or citizen.trust<=50 or not life.rename_person(citizen,"Astra"):failed=true
+ var life_copy=Sim.new()
+ if not life_copy.import_state(JSON.parse_string(JSON.stringify(life.export_state()))):failed=true
+ elif life_copy.people[0].name!="Astra" or life_copy.people[0].dialogue.size()!=2 or life_copy.people[0].life_story.is_empty():failed=true
+ print("LIFE_TEST dialogue=",citizen.dialogue.size()," trust=",citizen.trust," biography=",citizen.life_story.size())
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
@@ -2494,3 +2548,115 @@ func rebuild_trade_route():
   mi.material_override=mat
   mi.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
   route_root.add_child(mi)
+
+func follow_person(id:int):
+ if not actors.has(id):return
+ selected=id
+ power="Osserva"
+ following=true
+ focus=actors[id].node.position
+ distance=4.2
+ pitch=.43
+ if is_instance_valid(inspector_tabs):inspector_tabs.current_tab=0
+ update_camera()
+ refresh()
+
+func refresh_dialogue(a:Dictionary):
+ if not is_instance_valid(dialogue_view):return
+ dialogue_heading.text="PARLA CON LA VITA" if a.is_empty() else "DIALOGO · "+str(a.name)
+ var lines=[]
+ if a.is_empty():
+  dialogue_view.text="Seleziona un abitante per conversare oppure scrivi un messaggio a tutto il mondo."
+  return
+ for entry in a.get("dialogue",[]):
+  lines.append("G%d · %s\n%s"%[int(entry.day),str(entry.speaker),str(entry.text)])
+ dialogue_view.text="\n\n".join(lines) if not lines.is_empty() else "Non avete ancora parlato. Scrivi il tuo primo messaggio."
+
+func show_biography():
+ var a=sim.find(selected)
+ if a.is_empty():
+  hint.text="Seleziona un abitante."
+  return
+ var lines=[a.name+" · "+sim.personality(a),"Generazione "+str(a.gen)+" · Fiducia nel Creatore "+str(int(a.get("trust",50)))+"%",""]
+ for event in a.get("life_story",[]):lines.append("Giorno %d · %s\n%s"%[int(event.day),event.kind,event.text])
+ open_dialog("BIOGRAFIA","\n\n".join(lines))
+
+func show_family():
+ var a=sim.find(selected)
+ if a.is_empty():
+  hint.text="Seleziona un abitante."
+  return
+ var dlg=AcceptDialog.new()
+ hud.add_child(dlg)
+ dlg.title="LEGAMI DI "+str(a.name)
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ var links=[]
+ for id in a.parents:links.append({"id":int(id),"kind":"Genitore"})
+ if a.partner>=0:links.append({"id":int(a.partner),"kind":"Partner"})
+ if a.friend>=0:links.append({"id":int(a.friend),"kind":"Amico"})
+ for child in sim.people:
+  if child.parents.has(a.id):links.append({"id":int(child.id),"kind":"Figlio"})
+ var scroll=ScrollContainer.new()
+ scroll.custom_minimum_size=Vector2(420,260)
+ box.add_child(scroll)
+ var list=VBoxContainer.new()
+ list.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ scroll.add_child(list)
+ for link in links:
+  var id=int(link.id)
+  var b=button(list,str(link.kind)+" · "+family_names([id]),func():follow_person(id);dlg.hide();dlg.queue_free())
+  b.disabled=not actors.has(id)
+ if links.is_empty():text_label(list,"Nessun legame registrato.")
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(470,350))
+
+func rename_selected():
+ var a=sim.find(selected)
+ if a.is_empty():
+  hint.text="Seleziona un abitante."
+  return
+ var dlg=ConfirmationDialog.new()
+ hud.add_child(dlg)
+ dlg.title="RINOMINA ABITANTE"
+ var field=LineEdit.new()
+ field.max_length=24
+ field.text=a.name
+ field.custom_minimum_size.x=340
+ dlg.add_child(field)
+ dlg.confirmed.connect(func():sim.rename_person(a,field.text);refresh();dlg.queue_free())
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(390,130))
+
+func rebuild_settlement_details():
+ if not is_instance_valid(settlement_root) or centers.size()!=2:return
+ for child in settlement_root.get_children():
+  settlement_root.remove_child(child)
+  child.queue_free()
+ for i in range(2):
+  var v=sim.villages[i]
+  if int(v.era)<2:continue
+  var p=land_near(centers[i].x+(3.0 if i==0 else -3.0),centers[i].z+2.5)
+  var market=Node3D.new()
+  settlement_root.add_child(market)
+  market.position=p
+  market.rotation.y=.3 if i==0 else -.3
+  var cloth=Color("6ba69f") if i==0 else Color("ce9866")
+  for stall in range(2):
+   var n=Node3D.new()
+   market.add_child(n)
+   n.position=Vector3(stall*1.4-.7,0,0)
+   block(n,Color("806448"),Vector3(0,.40,0),Vector3(1.1,.15,.62))
+   for side in [-1,1]:
+    for z in [-1,1]:
+     block(n,Color("987857"),Vector3(side*.48,.59,z*.28),Vector3(.07,1.18,.07))
+   block(n,cloth,Vector3(0,1.18,0),Vector3(1.23,.12,.76))
+   for k in range(5):
+    if k%2==0:block(n,Color("e8d7ac"),Vector3((k-2)*.24,1.25,0),Vector3(.13,.025,.76))
+   for k in range(4):
+    sphere(n,Color("d9ad53") if k%2==0 else Color("9bac65"),Vector3((k-1.5)*.21,.57,.02),Vector3(.17,.17,.17))
+  for j in range(5):
+   var q=Vector3((j-2)*.35,.12,1.0)
+   cone(market,Color("8c7052"),q,.13,.23,.15,8)
+   sphere(market,Color("9db86e"),q+Vector3.UP*.18,Vector3(.26,.24,.26))

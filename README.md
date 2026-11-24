@@ -33,3 +33,6 @@ Dopo il giorno 300, Eternità alterna crisi e rinascite con conseguenze reali. L
 
 ## 1.6 — Vie del mondo
 Strada commerciale 3D con ponti automatici su tratti allagati, carovane con merci in transito per cinque giorni, consegna o perdita in base alla situazione, persistenza dei viaggi. Minimappa con percorso, camera protetta dal terreno e trascinamento con tasto centrale, selezione più precisa, terreno più fitto. La rotta viene rigenerata dopo le modifiche del terreno. Il test verifica la consegna e il ripristino di una spedizione.
+
+## 1.7 — Legami
+Biografie individuali, personalità derivata dai geni, fiducia nel Creatore, dialoghi consultabili e salvati, nomi personalizzabili, navigazione dei legami e selezione con doppio clic. Mercatini 3D e segni per preferiti/malati. Limiti: 40 eventi biografici e 30 messaggi recenti per abitante.

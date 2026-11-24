@@ -91,9 +91,10 @@ func birth(c:int,parents:Array)->Dictionary:
   gen=maxi(int(parents[0].gen),int(parents[1].gen))+1
   for p in parents: ids.append(p.id)
   for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
- var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0}
+ var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0,"trust":50.0,"life_story":[],"dialogue":[]}
  next_id+=1
  people.append(a)
+ milestone(a,"Nascita","Sono venuto al mondo.")
  total_births+=1
  if extinction_noted:
   extinction_noted=false
@@ -117,6 +118,7 @@ func die(a:Dictionary,why:String):
   if not b.is_empty():
    b.mood=maxf(0,b.mood-18)
    remember(b,"Ho perso "+a.name+".")
+   milestone(b,"Lutto","Ho perso "+a.name+".")
    if b.partner==a.id:b.partner=-1
    if b.friend==a.id:b.friend=-1
  total_deaths+=1
@@ -181,19 +183,31 @@ func daily():
      if not candidates.is_empty():b=candidates[rng.randi_range(0,candidates.size()-1)]
     if b.is_empty():continue
     if a.id!=b.id:
+     var new_couple=int(a.partner)!=int(b.id)
      a.partner=b.id
      b.partner=a.id
+     if new_couple:
+      milestone(a,"Unione","Ho scelto "+b.name+".")
+      milestone(b,"Unione","Ho scelto "+a.name+".")
      var child=birth(i,[a,b])
      if not child.is_empty():
       remember(a,"È nato "+child.name+".")
       remember(b,"È nato "+child.name+".")
+      milestone(a,"Famiglia","È nato "+child.name+".")
+      milestone(b,"Famiglia","È nato "+child.name+".")
   if day%17==0 and n>2:
    var clan_people=people.filter(func(a):return a.clan==i)
    var a=clan_people[rng.randi_range(0,clan_people.size()-1)]
    var b=clan_people[rng.randi_range(0,clan_people.size()-1)]
    if a.id!=b.id:
+    var old_a=find(int(a.friend))
+    var old_b=find(int(b.friend))
+    if not old_a.is_empty() and old_a.friend==a.id:old_a.friend=-1
+    if not old_b.is_empty() and old_b.friend==b.id:old_b.friend=-1
     a.friend=b.id
     b.friend=a.id
+    milestone(a,"Amicizia","Ho incontrato "+b.name+".")
+    milestone(b,"Amicizia","Ho incontrato "+a.name+".")
     remember(a,"Mi sono avvicinato a "+b.name+".")
     a.mood=minf(100,a.mood+8)
   if day%23==0 and v.food<n*.5:
@@ -216,7 +230,9 @@ func daily():
    remember(victim,"Sono stato ferito in guerra.")
  for a in people.duplicate():
   var v=villages[a.clan]
+  var old_age=int(a.age)
   a.age+=.22
+  if int(a.age)>old_age and int(a.age) in [14,30,50,70]:milestone(a,"Età","Ho raggiunto "+str(int(a.age))+" anni.")
   a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
   a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0)+minf(.25,float(v.bonuses[2])*.035),0,100)
   a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
@@ -226,7 +242,9 @@ func daily():
    a.sick=int(a.sick)-1
    a.health=maxf(0,a.health-(2 if v.tech>=5 else 5))
    if a.sick==5:remember(a,"Mi sono ammalato.")
+  var old_role=str(a.role)
   a.role="Profeta" if a.get("prophet",false) else ("Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore"))
+  if a.role!=old_role:milestone(a,"Vocazione","Ora sono "+a.role+".")
   a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
   if int(a.get("intention_until",0))>day:
    var intent=str(a.get("intention",""))
@@ -289,10 +307,11 @@ func check_ending():
  elif mode==1 and day>=90 and peace>=70 and villages[0].era>=3 and villages[1].era>=3:ended="L'ALLEANZA — Due popoli, un futuro condiviso."
  elif mode==2 and day>=100 and maxi(villages[0].era,villages[1].era)>=6:ended="OLTRE IL CIELO — Creatore, adesso sappiamo."
  elif mode==3 and day>=120 and people.size()>=24:ended="L'ULTIMA SCINTILLA — La vita continua."
-func apply_reply(a:Dictionary,txt:String):
+func apply_reply(a:Dictionary,txt:String)->String:
  remember(a,"Il Creatore: "+txt.left(300))
  var response=""
- if a.genes[0]>.67 and villages[a.clan].era>=3:response="Ti ascolto, ma le risposte vanno dimostrate. "+a.goal+"."
+ if float(a.get("trust",50))<25:response="Non mi fido ancora delle tue promesse. Ho bisogno di vedere le tue azioni."
+ elif a.genes[0]>.67 and villages[a.clan].era>=3:response="Ti ascolto, ma le risposte vanno dimostrate. "+a.goal+"."
  elif a.mood<40:response="Abbiamo paura. Puoi aiutarci davvero?"
  elif a.faith>65:response="Le tue parole saranno ricordate dai nostri figli."
  else:response="Ricorderò le tue parole. "+a.goal+"."
@@ -300,15 +319,20 @@ func apply_reply(a:Dictionary,txt:String):
  if message.contains("pace") or message.contains("amore"):
   peace=minf(100,peace+3)
   a.mood=minf(100,a.mood+5)
+  adjust_trust(a,3)
  elif message.contains("guerra") or message.contains("punizione"):
   a.faith=clampf(a.faith+(5 if a.genes[0]<.5 else -5),0,100)
   a.mood=maxf(0,a.mood-7)
+  adjust_trust(a,-5)
  elif message.contains("scienza") or message.contains("conoscenza"):
   villages[a.clan].knowledge+=2
  remember(a,response)
  for s in signals:
   if s.id==a.id:s.answered=true
+ record_dialogue(a,"Creatore",txt)
+ record_dialogue(a,a.name,response)
  log_event(a.name+": «"+response+"»")
+ return response
 func export_state()->Dictionary:
  return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history}
 func import_state(d:Dictionary)->bool:
@@ -378,6 +402,11 @@ func import_state(d:Dictionary)->bool:
   a["activity"]=str(a.get("activity","Esplora"))
   a["intention"]=str(a.get("intention",""))
   a["intention_until"]=int(a.get("intention_until",0))
+  a["trust"]=clampf(float(a.get("trust",50)),0,100)
+  a["life_story"]=a.get("life_story",[])
+  if not a.life_story is Array:a.life_story=[]
+  a["dialogue"]=a.get("dialogue",[])
+  if not a.dialogue is Array:a.dialogue=[]
  for v in villages:
   for key in ["era","houses","tech"]:v[key]=int(v[key])
   v["project"]=clampi(int(v.get("project",-1)),-1,5)
@@ -540,3 +569,29 @@ func settle_shipments():
    log_event("Una carovana non ha raggiunto la destinazione.")
   shipments.erase(row)
   changes.append({"kind":"trade_arrived","id":row.id})
+
+func milestone(a:Dictionary,kind:String,message:String):
+ if not a.has("life_story"):a.life_story=[]
+ a.life_story.push_front({"day":day,"kind":kind,"text":message})
+ if a.life_story.size()>40:a.life_story.pop_back()
+
+func record_dialogue(a:Dictionary,speaker:String,message:String):
+ if not a.has("dialogue"):a.dialogue=[]
+ a.dialogue.append({"day":day,"speaker":speaker,"text":message.left(650)})
+ if a.dialogue.size()>30:a.dialogue.pop_front()
+
+func adjust_trust(a:Dictionary,delta:float):
+ a.trust=clampf(float(a.get("trust",50))+delta,0,100)
+
+func personality(a:Dictionary)->String:
+ var traits=[]
+ traits.append("Curioso" if a.genes[0]>.60 else "Pragmatico")
+ traits.append("Empatico" if a.genes[1]>.55 else "Riservato")
+ traits.append("Energico" if a.genes[3]>.58 else "Riflessivo")
+ return ", ".join(traits)
+
+func rename_person(a:Dictionary,value:String)->bool:
+ var clean=value.strip_edges().replace("\n"," ").replace("\r"," ").left(24)
+ if clean.is_empty() or not people.has(a):return false
+ a.name=clean
+ return true
