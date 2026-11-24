@@ -2,7 +2,7 @@
 import json, pathlib, urllib.request, urllib.parse, zipfile, io, shutil, re, sys
 root=pathlib.Path("assets/generated")
 root.mkdir(parents=True,exist_ok=True)
-catalog={k:[] for k in ("tree","rock","house","industrial","future","animal","creature","prop")}
+catalog={k:[] for k in ("tree","rock","house","industrial","future","animal","creature","prop","farm","early","cart")}
 def get(url):
     req=urllib.request.Request(url,headers={"User-Agent":"GENESIS-47-asset-build"})
     with urllib.request.urlopen(req,timeout=50) as r:return r.read()
@@ -32,7 +32,10 @@ def showcase():
       "prop":("medieval_village_pack/",["Well","Barrel","Cart","MarketStand_1","Bonfire_Lit"]),
       "animal":("animals_pack/",["Deer","Fox","Sheep","Rabbit","Cow","Horse"]),
       "industrial":("buildings_pack_2/",[]),
-      "future":("ultimate_space_pack/",["Base_Large-transformed","Building_L-transformed","GeodesicDome-transformed","House_Cylinder-transformed","House_Long-transformed","House_Single-transformed"]),
+      "future":("modular_sci_fi/",["Props_Teleporter_1","Props_Pod","Props_Capsule","Props_Computer","Props_Vessel_Tall","Props_Vessel"]),
+      "farm":("real_time_strategy_pack/",["Farm_FirstAge_Level1_Wheat","Farm_FirstAge_Level2_Wheat","Farm_SecondAge_Level1_Wheat"]),
+      "early":("real_time_strategy_pack/",["Houses_FirstAge_1_Level1","Houses_FirstAge_2_Level1","Houses_FirstAge_1_Level2"]),
+      "cart":("medieval_village_pack/",["Cart"]),
       "tree":("nature_pack/",["BirchTree_1","BirchTree_2","CommonTree_1","CommonTree_2","CommonTree_3","PineTree_1","PineTree_2","PineTree_3"]),
       "rock":("nature_pack/",["Rock_1","Rock_2","Rock_3","Rock_4","Rock_Moss_1","Rock_Moss_2"])}
     for kind,(folder,names) in groups.items():

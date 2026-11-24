@@ -59,7 +59,18 @@ var cursor:MeshInstance3D
 var weather_timer=0.0
 var test_mode=false
 var visual_time=0.0
+var farms_root:Node3D
+var farm_points:Array=[[],[]]
+var caravans:Array=[]
 var roads_root:Node3D
+var compact=false
+var left_panel:Control
+var right_panel:Control
+var bottom_panel:Control
+var signals_button:Button
+var time_buttons:Array=[]
+var quality_mode=1
+var hover_ring:MeshInstance3D
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -243,7 +254,7 @@ func setup_environment():
  camera.current=true
  camera.fov=45
  camera.far=300
- camera.near=.12
+ camera.near=.07
  precipitation=CPUParticles3D.new()
  add_child(precipitation)
  precipitation.emitting=false
@@ -324,7 +335,7 @@ func terrain_color(p:Vector3)->Color:
  if p.y<SEA+.75:return Color("d9c89c").lerp(Color("b3bb79"),clampf((p.y-SEA)/.75,0,1))
  if p.y>10:return Color("a3a99e").lerp(Color("e7e7dc"),clampf((p.y-10)/4,0,1))
  if p.y>7.5:return Color("8c917c").lerp(Color("a8a69c"),clampf((p.y-7.5)/3,0,1))
- var grass=Color("4c7954").lerp(Color("96ac62"),v)
+ var grass=Color("38634a").lerp(Color("8ca45f"),v)
  for c in centers:
   if Vector2(p.x-c.x,p.z-c.z).length()<6:
    grass=grass.lerp(Color("b0a280"),.35)
@@ -388,7 +399,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -396,6 +407,8 @@ func reset_visuals():
  sea=null
  actors.clear()
  activity_labels.clear()
+ caravans.clear()
+ farm_points=[[],[]]
  animals.clear()
  effects.clear()
  houses=[[],[]]
@@ -413,12 +426,14 @@ func reset_visuals():
  animals_root=Node3D.new()
  effects_root=Node3D.new()
  roads_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root]:add_child(n)
+ farms_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root]:add_child(n)
  for i in range(2):
   make_hub(i)
   sync_houses(i)
  rebuild_roads()
- for i in range(310):
+ rebuild_farms()
+ for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9):
    make_tree(p,rng.randf_range(2.3,4.8),i)
@@ -449,12 +464,21 @@ func reset_visuals():
  sim.changes.clear()
  cursor=MeshInstance3D.new()
  var ring=TorusMesh.new()
- ring.inner_radius=.72
- ring.outer_radius=.79
+ ring.inner_radius=.43
+ ring.outer_radius=.49
  cursor.mesh=ring
  cursor.material_override=material(Color("fff0b3"),.5,1.1)
  add_child(cursor)
  cursor.hide()
+ hover_ring=MeshInstance3D.new()
+ var brush=TorusMesh.new()
+ brush.inner_radius=5.85
+ brush.outer_radius=6.0
+ hover_ring.mesh=brush
+ hover_ring.material_override=material(Color("e4ad66"),.7,.5)
+ hover_ring.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ add_child(hover_ring)
+ hover_ring.hide()
  focus=Vector3.ZERO
  distance=91
  update_camera()
@@ -518,7 +542,7 @@ func make_hub(i:int):
 
 func house_location(i:int,j:int)->Vector3:
  var a=j*2.39996+i*.5
- var r=4.6+sqrt(float(j))*2.1
+ var r=4.5+sqrt(float(j))*2.9
  return land_near(centers[i].x+cos(a)*r,centers[i].z+sin(a)*r)
 
 func make_house(i:int,j:int,era:int):
@@ -530,7 +554,8 @@ func make_house(i:int,j:int,era:int):
  var roof=Color("a96847") if i==0 else Color("467b83")
  var kind="house" if era<4 else ("industrial" if era==4 else "future")
  var imported:Node3D=null
- if era>=2:imported=asset(n,kind,j+i*3,Vector3.ZERO,2.6+float(era)*.45)
+ if era>=2 and era<5:imported=asset(n,kind,j+i*3,Vector3.ZERO,3.0+float(era)*.48)
+ elif era==1:imported=asset(n,"early",j+i*2,Vector3.ZERO,2.45)
  if imported==null:
   if era<2:
    cone(n,Color("d3b98a"),Vector3(0,.63,0),.91,1.26,.75,10)
@@ -557,6 +582,7 @@ func make_house(i:int,j:int,era:int):
    if era>=5:
     cone(n,Color("9ac5be"),Vector3(0,h+.48,0),.4,.85,.04,10)
     sphere(n,Color("95f1e1"),Vector3(0,h+.92,0),Vector3(.22,.22,.22),1.4)
+    asset(n,"future",j,Vector3(1.3,0,0),1.9)
    else:cone(n,Color("786a60"),Vector3(.65,h+.5,0),.16,1.0,.16,10)
  if j%3==1 and era>=2:
   asset(n,"prop",j,Vector3(1.3,0,.55),.55)
@@ -623,9 +649,11 @@ func create_actor(a:Dictionary):
  var parent=Node3D.new()
  people_root.add_child(parent)
  parent.position=random_near(centers[a.clan],6.5)
- var visual=asset(parent,"creature",int(a.clan)*3+int(float(a.genes[2])*3),Vector3.ZERO,1.65)
+ var visual=asset(parent,"creature",int(a.clan)*3+int(float(a.genes[2])*3),Vector3.ZERO,1.0)
  var rig={}
- if visual==null:rig=original_creature(parent,a)
+ if visual==null:
+  rig=original_creature(parent,a)
+  rig.body.scale=Vector3.ONE*.62
  else:
   start_animation(visual,["walk","run","idle"])
   rig={"body":visual,"arms":[],"legs":[]}
@@ -633,7 +661,7 @@ func create_actor(a:Dictionary):
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
- name_tag.position.y=2.25
+ name_tag.position.y=1.30
  name_tag.text=a.name
  name_tag.font_size=28
  name_tag.outline_size=5
@@ -656,7 +684,10 @@ func apply_changes():
      actors.erase(e.id)
      activity_labels.erase(e.id)
     if selected==e.id:selected=-1
-   "house","era":sync_houses(int(e.clan))
+   "house","era":
+    sync_houses(int(e.clan))
+    rebuild_farms()
+   "trade":spawn_caravan(int(e.clan))
  sim.changes.clear()
 
 func step_day():
@@ -711,6 +742,8 @@ func _process(delta:float):
      r.target=house_location(a.clan, a.id%maxi(1,houses[a.clan].size()))
     elif activity=="Incontra la famiglia" and actors.has(a.partner):
      r.target=actors[a.partner].node.position
+    elif activity=="Cerca cibo" and not farm_points[a.clan].is_empty():
+     r.target=farm_points[a.clan][int(a.id)%farm_points[a.clan].size()]
     elif activity=="Studia":
      r.target=random_near(centers[a.clan],2.2)
     else:
@@ -724,6 +757,10 @@ func _process(delta:float):
    direction.y=0
    if direction.length()>.04:
     var p=n.position+direction.normalized()*minf(step*.92,direction.length())
+    for home in houses[a.clan]:
+     var away=p-home.node.position
+     away.y=0
+     if away.length()<1.12 and away.length()>.001:p+=away.normalized()*.12
     p.y=height_at(p.x,p.z)
     if p.y>SEA+.12:
      n.position=p
@@ -749,7 +786,7 @@ func _process(delta:float):
      n.rotation.y=lerp_angle(n.rotation.y,atan2(dir.x,dir.z),minf(delta*4,1))
     else:animal.target=animal.center
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
-  var daylight=clampf(.63+.48*sin(phase*TAU+.8),.16,1)
+  var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
   sun.light_energy=.14+daylight*.83
   sun.light_color=Color("b3c9ff").lerp(Color("fff1d1"),daylight)
   env.ambient_light_energy=.12+daylight*.31
@@ -767,12 +804,21 @@ func _process(delta:float):
  if is_instance_valid(precipitation):
   precipitation.position=Vector3(focus.x, maxf(focus.y+10,14),focus.z)
   precipitation.emitting=sim.weather_name=="Pioggia" and speed>0 and distance<65
+ update_caravans(delta)
+ if is_instance_valid(hover_ring):
+  hover_ring.visible=false
+  if power!="Osserva" and not photo_mode and get_viewport().gui_get_hovered_control()==null:
+   var hp=ground_at(get_viewport().get_mouse_position())
+   if hp.y>SEA-.5:
+    hover_ring.position=hp+Vector3.UP*.12
+    hover_ring.visible=true
  update_effects(delta)
 
 func _unhandled_input(event:InputEvent):
  if event is InputEventKey and event.pressed and not event.echo:
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
+  if event.keycode==KEY_TAB:toggle_compact()
   if event.keycode==KEY_F5:save_game(true)
   if event.keycode==KEY_F9:load_game()
   if event.keycode==KEY_SPACE:speed=1 if speed==0 else 0
@@ -807,7 +853,7 @@ func select_at(mouse:Vector2):
  selected=-1
  following=false
  for id in actors:
-  var p:Vector3=actors[id].node.position+Vector3(0,.85,0)
+  var p:Vector3=actors[id].node.position+Vector3(0,.55,0)
   if camera.is_position_behind(p):continue
   var dist=camera.unproject_position(p).distance_to(mouse)
   if dist<best:
@@ -1076,6 +1122,8 @@ func setup_ui():
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  button(row,"Guida",show_help)
+ button(row,"Vista",toggle_compact)
+ button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
  var slots=OptionButton.new()
  for i in range(3):slots.add_item("Slot "+str(i+1))
@@ -1087,6 +1135,7 @@ func setup_ui():
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused)
  top=text_label(col,"",16)
  var left=panel(hud,Rect2(14,115,190,640))
+ left_panel=left
  var lv=VBoxContainer.new()
  left.add_child(lv)
  text_label(lv,"POTERI DIVINI",17)
@@ -1115,6 +1164,7 @@ func setup_ui():
  infinite.toggled.connect(func(on):unlimited=on)
  lv.add_child(infinite)
  var right=panel(hud,Rect2(1107,115,319,640))
+ right_panel=right
  var rv=VBoxContainer.new()
  right.add_child(rv)
  text_label(rv,"VITA  /  CIVILTÀ",18)
@@ -1127,7 +1177,7 @@ func setup_ui():
   if actors.has(selected):
    following=true
    focus=actors[selected].node.position
-   distance=5.5
+   distance=3.6
    pitch=.36
    update_camera())
  button(line,"Casuale",func():
@@ -1140,7 +1190,7 @@ func setup_ui():
  var line2=HBoxContainer.new()
  rv.add_child(line2)
  button(line2,"Atlante",show_atlas)
- button(line2,"Segnali",show_signals)
+ signals_button=button(line2,"Segnali",show_signals)
  button(line2,"Scoperte",show_tech)
  var extra=HBoxContainer.new()
  rv.add_child(extra)
@@ -1159,13 +1209,17 @@ func setup_ui():
  rv.add_child(model)
  button(rv,"Risposta generativa (Ollama)",ask_ai)
  var bottom=panel(hud,Rect2(14,769,1412,117))
+ bottom_panel=bottom
  var bv=VBoxContainer.new()
  bottom.add_child(bv)
  var controls=HBoxContainer.new()
  bv.add_child(controls)
  text_label(controls,"TEMPO",15)
  for s in [0.0,1.0,3.0,12.0,60.0]:
-  button(controls,"Pausa" if s==0 else str(int(s))+"×",func():speed=s)
+  var tb=button(controls,"Pausa" if s==0 else str(int(s))+"×",func():speed=s;update_time_buttons())
+  tb.toggle_mode=true
+  tb.set_meta("speed",s)
+  time_buttons.append(tb)
  button(controls,"Mondo",func():following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
  for i in range(2):
   button(controls,Sim.CLANS[i],func():following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
@@ -1186,6 +1240,10 @@ func refresh():
  top.text+="    ·    "+sim.season+" / "+sim.weather_name
  power_label.text=power
  if map_view!=null:map_view.queue_redraw()
+ update_time_buttons()
+ if signals_button!=null:
+  var pending=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
+  signals_button.text="Segnali "+str(pending) if pending>0 else "Segnali"
  var a=sim.find(selected)
  if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("activity","Esplora"))+" · "+("Malato" if int(a.get("sick",0))>0 else "In salute")
  if a.is_empty():
@@ -1216,12 +1274,15 @@ func open_welcome():
  var seed_input=LineEdit.new()
  seed_input.text=str(rng.randi_range(1,999999))
  box.add_child(seed_input)
- text_label(box,"Seme del mondo · F10 modalità cinematografica",13)
+ text_label(box,"Seme del mondo · TAB interfaccia ridotta · F10 cinema",13)
+ for i in range(3):
+  if FileAccess.file_exists(SAVE_PREFIX+str(i)+".json"):
+   button(box,"Riprendi slot "+str(i+1),func():slot=i;dlg.hide();load_game();dlg.queue_free())
  dlg.confirmed.connect(func():
   deformation.clear()
   new_world(maxi(1,abs(int(seed_input.text))),option.selected)
   dlg.queue_free())
- dlg.canceled.connect(func():speed=1;dlg.queue_free())
+ dlg.canceled.connect(func():speed=1;update_time_buttons();dlg.queue_free())
  dlg.popup_centered(Vector2i(620,220))
 
 func open_dialog(heading:String,content:String):
@@ -1245,9 +1306,48 @@ func show_atlas():
  open_dialog("ATLANTE GENEALOGICO","\n".join(lines))
 
 func show_signals():
- var lines=[]
- for s in sim.signals:lines.append("G%d · Abitante %d · %s\n%s"%[s.day,s.id,"Risposto" if s.answered else "In attesa",s.text])
- open_dialog("SEGNALI DAL MONDO","\n\n".join(lines) if not lines.is_empty() else "Ancora nessun segnale. Lascia evolvere la vita.")
+ var dlg=AcceptDialog.new()
+ hud.add_child(dlg)
+ dlg.title="SEGNALI DAL MONDO"
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ var pending=[]
+ for i in range(sim.signals.size()):
+  var q=sim.signals[i]
+  if not q.answered and not sim.find(int(q.id)).is_empty():pending.append(i)
+ if pending.is_empty():
+  text_label(box,"Nessuna domanda in attesa. Lascia evolvere il mondo.",16)
+ else:
+  var idx=int(pending[0])
+  var q=sim.signals[idx]
+  var a=sim.find(int(q.id))
+  text_label(box,a.name+" · "+Sim.CLANS[a.clan]+" · giorno "+str(q.day),16)
+  var question=text_label(box,q.text,21)
+  question.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+  question.custom_minimum_size.x=520
+  var choices=["Proteggi e invita alla pace","Incoraggia la scienza","Rispetta il libero arbitrio","Imponi la tua autorità"]
+  for i in range(4):
+   button(box,choices[i],func():
+    sim.answer_signal(idx,i)
+    selected=int(q.id)
+    dlg.hide()
+    dlg.queue_free()
+    refresh())
+  button(box,"Trova la creatura",func():
+   selected=int(q.id)
+   if actors.has(selected):
+    following=true
+    distance=3.8
+    pitch=.45
+    focus=actors[selected].node.position
+    update_camera()
+   dlg.hide()
+   dlg.queue_free()
+   refresh())
+ text_label(box,"Domande aperte: "+str(pending.size())+" · Decisioni prese: "+str(sim.decisions.size()),13)
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(560,330))
 
 func show_tech():
  var lines=[]
@@ -1300,12 +1400,17 @@ func save_game(show_hint:bool):
  for id in actors:
   var p:Vector3=actors[id].node.position
   d.positions[str(id)]=[p.x,p.z]
- var file=FileAccess.open(SAVE_PREFIX+str(slot)+".json",FileAccess.WRITE)
+ var path=SAVE_PREFIX+str(slot)+".json"
+ var file=FileAccess.open(path+".tmp",FileAccess.WRITE)
  if file==null:
   if show_hint:hint.text="Impossibile salvare."
   return
  file.store_string(JSON.stringify(d))
  file.close()
+ var err=DirAccess.rename_absolute(ProjectSettings.globalize_path(path+".tmp"),ProjectSettings.globalize_path(path))
+ if err!=OK:
+  if show_hint:hint.text="Impossibile completare il salvataggio."
+  return
  if show_hint:hint.text="Universo salvato nello slot "+str(slot+1)+"."
 
 func load_game():
@@ -1343,6 +1448,11 @@ func self_test():
   print("SIM TEST mode=",mode," population=",t.people.size()," day=",t.day," tech=",t.discoveries.size()," ending=",t.ended)
   if t.people.is_empty() or t.discoveries.is_empty():failed=true
   if mode!=0 and t.ended=="":failed=true
+  for j in range(t.signals.size()):
+   if not t.find(int(t.signals[j].id)).is_empty():
+    var old_decisions=t.decisions.size()
+    if not t.answer_signal(j,1) or t.decisions.size()!=old_decisions+1 or t.answer_signal(j,1):failed=true
+    break
   var state=JSON.parse_string(JSON.stringify(t.export_state()))
   var clone=Sim.new()
   if not clone.import_state(state) or clone.people.size()!=t.people.size() or clone.day!=t.day:failed=true
@@ -1387,7 +1497,7 @@ func capture_preview():
  hud.hide()
  if actors.has(selected):
   focus=actors[selected].node.position
-  distance=4.8
+  distance=3.0
   pitch=.30
   update_camera()
   await get_tree().create_timer(.4).timeout
@@ -1464,9 +1574,93 @@ func rebuild_roads():
  var mi=MeshInstance3D.new()
  mi.mesh=st.commit()
  var mat=StandardMaterial3D.new()
- mat.albedo_color=Color("b59c74")
+ mat.albedo_color=Color("89785b")
  mat.roughness=1.0
  mat.cull_mode=BaseMaterial3D.CULL_DISABLED
  mi.material_override=mat
  mi.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
  roads_root.add_child(mi)
+
+func update_time_buttons():
+ for item in time_buttons:
+  item.set_pressed_no_signal(float(item.get_meta("speed"))==speed)
+
+func toggle_compact():
+ compact=not compact
+ if is_instance_valid(left_panel):left_panel.visible=not compact
+ if is_instance_valid(right_panel):right_panel.visible=not compact
+ if hint!=null:hint.text="TAB per ripristinare i pannelli" if compact else "WASD · rotella · tasto destro · F10 foto"
+
+func show_options():
+ var dlg=AcceptDialog.new()
+ hud.add_child(dlg)
+ dlg.title="OPZIONI"
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ text_label(box,"Grafica · scegli in base al tuo PC",17)
+ var quality=OptionButton.new()
+ for item in ["Prestazioni","Bilanciata","Qualità"]:quality.add_item(item)
+ quality.select(quality_mode)
+ quality.item_selected.connect(func(i):
+  quality_mode=i
+  sun.shadow_enabled=i>0
+  get_viewport().msaa_3d=Viewport.MSAA_4X if i==2 else Viewport.MSAA_2X if i==1 else Viewport.MSAA_DISABLED
+  get_viewport().scaling_3d_scale=.8 if i==0 else 1.0)
+ box.add_child(quality)
+ var volume=HSlider.new()
+ volume.min_value=0
+ volume.max_value=100
+ volume.value=50
+ volume.custom_minimum_size.x=300
+ volume.value_changed.connect(func(v):audio.volume_db=linear_to_db(maxf(.001,v/100.0)) - 17)
+ text_label(box,"Volume ambiente",14)
+ box.add_child(volume)
+ button(box,"Schermo intero / finestra",func():DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode()==DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN))
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(400,230))
+
+func rebuild_farms():
+ if not is_instance_valid(farms_root) or centers.size()!=2:return
+ for child in farms_root.get_children():
+  farms_root.remove_child(child)
+  child.queue_free()
+ farm_points=[[],[]]
+ for i in range(2):
+  if sim.villages[i].era<2:continue
+  for j in range(2):
+   var p=land_near(centers[i].x+(5.0 if i==0 else -5.0)+j*(2.5 if i==0 else -2.5),centers[i].z+5.8)
+   farm_points[i].append(p)
+   var n=asset(farms_root,"farm",j,p,.65,0)
+   if n==null:
+    n=Node3D.new()
+    farms_root.add_child(n)
+    n.position=p
+    for row in range(3):
+     for col in range(5):
+      var q=Vector3((col-2)*.42,.04,(row-1)*.43)
+      block(n,Color("795b41"),q,Vector3(.36,.08,.36))
+      sphere(n,Color("b8bb59"),q+Vector3.UP*.22,Vector3(.18,.42,.18))
+
+func spawn_caravan(clan:int):
+ if not is_instance_valid(villages_root) or caravans.size()>3:return
+ var origin=centers[clan]
+ var n=asset(villages_root,"cart",clan,origin,.88)
+ if n==null:return
+ caravans.append({"node":n,"from":origin,"to":centers[1-clan],"progress":0.0})
+
+func update_caravans(delta:float):
+ if speed<=0:return
+ for row in caravans.duplicate():
+  if not is_instance_valid(row.node):
+   caravans.erase(row)
+   continue
+  row.progress=minf(1,row.progress+delta*.035*minf(speed,8))
+  var p:Vector3=row.from.lerp(row.to,row.progress)
+  p.y=height_at(p.x,p.z)
+  row.node.position=p
+  var d:Vector3=row.to-row.from
+  row.node.rotation.y=atan2(d.x,d.z)
+  if row.progress>=1:
+   row.node.queue_free()
+   caravans.erase(row)

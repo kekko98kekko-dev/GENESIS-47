@@ -25,6 +25,8 @@ var weather_name="Sereno"
 var season="Primavera"
 var achievements:Array=[]
 var history:Array=[]
+var decisions:Array=[]
+var diplomacy_state="Neutralità"
 func start(s:int,m:int):
  seed_value=s
  mode=m
@@ -45,6 +47,8 @@ func start(s:int,m:int):
  changes.clear()
  achievements.clear()
  history.clear()
+ decisions.clear()
+ diplomacy_state="Neutralità"
  weather_name="Sereno"
  season="Primavera"
  for i in range(2):
@@ -159,6 +163,10 @@ func daily():
    log_event(CLANs_name(i)+" cambia governo per la crisi.")
  if counts[0]>0 and counts[1]>0:
   peace=clampf(peace+rng.randf_range(-2,2)+(.4 if villages[0].food>20 and villages[1].food>20 else -.6),0,100)
+  var new_relation="Guerra" if peace<25 else ("Alleanza" if peace>=80 else "Tregua" if peace>=45 else "Tensione")
+  if new_relation!=diplomacy_state:
+   diplomacy_state=new_relation
+   log_event("Relazioni fra i popoli: "+new_relation+".")
   if day%12==0 and peace>45:
    var donor=0 if villages[0].food>villages[1].food else 1
    var amount=minf(18,villages[donor].food*.12)
@@ -166,6 +174,7 @@ func daily():
    villages[1-donor].food+=amount
    villages[1-donor].knowledge+=2
    trades+=1
+   changes.append({"kind":"trade","clan":donor})
    log_event("Una carovana commercia fra i due popoli.")
   if peace<25 and day%5==0 and not people.is_empty():
    var victim=people[rng.randi_range(0,people.size()-1)]
@@ -188,7 +197,7 @@ func daily():
   if a.health<=0 or a.age>83:die(a,"fine della vita")
  if day%25==0 and not people.is_empty():
   var a=people[rng.randi_range(0,people.size()-1)]
-  var question="Creatore, perché esiste la sofferenza?" if a.mood<50 else ("Abbiamo osservato anomalie. Il nostro mondo è reale?" if villages[a.clan].era>=4 else "Creatore, ci ascolti?")
+  var question="Creatore, perché esiste la sofferenza?" if a.mood<50 else ("Abbiamo osservato anomalie. Il nostro mondo è reale?" if villages[a.clan].era>=4 else ("I nostri raccolti basteranno per tutti?" if day%50==0 else "Creatore, ci ascolti?"))
   remember(a,question)
   signals.push_front({"id":a.id,"text":question,"day":day,"answered":false})
   if signals.size()>12:signals.pop_back()
@@ -196,6 +205,7 @@ func daily():
  if day%5==0:
   history.append({"day":day,"population":people.size(),"peace":peace})
   if history.size()>150:history.pop_front()
+ if ended!="":award("Un destino scritto")
  if people.size()>=60:award("Un mondo vivo")
  if trades>=5:award("La via del commercio")
  if discoveries.size()>=14:award("Il secolo delle scoperte")
@@ -234,7 +244,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  seed_value=int(d.seed)
@@ -256,6 +266,8 @@ func import_state(d:Dictionary)->bool:
  season=str(d.get("season","Primavera"))
  achievements=d.get("achievements",[])
  history=d.get("history",[])
+ decisions=d.get("decisions",[])
+ diplomacy_state=str(d.get("diplomacy","Neutralità"))
  rng.seed=seed_value
  rng.state=int(str(d.rng))
  changes.clear()
@@ -266,4 +278,32 @@ func import_state(d:Dictionary)->bool:
   a["activity"]=str(a.get("activity","Esplora"))
  for v in villages:
   for key in ["era","houses","tech"]:v[key]=int(v[key])
+ return true
+
+func answer_signal(index:int,choice:int)->bool:
+ if index<0 or index>=signals.size() or choice<0 or choice>3:return false
+ var signal_data=signals[index]
+ if signal_data.answered:return false
+ var a=find(int(signal_data.id))
+ if a.is_empty():return false
+ var v=villages[a.clan]
+ var words=["Vi proteggerò, cercate la pace.","Cercate la verità con la scienza.","Siete liberi, non vi guiderò.","Voglio che vi ricordiate della mia potenza."]
+ if choice==0:
+  peace=minf(100,peace+9)
+  v.food=minf(850,v.food+28)
+  a.mood=minf(100,a.mood+12)
+ elif choice==1:
+  v.knowledge+=22
+  a.faith=maxf(0,a.faith-7)
+ elif choice==2:
+  v.faith=maxf(0,v.faith-6)
+  a.mood=minf(100,a.mood+4)
+ else:
+  v.faith=minf(100,v.faith+12)
+  a.mood=maxf(0,a.mood-12)
+ remember(a,"Il Creatore: "+words[choice])
+ remember(a,["Forse possiamo vivere senza paura.","Non smetterò di cercare.","La scelta appartiene a noi.","Non dimenticherò queste parole."][choice])
+ signal_data.answered=true
+ decisions.append({"day":day,"name":a.name,"choice":choice,"text":words[choice]})
+ log_event("Risposta a "+a.name+": "+words[choice])
  return true
