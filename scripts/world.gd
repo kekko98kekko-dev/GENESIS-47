@@ -577,7 +577,7 @@ func reset_visuals():
  landmark_root=Node3D.new()
  ruin_root=Node3D.new()
  service_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root]:add_child(n)
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -926,6 +926,7 @@ func apply_changes():
    "birth":
     var a=sim.find(int(e.id))
     if not a.is_empty():create_actor(a)
+    services_dirty=true
    "death":
     claims.erase(int(e.id))
     if actors.has(e.id):
@@ -934,6 +935,7 @@ func apply_changes():
      n.queue_free()
      actors.erase(e.id)
      activity_labels.erase(e.id)
+    services_dirty=true
     if selected==e.id:selected=-1
    "house","era":
     sync_houses(int(e.clan))
@@ -3272,6 +3274,9 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  if sim.spatial_autonomy and a.task not in ["social","aid","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
   cancel_task(a,r)
   return false
+ if sim.spatial_autonomy and claims.has(int(a.id)) and not service_open(str(claims[int(a.id)]),a):
+  cancel_task(a,r)
+  return false
  if a.task in ["social","aid"] and not actors.has(int(a.task_target)):
   cancel_task(a,r)
   return false
@@ -3633,7 +3638,7 @@ func assign_homes():
  var usage={}
  for a in sim.people:
   var key=str(a.get("home_key",""))
-  if not services.has(key) or int(services[key].clan)!=int(a.clan) or str(services[key].kind)!="sleep" or int(usage.get(key,0))>=4:
+  if not services.has(key) or int(services[key].clan)!=int(a.clan) or str(services[key].kind)!="sleep" or services[key].get("temporary",false) or int(usage.get(key,0))>=4:
    a.home_key=""
   else:usage[key]=int(usage.get(key,0))+1
  for a in sim.people:
@@ -3647,7 +3652,7 @@ func assign_homes():
    continue
   for key in services:
    var row=services[key]
-   if row.kind=="sleep" and row.clan==a.clan and int(usage.get(key,0))<4:
+   if row.kind=="sleep" and row.clan==a.clan and not row.get("temporary",false) and int(usage.get(key,0))<4:
     a.home_key=key
     usage[key]=int(usage.get(key,0))+1
     break
@@ -3665,7 +3670,8 @@ func service_open(key:String,a:Dictionary)->bool:
  if used>=int(row.capacity):return false
  if row.kind=="eat" and sim.villages[a.clan].food<meals+1:return false
  if row.kind=="house" and sim.villages[a.clan].wood<22:return false
- if row.kind=="sleep" and a.home_key!="" and a.home_key!=key:return false
+ if row.kind=="sleep" and a.home_key!=key and not (a.home_key=="" and row.get("temporary",false)):return false
+ if row.kind=="house" and sim.villages[a.clan].houses>=mini(25,3+int(sim.count(a.clan)/4)+sim.villages[a.clan].era):return false
  return true
 
 func nearest_service(a:Dictionary,kind:String,origin:Vector3)->String:
@@ -3705,12 +3711,12 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
  var active=str(a.task)
  var marker:Label3D=r.action_marker
  var prop:Node3D=r.action_prop
- var shown=active!="" and (not moving or a.delivery)
+ var shown=active!="" and (a.task_stage in ["In corso","Consegna"] or a.delivery)
  marker.visible=shown and distance<35 and not photo_mode
  var marks={"eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
  marker.text="TRASPORTO" if a.delivery else str(marks.get(active,""))
  marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
- var visual="cargo_"+str(a.cargo) if a.delivery else active if not moving else ""
+ var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else ""
  if str(r.get("prop_kind",""))!=visual:
   r["prop_kind"]=visual
   for child in prop.get_children():
@@ -3728,7 +3734,7 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
     block(prop,Color("d37d6c"),Vector3(0,0,.12),Vector3(.05,.16,.025))
     block(prop,Color("d37d6c"),Vector3(0,0,.135),Vector3(.16,.05,.025))
    "play":sphere(prop,Color("e5bd70"),Vector3.ZERO,Vector3(.23,.23,.23))
- if not moving and active=="sleep":
+ if not moving and active=="sleep" and a.task_stage=="In corso":
   r.body.rotation.x=lerpf(r.body.rotation.x,PI*.42,.25)
   r.body.position.y=.14
   for eye in r.get("eyes",[]):eye.scale.y=.10
@@ -3737,7 +3743,7 @@ func test_services()->bool:
  deformation.clear()
  new_world(47,0)
  sim.spatial_autonomy=true
- if services.is_empty():return false
+ if services.is_empty() or not service_root.is_inside_tree():return false
  var a=sim.people[0]
  var key=nearest_service(a,"eat",centers[a.clan])
  if key=="" or a.home_key=="":return false
@@ -3746,6 +3752,20 @@ func test_services()->bool:
  if service_open(key,a):return false
  claims.clear()
  if not service_open(key,a):return false
+ # Verify a gatherer produces no inventory before reaching the warehouse.
+ a.hunger=0.0
+ a.fatigue=0.0
+ a.health=100.0
+ sim.begin_task(a,{"kind":"farm","target":-1,"duration":.2,"reason":"test"})
+ var original_food=float(sim.villages[a.clan].food)
+ var carried=false
+ for j in range(600):
+  advance_actor_task(a,actors[a.id],.1)
+  if a.delivery:
+   carried=true
+   if sim.villages[a.clan].food!=original_food:return false
+  if a.task=="":break
+ if not carried or a.last_task!="farm" or sim.villages[a.clan].food<=original_food:return false
  var home=str(a.home_key)
  var q:Vector3=services[home].pos
  disaster(q,"Fulmine",2.4,0.0,0.0,0.0)
@@ -3757,6 +3777,6 @@ func test_services()->bool:
  var wood=float(sample.villages[0].wood)
  sample.daily()
  if sample.villages[0].food!=food or sample.villages[0].wood!=wood:return false
- print("SERVICES_TEST reservation=true housing=true no_passive_production=true")
+ print("SERVICES_TEST reservation=true housing=true transport=true no_passive_production=true")
  sim.spatial_autonomy=false
  return true
