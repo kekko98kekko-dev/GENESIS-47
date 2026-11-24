@@ -24,3 +24,6 @@ Apri GENESIS47.exe per giocare subito offline. Per il modello linguistico reale,
 
 ## Eternità (modalità principale)
 Nessun limite di giorni o generazioni. Raggiungere l’era finale non arresta il gioco; i cicli del futuro continuano. Se tutte le creature muoiono, il tempo continua e puoi creare nuovi abitanti con Vita. Le tre sfide narrative hanno epiloghi facoltativi. Il limite tecnico è 160 abitanti contemporanei, non la durata.
+
+## 1.3 — Civiltà vive
+Opere civili ricorrenti con costi, effetti permanenti, monumenti in 3D e una schermata dedicata. Statistiche di nascite e morti; nomi delle parentele, indicatori di salute ed energia. Gli archivi recenti dei defunti sono limitati a 3000 schede per contenere il salvataggio; i conteggi complessivi continuano. Compatibilità dei salvataggi precedenti mantenuta tramite valori predefiniti.

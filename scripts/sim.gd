@@ -30,6 +30,10 @@ var diplomacy_state="Neutralità"
 var autonomous_decisions=0
 var extinction_noted=false
 var legacy_cycles=0
+var total_deaths=0
+var total_births=0
+var projects_completed=0
+const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
  seed_value=s
  mode=m
@@ -55,10 +59,13 @@ func start(s:int,m:int):
  autonomous_decisions=0
  extinction_noted=false
  legacy_cycles=0
+ total_deaths=0
+ total_births=0
+ projects_completed=0
  weather_name="Sereno"
  season="Primavera"
  for i in range(2):
-  villages.append({"food":72.0 if m!=3 else 26.0,"wood":35.0,"knowledge":0.0,"faith":55.0,"era":0,"houses":3,"government":"Consiglio","belief":"Il cielo vivente","tech":0})
+  villages.append({"food":72.0 if m!=3 else 26.0,"wood":35.0,"knowledge":0.0,"faith":55.0,"era":0,"houses":3,"government":"Consiglio","belief":"Il cielo vivente","tech":0,"project":-1,"progress":0.0,"completed":0,"bonuses":[0,0,0,0,0,0]})
   for j in range(14):
    birth(i,[])
  log_event("Il mondo si risveglia. Due popoli, un cielo.")
@@ -74,6 +81,7 @@ func birth(c:int,parents:Array)->Dictionary:
  var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0}
  next_id+=1
  people.append(a)
+ total_births+=1
  if extinction_noted:
   extinction_noted=false
   log_event("Una nuova scintilla: la vita ritorna.")
@@ -98,7 +106,9 @@ func die(a:Dictionary,why:String):
    remember(b,"Ho perso "+a.name+".")
    if b.partner==a.id:b.partner=-1
    if b.friend==a.id:b.friend=-1
- dead.append({"id":a.id,"name":a.name,"gen":a.gen,"day":day,"reason":why})
+ total_deaths+=1
+ dead.append({"id":a.id,"name":a.name,"gen":a.gen,"day":day,"reason":why,"clan":a.clan,"parents":a.parents.duplicate()})
+ if dead.size()>3000:dead.pop_front()
  changes.append({"kind":"death","id":a.id})
  people.erase(a)
 func count(c:int)->int:
@@ -119,13 +129,14 @@ func daily():
   if n==0:continue
   var weather=.58 if mode==3 and day<60 else 1.0
   weather*=.68 if weather_name=="Siccità" else (1.12 if weather_name=="Pioggia" else .89 if season=="Inverno" else 1.0)
-  var productivity=1.20+float(v.era)*.15
+  var productivity=1.20+float(v.era)*.15+minf(.22,float(v.bonuses[0])*.025)
   v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
   v.wood=minf(400,v.wood+n*.16)
   var thinkers=0.0
   for a in people:
    if a.clan==i:thinkers+=float(a.genes[0])
-  v.knowledge+=thinkers*.23
+  v.knowledge+=thinkers*(.23+minf(.10,float(v.bonuses[1])*.01))
+  if v.era>=2:advance_project(i,n)
   var unlocked=mini(14,int(v.knowledge/23.0))
   while v.tech<unlocked:
    discoveries.append({"clan":i,"day":day,"name":TECH[v.tech]})
@@ -171,7 +182,7 @@ func daily():
    v.government="Consiglio di emergenza"
    log_event(CLANs_name(i)+" cambia governo per la crisi.")
  if counts[0]>0 and counts[1]>0:
-  peace=clampf(peace+rng.randf_range(-2,2)+(.4 if villages[0].food>20 and villages[1].food>20 else -.6),0,100)
+  peace=clampf(peace+rng.randf_range(-2,2)+(.4 if villages[0].food>20 and villages[1].food>20 else -.6)+minf(.25,float(villages[0].bonuses[3]+villages[1].bonuses[3])*.015),0,100)
   var new_relation="Guerra" if peace<25 else ("Alleanza" if peace>=80 else "Tregua" if peace>=45 else "Tensione")
   if new_relation!=diplomacy_state:
    diplomacy_state=new_relation
@@ -193,7 +204,7 @@ func daily():
   var v=villages[a.clan]
   a.age+=.22
   a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
-  a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0),0,100)
+  a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0)+minf(.25,float(v.bonuses[2])*.035),0,100)
   a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
   if day%19==0 and rng.randf()<.045:a.sick=6
   if int(a.get("sick",0))>0:
@@ -232,6 +243,12 @@ func daily():
  if day%60==0 and not people.is_empty() and mode==0 and villages.any(func(v):return v.era>=6):
   legacy_cycles+=1
   var theme=["Una nuova filosofia","Una scuola di astronomia","Un nuovo patto sociale","Una ricerca sull’origine della vita"][legacy_cycles%4]
+  for v in villages:
+   if v.era>=6:
+    if legacy_cycles%4==0:v.knowledge+=12
+    elif legacy_cycles%4==1:v.food=maxf(0,v.food-18)
+    elif legacy_cycles%4==2:peace=minf(100,peace+3)
+    else:v.faith=clampf(v.faith-2,0,100)
   log_event("Ciclo del futuro %d · %s"%[legacy_cycles,theme])
  if ended!="":award("Un destino scritto")
  if people.size()>=60:award("Un mondo vivo")
@@ -278,7 +295,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -318,6 +335,9 @@ func import_state(d:Dictionary)->bool:
  autonomous_decisions=int(d.get("autonomous_decisions",0))
  extinction_noted=bool(d.get("extinction_noted",false))
  legacy_cycles=int(d.get("legacy_cycles",0))
+ total_deaths=int(d.get("total_deaths",dead.size()))
+ total_births=int(d.get("total_births",next_id-1))
+ projects_completed=int(d.get("projects_completed",0))
  if mode==0:ended=""
  rng.seed=seed_value
  rng.state=int(str(d.rng))
@@ -331,6 +351,12 @@ func import_state(d:Dictionary)->bool:
   a["intention_until"]=int(a.get("intention_until",0))
  for v in villages:
   for key in ["era","houses","tech"]:v[key]=int(v[key])
+  v["project"]=clampi(int(v.get("project",-1)),-1,5)
+  v["progress"]=clampf(float(v.get("progress",0)),0,100)
+  v["completed"]=maxi(0,int(v.get("completed",0)))
+  v["bonuses"]=v.get("bonuses",[0,0,0,0,0,0])
+  if not v.bonuses is Array or v.bonuses.size()!=6:v.bonuses=[0,0,0,0,0,0]
+  for i in range(6):v.bonuses[i]=maxi(0,int(v.bonuses[i]))
  return true
 
 func answer_signal(index:int,choice:int)->bool:
@@ -379,3 +405,38 @@ func advance_absence(elapsed_seconds:float)->int:
   advanced+=1
  if advanced>0:log_event("Durante la tua assenza sono trascorsi "+str(advanced)+" giorni.")
  return advanced
+
+func advance_project(clan:int,n:int):
+ var v=villages[clan]
+ if v.project<0:
+  if day%7!=0 or v.wood<12:return
+  var kind=0
+  if v.food<n*2:kind=0
+  elif v.era<4:kind=1+int(v.completed)%3
+  else:kind=int(v.completed)%6
+  v.project=kind
+  v.progress=0.0
+  v.wood-=12
+  log_event(CLANs_name(clan)+" avvia "+PROJECT_NAMES[kind]+".")
+ if v.food<n*.25:return
+ v.progress=minf(100,float(v.progress)+2.0+minf(5.0,n*.065))
+ if v.progress<100:return
+ var kind=int(v.project)
+ v.completed+=1
+ projects_completed+=1
+ v.bonuses[kind]+=1
+ match kind:
+  0:v.food=minf(850,v.food+45)
+  1:v.knowledge+=16
+  2:
+   for a in people:
+    if a.clan==clan:a.health=minf(100,a.health+8)
+  3:peace=minf(100,peace+6)
+  4:v.knowledge+=24
+  5:
+   for a in people:
+    if a.clan==clan:a.mood=minf(100,a.mood+8)
+ log_event(CLANs_name(clan)+" completa "+PROJECT_NAMES[kind]+".")
+ changes.append({"kind":"project","clan":clan})
+ v.project=-1
+ v.progress=0.0

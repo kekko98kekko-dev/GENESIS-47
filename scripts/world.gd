@@ -100,6 +100,12 @@ var toast_time=0.0
 var planted:Array=[]
 var snow_mesh:SphereMesh
 var rain_mesh:BoxMesh
+var civic_root:Node3D
+var civic_spinners:Array=[]
+var status_bar:ProgressBar
+var stats_bar:Label
+var day_label:Label
+var last_project_count=0
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -448,7 +454,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -458,6 +464,7 @@ func reset_visuals():
  activity_labels.clear()
  caravans.clear()
  clouds.clear()
+ civic_spinners.clear()
  farm_points=[[],[]]
  animals.clear()
  effects.clear()
@@ -478,13 +485,15 @@ func reset_visuals():
  roads_root=Node3D.new()
  farms_root=Node3D.new()
  ambient_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root]:add_child(n)
+ civic_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root]:add_child(n)
  create_clouds()
  for i in range(2):
   make_hub(i)
   sync_houses(i)
  rebuild_roads()
  rebuild_farms()
+ rebuild_civic()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9):
@@ -743,15 +752,19 @@ func apply_changes():
     sync_houses(int(e.clan))
     rebuild_farms()
    "trade":spawn_caravan(int(e.clan))
+   "project":rebuild_civic()
  sim.changes.clear()
 
 func step_day():
  var old_tech=sim.discoveries.size()
+ var previous_projects=sim.projects_completed
  sim.daily()
  apply_changes()
  if sim.discoveries.size()>old_tech:
   var last=sim.discoveries.back()
   notify_event("NUOVA SCOPERTA",Sim.CLANS[last.clan]+" · "+last.name)
+ elif sim.projects_completed>previous_projects:
+  notify_event("NUOVA OPERA CIVILE",sim.events[0])
  elif sim.day%25==0 and not sim.signals.is_empty():
   notify_event("SEGNALE DAL MONDO",str(sim.signals[0].text))
  if sim.ended!="" and show_ending:
@@ -888,6 +901,8 @@ func _process(delta:float):
   precipitation.emitting=sim.weather_name in ["Pioggia","Neve"] and speed>0 and distance<65
  update_caravans(delta)
  update_clouds(delta)
+ for rotor in civic_spinners:
+  if is_instance_valid(rotor):rotor.rotation.y+=delta*.38
  if is_instance_valid(hover_ring):
   hover_ring.visible=false
   if power!="Osserva" and not photo_mode and (get_viewport().gui_get_hovered_control()==null or get_viewport().gui_get_hovered_control()==hud):
@@ -1043,7 +1058,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  if deformation.size()>=48:deformation.pop_front()
  deformation.append({"x":p.x,"z":p.z,"h":amount,"r":r})
  make_terrain()
- for collection in [scenery,villages_root,people_root,animals_root]:
+ for collection in [scenery,villages_root,people_root,animals_root,civic_root,farms_root]:
   for n in collection.get_children():
    if n is Node3D:n.position.y=height_at(n.position.x,n.position.z)
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
@@ -1282,9 +1297,16 @@ func setup_ui():
  var rv=VBoxContainer.new()
  right.add_child(rv)
  text_label(rv,"VITA  /  CIVILTÀ",18)
+ status_bar=ProgressBar.new()
+ status_bar.custom_minimum_size.y=12
+ status_bar.show_percentage=false
+ status_bar.max_value=100
+ rv.add_child(status_bar)
+ stats_bar=text_label(rv,"",13)
+ stats_bar.modulate=Color("a7d9bc")
  selected_status=text_label(rv,"Osservazione del mondo",13)
  selected_status.modulate=Color("a7d9bc")
- details=rich(rv,285)
+ details=rich(rv,240)
  var line=HBoxContainer.new()
  rv.add_child(line)
  button(line,"Segui",func():
@@ -1306,6 +1328,7 @@ func setup_ui():
  button(line2,"Atlante",show_atlas)
  signals_button=button(line2,"Segnali",show_signals)
  button(line2,"Scoperte",show_tech)
+ button(rv,"Progetti delle civiltà",show_projects)
  var extra=HBoxContainer.new()
  rv.add_child(extra)
  button(extra,"Traguardi",show_achievements)
@@ -1374,14 +1397,18 @@ func refresh():
   signals_button.text="Segnali "+str(pending) if pending>0 else "Segnali"
  var a=sim.find(selected)
  if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("activity","Esplora"))+" · "+("Malato" if int(a.get("sick",0))>0 else "In salute")
+ if status_bar!=null:
+  status_bar.value=sim.energy if a.is_empty() else float(a.health)
+  stats_bar.text="Energia divina · %d%%"%int(sim.energy) if a.is_empty() else "Salute · %d%%"%int(a.health)
  if a.is_empty():
   var lines=[]
   for i in range(2):
    var v=sim.villages[i]
    lines.append("%s  /  %s\n%d abitanti · %d edifici\nCibo %d · Legna %d\nFede %d%% · Scoperte %d/14\n%s\n%s"%[Sim.CLANS[i],Sim.ERAS[v.era],sim.count(i),v.houses,int(v.food),int(v.wood),int(v.faith),v.tech,v.government,v.belief])
+   if int(v.project)>=0:lines.append("→ "+Sim.PROJECT_NAMES[int(v.project)]+" · "+str(int(v.progress))+"%")
   details.text="\n\n".join(lines)+"\n\nClicca una creatura per conoscerla."
  else:
-  details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),str(a.parents),str(a.partner),a.goal,"\n".join(a.memories)])
+  details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.mode==0:
@@ -1716,7 +1743,10 @@ func self_test():
  var eternal=Sim.new()
  eternal.start(47,0)
  for i in range(3000):eternal.daily()
- if eternal.ended!="" or eternal.day!=3000:failed=true
+ if eternal.ended!="" or eternal.day!=3000 or eternal.projects_completed<5:failed=true
+ var eternal_copy=Sim.new()
+ if not eternal_copy.import_state(JSON.parse_string(JSON.stringify(eternal.export_state()))) or eternal_copy.projects_completed!=eternal.projects_completed:failed=true
+ print("PROJECT_TEST completed=",eternal.projects_completed," births=",eternal.total_births," deaths=",eternal.total_deaths)
  for inhabitant in eternal.people.duplicate():eternal.die(inhabitant,"test")
  for i in range(10):eternal.daily()
  if eternal.ended!="" or eternal.day!=3010 or not eternal.people.is_empty():failed=true
@@ -1810,7 +1840,7 @@ func show_achievements():
  lines.append("\n60 abitanti · 5 scambi · 14 scoperte · 10 poteri · 4 generazioni")
  open_dialog("TRAGUARDI","\n\n".join(lines))
 func show_history():
- var lines=["GIORNO        POPOLAZIONE        PACE"]
+ var lines=["NATI: %d   ·   DEFUNTI: %d   ·   OPERE: %d"%[sim.total_births,sim.total_deaths,sim.projects_completed],"","GIORNO        POPOLAZIONE        PACE"]
  for row in sim.history.slice(maxi(0,sim.history.size()-30)):
   lines.append("%03d                   %03d                  %d%%"%[int(row.day),int(row.population),int(row.peace)])
  open_dialog("STORIA DEL MONDO","\n".join(lines))
@@ -1829,7 +1859,7 @@ func rebuild_roads():
    var q=house_location(i,j)
    var dir=Vector2(q.x-p.x,q.z-p.z)
    if dir.length()<1:continue
-   var perpendicular=dir.normalized().orthogonal()*.38
+   var perpendicular=dir.normalized().orthogonal()*.28
    var segments=maxi(3,ceili(dir.length()/0.7))
    for k in range(segments):
     var a=p.lerp(q,float(k)/segments)
@@ -2112,3 +2142,70 @@ func ask_autonomous():
   ai_busy=true
   ai_is_autonomous=true
   if ai_button!=null:ai_button.disabled=true
+
+func family_names(ids:Array)->String:
+ var names=[]
+ for id in ids:
+  if int(id)<0:continue
+  var a=sim.find(int(id))
+  if not a.is_empty():names.append(a.name)
+  else:
+   var found=false
+   for old in sim.dead:
+    if int(old.id)==int(id):
+     names.append(str(old.name)+" †")
+     found=true
+     break
+   if not found:names.append("#"+str(id))
+ return "—" if names.is_empty() else ", ".join(names)
+
+func show_projects():
+ var lines=["Le civiltà avviano opere autonomamente. Ogni opera richiede legna, tempo e cibo; gli effetti continuano dopo il completamento.",""]
+ for i in range(2):
+  var v=sim.villages[i]
+  lines.append(Sim.CLANS[i]+" · "+str(v.completed)+" opere completate")
+  lines.append("In corso: "+(Sim.PROJECT_NAMES[int(v.project)]+" — "+str(int(v.progress))+"%" if int(v.project)>=0 else "Nessuna"))
+  for j in range(6):
+   lines.append("  "+Sim.PROJECT_NAMES[j]+": "+str(v.bonuses[j]))
+  lines.append("")
+ open_dialog("OPERE DELLE CIVILTÀ","\n".join(lines))
+
+func rebuild_civic():
+ if not is_instance_valid(civic_root) or centers.size()!=2:return
+ for n in civic_root.get_children():
+  civic_root.remove_child(n)
+  n.queue_free()
+ civic_spinners.clear()
+ for i in range(2):
+  var v=sim.villages[i]
+  if int(v.completed)<=0:continue
+  var pos=land_near(centers[i].x+(2.9 if i==0 else -2.9),centers[i].z-3.0)
+  var plaza=Node3D.new()
+  civic_root.add_child(plaza)
+  plaza.position=pos
+  var trim=Color("73bab2") if i==0 else Color("dcac69")
+  cone(plaza,Color("9b9d93"),Vector3(0,.10,0),1.35,.2,1.35,12)
+  cone(plaza,Color("d3d0b8"),Vector3(0,.28,0),1.0,.18,1.0,12)
+  var h=1.6+minf(1.4,float(v.completed)*.10)
+  for j in range(4):
+   var angle=TAU*j/4
+   var foot=Vector3(cos(angle)*.65,0,sin(angle)*.65)
+   cone(plaza,Color("c3c9be"),foot+Vector3.UP*(h*.5+.4),.13,h,.10,8)
+   block(plaza,trim,foot+Vector3.UP*(h+.44),Vector3(.36,.12,.36))
+  var rotor=Node3D.new()
+  plaza.add_child(rotor)
+  rotor.position.y=h+.55
+  var r=TorusMesh.new()
+  r.inner_radius=.48
+  r.outer_radius=.57
+  var a=piece(rotor,r,trim,Vector3.ZERO,Vector3.ONE,.4)
+  a.rotation.x=PI/2
+  var b=piece(rotor,r,Color("f5dcb0"),Vector3.ZERO,Vector3.ONE*.82,.6)
+  b.rotation.z=.8
+  sphere(rotor,trim,Vector3.ZERO,Vector3.ONE*.42,.65)
+  civic_spinners.append(rotor)
+  if int(v.completed)>=4:
+   for j in range(6):
+    var angle=j*TAU/6
+    var offset=Vector3(cos(angle)*1.05,.36,sin(angle)*1.05)
+    sphere(plaza,trim,offset,Vector3.ONE*.15,.4)
