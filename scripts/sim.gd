@@ -194,7 +194,7 @@ func daily():
   a.role="Profeta" if a.get("prophet",false) else ("Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore"))
   a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
   a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
-  if a.health<=0 or a.age>83:die(a,"fine della vita")
+  if a.health<=0 or a.age>83:die(a,"vecchiaia" if a.age>83 else "malattia" if int(a.sick)>0 else "carestia" if a.hunger>75 else "ferite")
  if day%25==0 and not people.is_empty():
   var a=people[rng.randi_range(0,people.size()-1)]
   var question="Creatore, perché esiste la sofferenza?" if a.mood<50 else ("Abbiamo osservato anomalie. Il nostro mondo è reale?" if villages[a.clan].era>=4 else ("I nostri raccolti basteranno per tutti?" if day%50==0 else "Creatore, ci ascolti?"))
@@ -247,6 +247,19 @@ func export_state()->Dictionary:
  return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
+ for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
+  if not d.has(key):return false
+ if int(d.mode)<0 or int(d.mode)>3 or d.people.size()>LIMIT:return false
+ for a in d.people:
+  if not a is Dictionary:return false
+  for key in ["id","name","clan","age","gen","health","hunger","faith","mood","genes","parents","partner","friend","role","goal","memories","favorite"]:
+   if not a.has(key):return false
+  if int(a.clan)<0 or int(a.clan)>1 or not a.genes is Array or a.genes.size()!=4:return false
+ for v in d.villages:
+  if not v is Dictionary:return false
+  for key in ["era","houses","tech","food","wood","knowledge","faith","government","belief"]:
+   if not v.has(key):return false
+  if int(v.era)<0 or int(v.era)>6 or int(v.tech)<0 or int(v.tech)>14:return false
  seed_value=int(d.seed)
  day=int(d.day)
  mode=int(d.mode)

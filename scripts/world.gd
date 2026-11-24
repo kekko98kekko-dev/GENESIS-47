@@ -71,6 +71,19 @@ var signals_button:Button
 var time_buttons:Array=[]
 var quality_mode=1
 var hover_ring:MeshInstance3D
+var ambient_root:Node3D
+var clouds:Array=[]
+var settings=ConfigFile.new()
+var autosave_enabled=true
+var last_auto_day=-1
+var previous_speed=1.0
+var selected_slot:OptionButton
+var volume_value=50.0
+var cinematic_light=false
+var hover_elapsed=0.0
+var event_player:AudioStreamPlayer
+var event_sounds:Dictionary={}
+var atlas_window:AcceptDialog
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -88,6 +101,7 @@ func _ready():
  load_catalog()
  setup_environment()
  setup_ui()
+ if not test_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
  request=HTTPRequest.new()
  add_child(request)
  request.timeout=90
@@ -273,6 +287,9 @@ func setup_environment():
  precipitation.mesh=drop
  audio=AudioStreamPlayer.new()
  add_child(audio)
+ event_player=AudioStreamPlayer.new()
+ add_child(event_player)
+ event_player.volume_db=-18
  if not test_mode and not "--capture" in OS.get_cmdline_user_args():
   create_soundscape()
 
@@ -389,6 +406,7 @@ func make_terrain():
 
 func new_world(seed_value:int,which:int):
  sim.start(seed_value,which)
+ last_auto_day=-1
  reset_visuals()
  tick=0
  selected=-1
@@ -399,7 +417,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -408,6 +426,7 @@ func reset_visuals():
  actors.clear()
  activity_labels.clear()
  caravans.clear()
+ clouds.clear()
  farm_points=[[],[]]
  animals.clear()
  effects.clear()
@@ -427,7 +446,9 @@ func reset_visuals():
  effects_root=Node3D.new()
  roads_root=Node3D.new()
  farms_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root]:add_child(n)
+ ambient_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root]:add_child(n)
+ create_clouds()
  for i in range(2):
   make_hub(i)
   sync_houses(i)
@@ -701,7 +722,9 @@ func step_day():
   dlg.dialog_text=sim.ended+"\n\nIl tuo universo può continuare in modalità libera."
   hud.add_child(dlg)
   dlg.popup_centered(Vector2i(530,170))
- if sim.day%20==0 and not test_mode:save_game(false)
+ if sim.day%15==0 and autosave_enabled and not test_mode:
+  save_path("user://genesis47_auto.json",false)
+  last_auto_day=sim.day
  refresh()
 
 func update_camera():
@@ -726,7 +749,7 @@ func _process(delta:float):
  if speed>0:
   tick+=minf(delta,.1)*speed
   var loops=0
-  while tick>=1.7 and loops<8:
+  while tick>=1.7 and loops<8 and speed>0:
    tick-=1.7
    step_day()
    loops+=1
@@ -805,9 +828,10 @@ func _process(delta:float):
   precipitation.position=Vector3(focus.x, maxf(focus.y+10,14),focus.z)
   precipitation.emitting=sim.weather_name=="Pioggia" and speed>0 and distance<65
  update_caravans(delta)
+ update_clouds(delta)
  if is_instance_valid(hover_ring):
   hover_ring.visible=false
-  if power!="Osserva" and not photo_mode and get_viewport().gui_get_hovered_control()==null:
+  if power!="Osserva" and not photo_mode and (get_viewport().gui_get_hovered_control()==null or get_viewport().gui_get_hovered_control()==hud):
    var hp=ground_at(get_viewport().get_mouse_position())
    if hp.y>SEA-.5:
     hover_ring.position=hp+Vector3.UP*.12
@@ -819,9 +843,20 @@ func _unhandled_input(event:InputEvent):
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
   if event.keycode==KEY_TAB:toggle_compact()
+  if event.keycode==KEY_HOME:
+   following=false
+   focus=centers[0]
+   distance=27
+   pitch=.72
+   update_camera()
   if event.keycode==KEY_F5:save_game(true)
   if event.keycode==KEY_F9:load_game()
-  if event.keycode==KEY_SPACE:speed=1 if speed==0 else 0
+  if event.keycode==KEY_SPACE:
+   if speed>0:
+    previous_speed=speed
+    speed=0
+   else:speed=previous_speed
+   update_time_buttons()
   if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh();populate_powers(power_category.selected)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
   azimuth-=event.relative.x*.006
@@ -925,9 +960,15 @@ func update_effects(delta:float):
   var frac=clampf(1.0-e.life/e.max,0,1)
   if e.kind=="meteor":
    e.node.position=e.from.lerp(e.dest,frac*frac)
-   if e.life<=0:spark(e.dest,Color("f6a14e"),2.8)
+   if e.life<=0:
+    spark(e.dest,Color("f6a14e"),2.8)
+    impact_cloud(e.dest)
   elif e.kind=="wave":
-   e.node.scale=Vector3.ONE*(1+frac*10)
+   e.node.scale=Vector3(1+frac*10,1+sin(frac*PI)*2.2,1+frac*10)
+ elif e.kind=="impact":
+   for child in e.node.get_children():
+    if child is OmniLight3D:child.light_energy=6*(1-frac)
+    elif child is MeshInstance3D:child.scale=Vector3.ONE*(.3+frac*8)
   elif e.kind=="spark":
    for child in e.node.get_children():
     if child.has_meta("velocity"):
@@ -952,6 +993,12 @@ func alter_ground(p:Vector3,amount:float,r:float):
 func divine(p:Vector3):
  if power=="Osserva":return
  var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago"] else 9.0
+ if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=Sim.LIMIT:
+  hint.text="Limite della popolazione raggiunto."
+  return
+ if power=="Resurrezione" and sim.dead.is_empty():
+  hint.text="Nessun abitante da resuscitare."
+  return
  if sim.energy<cost and not unlimited:
   hint.text="Energia insufficiente."
   return
@@ -999,6 +1046,7 @@ func divine(p:Vector3):
   "Pioggia":
    v.food=minf(850,v.food+42)
    color=Color("8fcddb")
+   sim.weather_name="Pioggia"
    wave(p)
   "Conflitto":sim.peace=maxf(0,sim.peace-30)
   "Fede":
@@ -1016,6 +1064,7 @@ func divine(p:Vector3):
   "Vulcano":
    alter_ground(p,5,7)
    meteor(p)
+   impact_cloud(p)
    color=Color("e67f43")
    v.food*=.7
    for a in near:a.health=maxf(1,a.health-65)
@@ -1047,6 +1096,7 @@ func divine(p:Vector3):
     actors[a.id].node.position=p
   "Carestia":v.food*=.22
  spark(p,color,1.5)
+ if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
  apply_changes()
  refresh()
@@ -1117,7 +1167,7 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"G E N E S I S   4 7   /   P R O J E C T   G O D",22)
+ title=text_label(row,"GENESIS 47   /   P R O J E C T   G O D",22)
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
@@ -1125,14 +1175,14 @@ func setup_ui():
  button(row,"Vista",toggle_compact)
  button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
- var slots=OptionButton.new()
- for i in range(3):slots.add_item("Slot "+str(i+1))
- slots.item_selected.connect(func(i):slot=i)
- row.add_child(slots)
+ selected_slot=OptionButton.new()
+ for i in range(3):selected_slot.add_item("Slot "+str(i+1))
+ selected_slot.item_selected.connect(func(i):slot=i)
+ row.add_child(selected_slot)
  button(row,"Salva",func():save_game(true))
  button(row,"Carica",load_game)
  button(row,"Foto",toggle_photo)
- button(row,"Audio",func():audio.stream_paused=not audio.stream_paused)
+ button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
  var left=panel(hud,Rect2(14,115,190,640))
  left_panel=left
@@ -1203,6 +1253,7 @@ func setup_ui():
  input.max_length=400
  rv.add_child(input)
  button(rv,"Invia messaggio",send_message)
+ input.text_submitted.connect(func(_message):send_message())
  model=LineEdit.new()
  model.text="qwen2.5:1.5b"
  model.placeholder_text="Modello Ollama locale"
@@ -1276,8 +1327,10 @@ func open_welcome():
  box.add_child(seed_input)
  text_label(box,"Seme del mondo · TAB interfaccia ridotta · F10 cinema",13)
  for i in range(3):
-  if FileAccess.file_exists(SAVE_PREFIX+str(i)+".json"):
-   button(box,"Riprendi slot "+str(i+1),func():slot=i;dlg.hide();load_game();dlg.queue_free())
+  if FileAccess.file_exists(SAVE_PREFIX+str(i)+".json") or FileAccess.file_exists(SAVE_PREFIX+str(i)+".json.bak"):
+   button(box,"Riprendi slot "+str(i+1),func():slot=i;selected_slot.select(i);dlg.hide();load_game();dlg.queue_free())
+ if FileAccess.file_exists("user://genesis47_auto.json") or FileAccess.file_exists("user://genesis47_auto.json.bak"):
+  button(box,"Riprendi l’ultimo salvataggio automatico",func():dlg.hide();load_path("user://genesis47_auto.json");dlg.queue_free())
  dlg.confirmed.connect(func():
   deformation.clear()
   new_world(maxi(1,abs(int(seed_input.text))),option.selected)
@@ -1298,12 +1351,54 @@ func open_dialog(heading:String,content:String):
  dlg.popup_centered(Vector2i(650,480))
 
 func show_atlas():
- var lines=["ABITANTI VIVENTI"]
- for a in sim.people:
-  lines.append("%s%s · %s · G%d · età %d · genitori %s · partner %s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.gen,int(a.age),str(a.parents),str(a.partner)])
- lines.append("\nARCHIVIO DEI DEFUNTI")
- for a in sim.dead:lines.append("%s · G%d · giorno %d · %s"%[a.name,a.gen,a.day,a.reason])
- open_dialog("ATLANTE GENEALOGICO","\n".join(lines))
+ var dlg=AcceptDialog.new()
+ atlas_window=dlg
+ hud.add_child(dlg)
+ dlg.title="ATLANTE DEGLI ABITANTI"
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ var search=LineEdit.new()
+ search.placeholder_text="Cerca nome, mestiere o popolo"
+ box.add_child(search)
+ var filter=CheckButton.new()
+ filter.text="Solo preferiti"
+ box.add_child(filter)
+ var list=ItemList.new()
+ list.custom_minimum_size=Vector2(575,315)
+ box.add_child(list)
+ var reload=func():
+  list.clear()
+  for a in sim.people:
+   var line="%s%s  ·  %s  ·  %s  ·  G%d"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,a.gen]
+   if filter.button_pressed and not a.favorite:continue
+   if not line.to_lower().contains(search.text.to_lower()):continue
+   var idx=list.add_item(line)
+   list.set_item_metadata(idx,a.id)
+ reload.call()
+ search.text_changed.connect(func(_v):reload.call())
+ filter.toggled.connect(func(_v):reload.call())
+ var jump=func():
+  var ids=list.get_selected_items()
+  if ids.is_empty():return
+  selected=int(list.get_item_metadata(ids[0]))
+  if actors.has(selected):
+   following=true
+   focus=actors[selected].node.position
+   distance=4.5
+   pitch=.45
+   update_camera()
+  refresh()
+  dlg.hide()
+  dlg.queue_free()
+ list.item_activated.connect(func(_i):jump.call())
+ button(box,"Osserva l'abitante selezionato",jump)
+ button(box,"Archivio dei defunti",func():
+  var lines=[]
+  for a in sim.dead:lines.append("%s · G%d · giorno %d · %s"%[a.name,a.gen,a.day,a.reason])
+  open_dialog("ARCHIVIO DEI DEFUNTI","\n".join(lines) if not lines.is_empty() else "Nessun defunto."))
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(620,475))
 
 func show_signals():
  var dlg=AcceptDialog.new()
@@ -1394,36 +1489,61 @@ func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
  refresh()
 
 func save_game(show_hint:bool):
+ save_path(SAVE_PREFIX+str(slot)+".json",show_hint)
+
+func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["deformation"]=deformation
  d["positions"]={}
  for id in actors:
   var p:Vector3=actors[id].node.position
   d.positions[str(id)]=[p.x,p.z]
- var path=SAVE_PREFIX+str(slot)+".json"
+ d["saved_at"]=Time.get_unix_time_from_system()
+ d["camera"]=[focus.x,focus.z,azimuth,pitch,distance]
  var file=FileAccess.open(path+".tmp",FileAccess.WRITE)
  if file==null:
   if show_hint:hint.text="Impossibile salvare."
-  return
+  return false
  file.store_string(JSON.stringify(d))
  file.close()
- var err=DirAccess.rename_absolute(ProjectSettings.globalize_path(path+".tmp"),ProjectSettings.globalize_path(path))
+ var absolute=ProjectSettings.globalize_path(path)
+ var backup=absolute+".bak"
+ if FileAccess.file_exists(path):
+  if FileAccess.file_exists(path+".bak"):DirAccess.remove_absolute(backup)
+  if DirAccess.rename_absolute(absolute,backup)!=OK:return false
+ var err=DirAccess.rename_absolute(ProjectSettings.globalize_path(path+".tmp"),absolute)
  if err!=OK:
+  if FileAccess.file_exists(path+".bak"):DirAccess.rename_absolute(backup,absolute)
   if show_hint:hint.text="Impossibile completare il salvataggio."
-  return
+  return false
  if show_hint:hint.text="Universo salvato nello slot "+str(slot+1)+"."
+ return true
 
 func load_game():
- var p=SAVE_PREFIX+str(slot)+".json"
- if not FileAccess.file_exists(p):
+ load_path(SAVE_PREFIX+str(slot)+".json")
+
+func load_path(p:String)->bool:
+ if not FileAccess.file_exists(p) and not FileAccess.file_exists(p+".bak"):
   hint.text="Slot vuoto."
-  return
- var data=JSON.parse_string(FileAccess.get_file_as_string(p))
- if not data is Dictionary or not sim.import_state(data):
-  hint.text="Salvataggio non valido."
-  return
+  return false
+ var data=JSON.parse_string(FileAccess.get_file_as_string(p)) if FileAccess.file_exists(p) else null
+ var candidate=Sim.new()
+ if not data is Dictionary or not candidate.import_state(data):
+  data=JSON.parse_string(FileAccess.get_file_as_string(p+".bak")) if FileAccess.file_exists(p+".bak") else null
+  candidate=Sim.new()
+  if not data is Dictionary or not candidate.import_state(data):
+   hint.text="Salvataggio non valido."
+   return false
+ sim=candidate
  deformation=data.get("deformation",[])
  reset_visuals()
+ var cam=data.get("camera",[])
+ if cam.size()==5:
+  focus=Vector3(float(cam[0]),0,float(cam[1]))
+  azimuth=float(cam[2])
+  pitch=clampf(float(cam[3]),.24,1.48)
+  distance=clampf(float(cam[4]),3.0,125.0)
+  update_camera()
  for id in actors:
   var pos=data.get("positions",{}).get(str(id),[])
   if pos.size()==2:actors[id].node.position=ground(float(pos[0]),float(pos[1]))
@@ -1434,6 +1554,7 @@ func load_game():
  tick=0
  refresh()
  hint.text="Universo ripristinato."
+ return true
 
 func self_test():
  var failed=false
@@ -1462,10 +1583,19 @@ func self_test():
   power=p
   divine(centers[0])
  power="Osserva"
- save_game(false)
+ var test_path="user://genesis47_test.json"
+ if not save_path(test_path,false):failed=true
  var before=sim.people.size()
- load_game()
- if sim.people.size()!=before:failed=true
+ var before_day=sim.day
+ if not load_path(test_path) or sim.people.size()!=before or sim.day!=before_day:failed=true
+ if not save_path(test_path,false):failed=true
+ var corrupt=FileAccess.open(test_path,FileAccess.WRITE)
+ if corrupt!=null:
+  corrupt.store_string("invalid json")
+  corrupt.close()
+ if not load_path(test_path) or sim.people.size()!=before:failed=true
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(test_path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path+ext))
  print("SELF_TEST ", "FAIL" if failed else "PASS")
  get_tree().quit(1 if failed else 0)
 
@@ -1602,19 +1732,22 @@ func show_options():
  for item in ["Prestazioni","Bilanciata","Qualità"]:quality.add_item(item)
  quality.select(quality_mode)
  quality.item_selected.connect(func(i):
-  quality_mode=i
-  sun.shadow_enabled=i>0
-  get_viewport().msaa_3d=Viewport.MSAA_4X if i==2 else Viewport.MSAA_2X if i==1 else Viewport.MSAA_DISABLED
-  get_viewport().scaling_3d_scale=.8 if i==0 else 1.0)
+  apply_quality(i)
+  store_settings())
  box.add_child(quality)
  var volume=HSlider.new()
  volume.min_value=0
  volume.max_value=100
- volume.value=50
+ volume.value=volume_value
  volume.custom_minimum_size.x=300
- volume.value_changed.connect(func(v):audio.volume_db=linear_to_db(maxf(.001,v/100.0)) - 17)
+ volume.value_changed.connect(func(v):volume_value=v;audio.volume_db=linear_to_db(maxf(.001,v/100.0))-17;store_settings())
  text_label(box,"Volume ambiente",14)
  box.add_child(volume)
+ var auto=CheckButton.new()
+ auto.text="Salvataggio automatico separato"
+ auto.button_pressed=autosave_enabled
+ auto.toggled.connect(func(v):autosave_enabled=v;store_settings())
+ box.add_child(auto)
  button(box,"Schermo intero / finestra",func():DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode()==DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN))
  dlg.confirmed.connect(dlg.queue_free)
  dlg.canceled.connect(dlg.queue_free)
@@ -1664,3 +1797,121 @@ func update_caravans(delta:float):
   if row.progress>=1:
    row.node.queue_free()
    caravans.erase(row)
+
+func create_clouds():
+ if test_mode:return
+ var mat=StandardMaterial3D.new()
+ mat.albedo_color=Color(.86,.91,.92,.23)
+ mat.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA
+ mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
+ mat.cull_mode=BaseMaterial3D.CULL_DISABLED
+ for i in range(9):
+  var n=Node3D.new()
+  ambient_root.add_child(n)
+  n.position=Vector3(rng.randf_range(-75,75),rng.randf_range(18,28),rng.randf_range(-68,68))
+  for j in range(4):
+   var m=SphereMesh.new()
+   m.radius=.5
+   m.height=1.0
+   m.radial_segments=12
+   m.rings=6
+   var puff=MeshInstance3D.new()
+   puff.mesh=m
+   puff.material_override=mat
+   puff.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+   n.add_child(puff)
+   puff.position=Vector3(j*3.2-4.8,sin(j*1.7)*.5,cos(j*1.1)*1.5)
+   puff.scale=Vector3(7.0,2.1,4.7)
+  clouds.append(n)
+
+func update_clouds(delta:float):
+ for n in clouds:
+  if not is_instance_valid(n):continue
+  n.visible=quality_mode>0 and distance>22
+  if n.visible:
+   n.position.x+=delta*.22
+   if n.position.x>80:n.position.x=-80
+
+func impact_cloud(p:Vector3):
+ var n=Node3D.new()
+ effects_root.add_child(n)
+ n.position=p+Vector3.UP*.3
+ var l=OmniLight3D.new()
+ n.add_child(l)
+ l.light_color=Color("ffb469")
+ l.light_energy=6
+ l.omni_range=16
+ var ring=TorusMesh.new()
+ ring.inner_radius=.9
+ ring.outer_radius=1.05
+ var shock=piece(n,ring,Color("ffc079"),Vector3.UP*.1,Vector3.ONE,1.4)
+ shock.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ var particles=CPUParticles3D.new()
+ n.add_child(particles)
+ particles.amount=72
+ particles.lifetime=1.6
+ particles.one_shot=true
+ particles.explosiveness=.92
+ particles.direction=Vector3.UP
+ particles.spread=83
+ particles.initial_velocity_min=3
+ particles.initial_velocity_max=9
+ particles.gravity=Vector3(0,-5,0)
+ particles.scale_amount_min=.25
+ particles.scale_amount_max=1.0
+ var m=SphereMesh.new()
+ m.radius=.17
+ m.height=.34
+ m.radial_segments=7
+ m.rings=4
+ m.material=material(Color("d38d57"),.9,.25)
+ particles.mesh=m
+ particles.restart()
+ particles.emitting=true
+ effects.append({"node":n,"life":2.0,"max":2.0,"kind":"impact"})
+
+func play_event_sound(danger:bool):
+ var key="danger" if danger else "gentle"
+ if not event_sounds.has(key):
+  var rate=16000
+  var frames=rate*2
+  var bytes=PackedByteArray()
+  bytes.resize(frames*2)
+  var srng=RandomNumberGenerator.new()
+  srng.seed=73 if danger else 47
+  for i in range(frames):
+   var t=float(i)/rate
+   var envelope=exp(-t*(2.6 if danger else 3.8))*minf(1,t*45)
+   var v=0.0
+   if danger:v=(sin(TAU*(55*t+18*t*t))*.52+srng.randf_range(-1,1)*.25)*envelope
+   else:v=(sin(TAU*392*t)*.36+sin(TAU*587*t)*.23+sin(TAU*784*t)*.12)*envelope
+   bytes.encode_s16(i*2,int(clampf(v,-1,1)*22000))
+  var clip=AudioStreamWAV.new()
+  clip.format=AudioStreamWAV.FORMAT_16_BITS
+  clip.mix_rate=rate
+  clip.data=bytes
+  event_sounds[key]=clip
+ event_player.stream=event_sounds[key]
+ event_player.stream_paused=audio.stream_paused
+ event_player.play()
+
+func apply_quality(i:int):
+ quality_mode=clampi(i,0,2)
+ sun.shadow_enabled=quality_mode>0
+ get_viewport().msaa_3d=Viewport.MSAA_4X if quality_mode==2 else Viewport.MSAA_2X if quality_mode==1 else Viewport.MSAA_DISABLED
+ get_viewport().scaling_3d_scale=.85 if quality_mode==0 else 1.0
+
+func restore_settings():
+ if settings.load("user://genesis47_settings.cfg")!=OK:return
+ apply_quality(int(settings.get_value("game","quality",1)))
+ autosave_enabled=bool(settings.get_value("game","autosave",true))
+ volume_value=float(settings.get_value("game","volume",50))
+ audio.volume_db=linear_to_db(maxf(.001,volume_value/100.0))-17
+ audio.stream_paused=bool(settings.get_value("game","muted",false))
+
+func store_settings():
+ settings.set_value("game","quality",quality_mode)
+ settings.set_value("game","autosave",autosave_enabled)
+ settings.set_value("game","volume",volume_value)
+ settings.set_value("game","muted",audio.stream_paused)
+ settings.save("user://genesis47_settings.cfg")
