@@ -10,9 +10,9 @@ func _process(_delta):
  if world!=null:queue_redraw()
 func _draw():
  if world==null or world.centers.size()!=2:return
- if cache==null or cached_seed!=world.sim.seed_value or cached_deformation!=world.deformation.size():
+ if cache==null or cached_seed!=world.sim.seed_value or cached_deformation!=world.terrain_revision:
   cached_seed=world.sim.seed_value
-  cached_deformation=world.deformation.size()
+  cached_deformation=world.terrain_revision
   var image=Image.create(72,72,false,Image.FORMAT_RGB8)
   for y in range(72):
    for x in range(72):
@@ -21,6 +21,8 @@ func _draw():
     image.set_pixel(x,y,c)
   cache=ImageTexture.create_from_image(image)
  draw_texture_rect(cache,Rect2(Vector2.ZERO,size),false)
+ for i in range(world.trade_route.size()-1):
+  draw_line(to_map(world.trade_route[i]),to_map(world.trade_route[i+1]),Color("d2af79"),1.2,true)
  for a in world.sim.people:
   if not world.actors.has(a.id):continue
   var p=world.actors[a.id].node.position

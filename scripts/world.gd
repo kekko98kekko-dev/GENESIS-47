@@ -1,8 +1,8 @@
 extends Node3D
 const Sim=preload("res://scripts/sim.gd")
 const SEA=-0.40
-const GRID=92
-const STEP=1.15
+const GRID=116
+const STEP=0.912
 const POWERS=["Osserva","Vita","Foresta","Provviste","Guarigione","Meteorite","Conoscenza","Pace","Mutazione","Pioggia","Conflitto","Fede","Fulmine","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Profeta","Nuova specie","Carestia"]
 const SAVE_PREFIX="user://genesis47_slot"
 var sim=Sim.new()
@@ -117,6 +117,11 @@ var last_season=""
 var event_feed:RichTextLabel
 var mood_bar:ProgressBar
 var hunger_bar:ProgressBar
+var trade_route:PackedVector3Array=PackedVector3Array()
+var route_root:Node3D
+var terrain_revision=0
+var selected_marker:Label3D
+var route_status:Label
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -406,6 +411,7 @@ func terrain_color(p:Vector3)->Color:
  return grass
 
 func make_terrain():
+ terrain_revision+=1
  if is_instance_valid(earth):
   remove_child(earth)
   earth.queue_free()
@@ -468,7 +474,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -500,7 +506,9 @@ func reset_visuals():
  farms_root=Node3D.new()
  ambient_root=Node3D.new()
  civic_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root]:add_child(n)
+ route_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root]:add_child(n)
+ rebuild_trade_route()
  create_clouds()
  for i in range(2):
   make_hub(i)
@@ -510,14 +518,14 @@ func reset_visuals():
  rebuild_civic()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
-  if p.y>SEA+.85 and p.y<8.5 and far_village(p,9):
+  if p.y>SEA+.85 and p.y<8.5 and far_village(p,9) and away_from_route(p,1.65):
    make_tree(p,rng.randf_range(2.3,4.8),i)
  for row in planted:
   var place=ground(float(row.x),float(row.z))
   if place.y>SEA+.12:make_tree(place,float(row.h),int(row.i))
  for i in range(100):
   var p=ground(rng.randf_range(-46,46),rng.randf_range(-43,43))
-  if p.y>SEA+.2 and far_village(p,4):
+  if p.y>SEA+.2 and far_village(p,4) and away_from_route(p,1.05):
    make_rock(p,rng.randf_range(.45,1.3),i)
  for i in range(110):
   var p=ground(rng.randf_range(-40,40),rng.randf_range(-38,38))
@@ -539,6 +547,7 @@ func reset_visuals():
   start_animation(n,["walk","run","idle"])
   animals.append({"node":n,"target":random_near(p,5),"center":centers[i%2],"phase":rng.randf()*TAU})
  for a in sim.people:create_actor(a)
+ for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
  var ring=TorusMesh.new()
@@ -548,6 +557,14 @@ func reset_visuals():
  cursor.material_override=material(Color("fff0b3"),.5,1.1)
  add_child(cursor)
  cursor.hide()
+ selected_marker=Label3D.new()
+ add_child(selected_marker)
+ selected_marker.font_size=34
+ selected_marker.pixel_size=.007
+ selected_marker.outline_size=6
+ selected_marker.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ selected_marker.modulate=Color("fff0b3")
+ selected_marker.hide()
  hover_ring=MeshInstance3D.new()
  var brush=TorusMesh.new()
  brush.inner_radius=5.85
@@ -774,7 +791,8 @@ func apply_changes():
    "house","era":
     sync_houses(int(e.clan))
     rebuild_farms()
-   "trade":spawn_caravan(int(e.clan))
+   "trade":spawn_caravan(int(e.id))
+   "trade_arrived":remove_caravan(int(e.id))
    "project":rebuild_civic()
    "migration":
     var a=sim.find(int(e.id))
@@ -815,6 +833,7 @@ func update_camera():
  if camera==null:return
  focus.y=maxf(height_at(focus.x,focus.z),SEA)+.8
  camera.position=focus+Vector3(sin(azimuth)*cos(pitch),sin(pitch),cos(azimuth)*cos(pitch))*distance
+ camera.position.y=maxf(camera.position.y,height_at(camera.position.x,camera.position.z)+.85)
  camera.look_at(focus,Vector3.UP)
 
 func _process(delta:float):
@@ -921,10 +940,15 @@ func _process(delta:float):
   var n:Node3D=actors[selected].node
   cursor.show()
   cursor.position=n.position+Vector3(0,.045,0)
+  selected_marker.position=n.position+Vector3.UP*1.42
+  selected_marker.text="◆"
+  selected_marker.visible=distance<35 and not photo_mode
   if following:
    focus=focus.lerp(n.position,clampf(delta*6,0,1))
    update_camera()
- else:cursor.hide()
+ else:
+  cursor.hide()
+  selected_marker.hide()
  if is_instance_valid(precipitation):
   precipitation.position=Vector3(focus.x, maxf(focus.y+10,14),focus.z)
   var snowy=sim.weather_name=="Neve"
@@ -974,6 +998,15 @@ func _unhandled_input(event:InputEvent):
    else:speed=previous_speed
    update_time_buttons()
   if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh();populate_powers(power_category.selected)
+ if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+  following=false
+  var right=Vector3(cos(azimuth),0,-sin(azimuth))
+  var back=Vector3(sin(azimuth),0,cos(azimuth))
+  focus-=right*event.relative.x*distance*.0018
+  focus-=back*event.relative.y*distance*.0018
+  focus.x=clampf(focus.x,-50,50)
+  focus.z=clampf(focus.z,-50,50)
+  update_camera()
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
   azimuth-=event.relative.x*.006
   pitch=clampf(pitch+event.relative.y*.005,.24,1.48)
@@ -994,21 +1027,33 @@ func _unhandled_input(event:InputEvent):
 func ground_at(mouse:Vector2)->Vector3:
  var origin=camera.project_ray_origin(mouse)
  var dir=camera.project_ray_normal(mouse)
+ var previous=origin
  for i in range(600):
   var p=origin+dir*i*.35
-  if p.y<=height_at(p.x,p.z):return ground(p.x,p.z)
+  if p.y<=height_at(p.x,p.z):
+   var lo=previous
+   var hi=p
+   for j in range(7):
+    var mid=(lo+hi)*.5
+    if mid.y>height_at(mid.x,mid.z):lo=mid
+    else:hi=mid
+   return ground(hi.x,hi.z)
+  previous=p
  return Vector3(0,-100,0)
 
 func select_at(mouse:Vector2):
  var best=28.0
+ var nearest_depth=INF
  selected=-1
  following=false
  for id in actors:
   var p:Vector3=actors[id].node.position+Vector3(0,.55,0)
   if camera.is_position_behind(p):continue
   var dist=camera.unproject_position(p).distance_to(mouse)
-  if dist<best:
+  var depth=camera.position.distance_to(p)
+  if dist<best-.5 or (absf(dist-best)<=.5 and depth<nearest_depth):
    best=dist
+   nearest_depth=depth
    selected=id
  refresh()
 
@@ -1105,6 +1150,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
    if n is Node3D:n.position.y=height_at(n.position.x,n.position.z)
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
  rebuild_roads()
+ rebuild_trade_route()
 
 func divine(p:Vector3):
  if power=="Osserva":return
@@ -1408,6 +1454,8 @@ func setup_ui():
  button(extra,"Nomi",func():show_labels=not show_labels)
  button(archive,"Cronaca completa",func():open_dialog("CRONACA","\n".join(sim.events)))
  button(archive,"Storia delle crisi",show_crisis_history)
+ route_status=text_label(archive,"",13)
+ button(archive,"Osserva la via commerciale",func():following=false;focus=(centers[0]+centers[1])*.5;distance=37;pitch=.8;update_camera())
  event_feed=rich(archive,260)
  event_feed.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var chat=VBoxContainer.new()
@@ -1488,6 +1536,7 @@ func refresh():
   mood_bar.get_parent().visible=not a.is_empty()
   hunger_bar.get_parent().visible=not a.is_empty()
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
+ if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate"%[sim.shipments.size(),sim.trades]
  if a.is_empty():
   var lines=[]
   for i in range(2):
@@ -1854,6 +1903,18 @@ func self_test():
  eternal.daily()
  if eternal.people.is_empty() or eternal.ended!="" or eternal.day!=3011:failed=true
  print("ETERNITY_TEST day=",eternal.day," population=",eternal.people.size()," ending=",eternal.ended)
+ var trade_test=Sim.new()
+ trade_test.start(47,0)
+ var food_before=float(trade_test.villages[1].food)
+ trade_test.dispatch_shipment(0,12)
+ if trade_test.shipments.size()!=1 or trade_test.villages[1].food!=food_before:failed=true
+ var trade_copy=Sim.new()
+ if not trade_copy.import_state(JSON.parse_string(JSON.stringify(trade_test.export_state()))) or trade_copy.shipments.size()!=1:failed=true
+ trade_copy.day=5
+ trade_copy.settle_shipments()
+ if trade_copy.trades!=1 or not trade_copy.shipments.is_empty() or absf(float(trade_copy.villages[1].food)-food_before-12)>.01:failed=true
+ if trade_route.size()<10:failed=true
+ print("TRADE_TEST delivered=",trade_copy.trades," route_points=",trade_route.size())
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
@@ -2055,28 +2116,45 @@ func rebuild_farms():
       block(n,Color("795b41"),q,Vector3(.36,.08,.36))
       sphere(n,Color("b8bb59"),q+Vector3.UP*.22,Vector3(.18,.42,.18))
 
-func spawn_caravan(clan:int):
- if not is_instance_valid(villages_root) or caravans.size()>3:return
- var origin=centers[clan]
- var n=asset(villages_root,"cart",clan,origin,.88)
- if n==null:return
- caravans.append({"node":n,"from":origin,"to":centers[1-clan],"progress":0.0})
+func spawn_caravan(id:int):
+ if not is_instance_valid(villages_root):return
+ for row in caravans:
+  if row.id==id:return
+ for shipment in sim.shipments:
+  if int(shipment.id)!=id:continue
+  var n=asset(villages_root,"cart",int(shipment.clan),centers[int(shipment.clan)],.88)
+  if n==null:return
+  caravans.append({"node":n,"id":id})
+  update_caravans(0)
+  return
 
-func update_caravans(delta:float):
- if speed<=0:return
+func remove_caravan(id:int):
+ for row in caravans.duplicate():
+  if int(row.id)==id:
+   if is_instance_valid(row.node):row.node.queue_free()
+   caravans.erase(row)
+
+func update_caravans(_delta:float):
+ if trade_route.size()<2:return
  for row in caravans.duplicate():
   if not is_instance_valid(row.node):
    caravans.erase(row)
    continue
-  row.progress=minf(1,row.progress+delta*.035*minf(speed,8))
-  var p:Vector3=row.from.lerp(row.to,row.progress)
-  p.y=height_at(p.x,p.z)
-  row.node.position=p
-  var d:Vector3=row.to-row.from
-  row.node.rotation.y=atan2(d.x,d.z)
-  if row.progress>=1:
-   row.node.queue_free()
-   caravans.erase(row)
+  var shipment={}
+  for current in sim.shipments:
+   if int(current.id)==int(row.id):shipment=current;break
+  if shipment.is_empty():
+   remove_caravan(int(row.id))
+   continue
+  var f=clampf((float(sim.day-shipment.depart)+clampf(tick/1.7,0,.99))/maxf(1,float(shipment.due-shipment.depart)),0,1)
+  if int(shipment.clan)==1:f=1-f
+  var index=clampf(f*(trade_route.size()-1),0,trade_route.size()-1.001)
+  var i=int(index)
+  var pos=trade_route[i].lerp(trade_route[i+1],index-i)
+  row.node.position=pos+Vector3.UP*.05
+  var dir=trade_route[i+1]-trade_route[i]
+  if int(shipment.clan)==1:dir=-dir
+  row.node.rotation.y=atan2(dir.x,dir.z)
 
 func create_clouds():
  if test_mode:return
@@ -2351,3 +2429,68 @@ func show_crisis_history():
  for event in sim.crisis_history:
   lines.append("Giorno %d · %s · %s"%[int(event.day),Sim.CLANS[int(event.clan)],Sim.CRISIS_NAMES[int(event.kind)]])
  open_dialog("STORIA DELLE CRISI","\n".join(lines) if not lines.is_empty() else "Nessuna crisi storica. Il mondo è ancora giovane.")
+
+func away_from_route(p:Vector3,radius:float)->bool:
+ for q in trade_route:
+  if Vector2(p.x-q.x,p.z-q.z).length()<radius:return false
+ return true
+
+func route_beam(parent:Node3D,a:Vector3,b:Vector3,width:float,height:float,tint:Color):
+ var delta=b-a
+ if delta.length()<.01:return
+ var beam=block(parent,tint,(a+b)*.5,Vector3(width,height,delta.length()+.04))
+ beam.look_at(b,Vector3.UP)
+
+func rebuild_trade_route():
+ if not is_instance_valid(route_root) or centers.size()!=2:return
+ for n in route_root.get_children():
+  route_root.remove_child(n)
+  n.queue_free()
+ trade_route.clear()
+ var start:Vector3=centers[0]
+ var finish:Vector3=centers[1]
+ var direction=Vector2(finish.x-start.x,finish.z-start.z).normalized()
+ var normal=direction.orthogonal()
+ for i in range(65):
+  var f=float(i)/64.0
+  var q=start.lerp(finish,f)
+  q.x+=normal.x*sin(f*PI)*2.0
+  q.z+=normal.y*sin(f*PI)*2.0
+  q.y=maxf(height_at(q.x,q.z)+.15,SEA+.62)
+  trade_route.append(q)
+ var st=SurfaceTool.new()
+ st.begin(Mesh.PRIMITIVE_TRIANGLES)
+ for i in range(trade_route.size()-1):
+  var a=trade_route[i]
+  var b=trade_route[i+1]
+  var tangent=Vector2(b.x-a.x,b.z-a.z).normalized().orthogonal()*.58
+  var side=Vector3(tangent.x,0,tangent.y)
+  var wet=height_at(a.x,a.z)<SEA+.55 or height_at(b.x,b.z)<SEA+.55
+  if wet:
+   route_beam(route_root,a-Vector3.UP*.10,b-Vector3.UP*.10,1.20,.18,Color("96734c"))
+   for sign_value in [-1,1]:
+    route_beam(route_root,a+side*sign_value+Vector3.UP*.32,b+side*sign_value+Vector3.UP*.32,.07,.09,Color("5e4c36"))
+    if i%2==0:block(route_root,Color("6b5239"),a+side*sign_value+Vector3.UP*.13,Vector3(.10,.65,.10))
+   if i%3==0:
+    var floor_y=height_at(a.x,a.z)
+    for sign_value in [-1,1]:
+     var h=maxf(.35,a.y-floor_y)
+     block(route_root,Color("6e6555"),Vector3(a.x,floor_y+h*.5,a.z)+side*sign_value*.78,Vector3(.17,h,.17))
+  else:
+   var aa=a+side
+   var ab=a-side
+   var ba=b+side
+   var bb=b-side
+   for v in [aa,ab,ba,ab,bb,ba]:
+    v.y=height_at(v.x,v.z)+.13
+    st.add_vertex(v)
+ st.generate_normals()
+ var mesh=st.commit()
+ if mesh!=null:
+  var mi=MeshInstance3D.new()
+  mi.mesh=mesh
+  var mat=ShaderMaterial.new()
+  mat.shader=path_shader
+  mi.material_override=mat
+  mi.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+  route_root.add_child(mi)

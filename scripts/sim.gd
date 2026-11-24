@@ -19,6 +19,9 @@ var events:Array=[]
 var discoveries:Array=[]
 var signals:Array=[]
 var trades=0
+var shipments:Array=[]
+var next_shipment=1
+var lost_shipments=0
 var miracles=0
 var changes:Array=[]
 var weather_name="Sereno"
@@ -48,6 +51,9 @@ func start(s:int,m:int):
  next_id=1
  ended=""
  trades=0
+ shipments.clear()
+ next_shipment=1
+ lost_shipments=0
  miracles=0
  people.clear()
  dead.clear()
@@ -193,6 +199,7 @@ func daily():
   if day%23==0 and v.food<n*.5:
    v.government="Consiglio di emergenza"
    log_event(CLANs_name(i)+" cambia governo per la crisi.")
+ settle_shipments()
  if counts[0]>0 and counts[1]>0:
   peace=clampf(peace+rng.randf_range(-2,2)+(.4 if villages[0].food>20 and villages[1].food>20 else -.6)+minf(.25,float(villages[0].bonuses[3]+villages[1].bonuses[3])*.015),0,100)
   var new_relation="Guerra" if peace<25 else ("Alleanza" if peace>=80 else "Tregua" if peace>=45 else "Tensione")
@@ -202,12 +209,7 @@ func daily():
   if day%12==0 and peace>45:
    var donor=0 if villages[0].food>villages[1].food else 1
    var amount=minf(18,villages[donor].food*.12)
-   villages[donor].food-=amount
-   villages[1-donor].food+=amount
-   villages[1-donor].knowledge+=2
-   trades+=1
-   changes.append({"kind":"trade","clan":donor})
-   log_event("Una carovana commercia fra i due popoli.")
+   if amount>=1.0:dispatch_shipment(donor,amount)
   if peace<25 and day%5==0 and not people.is_empty():
    var victim=people[rng.randi_range(0,people.size()-1)]
    victim.health-=25
@@ -308,7 +310,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -338,6 +340,12 @@ func import_state(d:Dictionary)->bool:
  discoveries=d.discoveries
  signals=d.signals
  trades=int(d.trades)
+ shipments=[]
+ for row in d.get("shipments",[]):
+  if row is Dictionary and row.has("id") and row.has("clan") and row.has("depart") and row.has("due") and row.has("amount") and int(row.clan) in [0,1]:
+   shipments.append({"id":int(row.id),"clan":int(row.clan),"depart":int(row.depart),"due":int(row.due),"amount":clampf(float(row.amount),0,18)})
+ next_shipment=maxi(1,int(d.get("next_shipment",1)))
+ lost_shipments=maxi(0,int(d.get("lost_shipments",0)))
  miracles=int(d.miracles)
  weather_name=str(d.get("weather","Sereno"))
  season=str(d.get("season","Primavera"))
@@ -506,3 +514,29 @@ func close_family(a:Dictionary,b:Dictionary)->bool:
  for parent in a.parents:
   if b.parents.has(parent):return true
  return false
+
+func dispatch_shipment(clan:int,amount:float):
+ if clan<0 or clan>1 or shipments.size()>=8:return
+ amount=clampf(amount,0,minf(18,float(villages[clan].food)))
+ if amount<1:return
+ villages[clan].food-=amount
+ var row={"id":next_shipment,"clan":clan,"depart":day,"due":day+5,"amount":amount}
+ next_shipment+=1
+ shipments.append(row)
+ changes.append({"kind":"trade","clan":clan,"id":row.id})
+ log_event("Carovana in partenza da "+CLANs_name(clan)+".")
+
+func settle_shipments():
+ for row in shipments.duplicate():
+  if day<int(row.due):continue
+  var clan=int(row.clan)
+  if count(1-clan)>0 and peace>=25:
+   villages[1-clan].food=minf(850,villages[1-clan].food+float(row.amount))
+   villages[1-clan].knowledge+=2
+   trades+=1
+   log_event("Carovana arrivata a "+CLANs_name(1-clan)+".")
+  else:
+   lost_shipments+=1
+   log_event("Una carovana non ha raggiunto la destinazione.")
+  shipments.erase(row)
+  changes.append({"kind":"trade_arrived","id":row.id})
