@@ -21,6 +21,10 @@ var signals:Array=[]
 var trades=0
 var miracles=0
 var changes:Array=[]
+var weather_name="Sereno"
+var season="Primavera"
+var achievements:Array=[]
+var history:Array=[]
 func start(s:int,m:int):
  seed_value=s
  mode=m
@@ -39,6 +43,10 @@ func start(s:int,m:int):
  discoveries.clear()
  signals.clear()
  changes.clear()
+ achievements.clear()
+ history.clear()
+ weather_name="Sereno"
+ season="Primavera"
  for i in range(2):
   villages.append({"food":72.0 if m!=3 else 26.0,"wood":35.0,"knowledge":0.0,"faith":55.0,"era":0,"houses":3,"government":"Consiglio","belief":"Il cielo vivente","tech":0})
   for j in range(14):
@@ -53,7 +61,7 @@ func birth(c:int,parents:Array)->Dictionary:
   gen=maxi(int(parents[0].gen),int(parents[1].gen))+1
   for p in parents: ids.append(p.id)
   for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
- var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false}
+ var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora"}
  next_id+=1
  people.append(a)
  changes.append({"kind":"birth","id":a.id})
@@ -87,6 +95,9 @@ func count(c:int)->int:
  return n
 func daily():
  day+=1
+ season=["Primavera","Estate","Autunno","Inverno"][int(day/30)%4]
+ weather_name="Pioggia" if day%17<3 else ("Siccità" if day%39<5 else ("Neve" if season=="Inverno" and day%11<3 else "Sereno"))
+ if day%30==1:log_event("Una nuova stagione: "+season+".")
  energy=minf(100,energy+3.5)
  var counts=[count(0),count(1)]
  for i in range(2):
@@ -94,7 +105,7 @@ func daily():
   var n=counts[i]
   if n==0:continue
   var weather=.58 if mode==3 and day<60 else 1.0
-  weather*=.68 if day%39<5 else 1.0
+  weather*=.68 if weather_name=="Siccità" else (1.12 if weather_name=="Pioggia" else .89 if season=="Inverno" else 1.0)
   var productivity=1.20+float(v.era)*.15
   v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
   v.wood=minf(400,v.wood+n*.16)
@@ -123,7 +134,10 @@ func daily():
    if adults.size()>1:
     var a=adults[rng.randi_range(0,adults.size()-1)]
     var b=find(int(a.partner))
-    if b.is_empty(): b=adults[rng.randi_range(0,adults.size()-1)]
+    if b.is_empty():
+     var candidates=adults.filter(func(other):return other.id!=a.id and other.partner<0 and not a.parents.has(other.id) and not other.parents.has(a.id) and (a.parents.is_empty() or not a.parents.has(other.parents[0] if not other.parents.is_empty() else -1)))
+     if not candidates.is_empty():b=candidates[rng.randi_range(0,candidates.size()-1)]
+    if b.is_empty():continue
     if a.id!=b.id:
      a.partner=b.id
      b.partner=a.id
@@ -163,7 +177,13 @@ func daily():
   a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
   a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0),0,100)
   a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
-  a.role="Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore")
+  if day%19==0 and rng.randf()<.045:a.sick=6
+  if int(a.get("sick",0))>0:
+   a.sick=int(a.sick)-1
+   a.health=maxf(0,a.health-(2 if v.tech>=5 else 5))
+   if a.sick==5:remember(a,"Mi sono ammalato.")
+  a.role="Profeta" if a.get("prophet",false) else ("Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore"))
+  a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
   a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
   if a.health<=0 or a.age>83:die(a,"fine della vita")
  if day%25==0 and not people.is_empty():
@@ -173,7 +193,19 @@ func daily():
   signals.push_front({"id":a.id,"text":question,"day":day,"answered":false})
   if signals.size()>12:signals.pop_back()
   log_event(a.name+": «"+question+"»")
+ if day%5==0:
+  history.append({"day":day,"population":people.size(),"peace":peace})
+  if history.size()>150:history.pop_front()
+ if people.size()>=60:award("Un mondo vivo")
+ if trades>=5:award("La via del commercio")
+ if discoveries.size()>=14:award("Il secolo delle scoperte")
+ if miracles>=10:award("La mano del Creatore")
+ if not people.is_empty() and people.any(func(a):return a.gen>=4):award("Eredità")
  check_ending()
+func award(name_value:String):
+ if not achievements.has(name_value):
+  achievements.append(name_value)
+  log_event("Traguardo: "+name_value)
 func CLANs_name(i:int)->String:return CLANS[i]
 func check_ending():
  if ended!="":return
@@ -188,12 +220,21 @@ func apply_reply(a:Dictionary,txt:String):
  elif a.mood<40:response="Abbiamo paura. Puoi aiutarci davvero?"
  elif a.faith>65:response="Le tue parole saranno ricordate dai nostri figli."
  else:response="Ricorderò le tue parole. "+a.goal+"."
+ var message=txt.to_lower()
+ if message.contains("pace") or message.contains("amore"):
+  peace=minf(100,peace+3)
+  a.mood=minf(100,a.mood+5)
+ elif message.contains("guerra") or message.contains("punizione"):
+  a.faith=clampf(a.faith+(5 if a.genes[0]<.5 else -5),0,100)
+  a.mood=maxf(0,a.mood-7)
+ elif message.contains("scienza") or message.contains("conoscenza"):
+  villages[a.clan].knowledge+=2
  remember(a,response)
  for s in signals:
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state)}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  seed_value=int(d.seed)
@@ -211,11 +252,18 @@ func import_state(d:Dictionary)->bool:
  signals=d.signals
  trades=int(d.trades)
  miracles=int(d.miracles)
+ weather_name=str(d.get("weather","Sereno"))
+ season=str(d.get("season","Primavera"))
+ achievements=d.get("achievements",[])
+ history=d.get("history",[])
  rng.seed=seed_value
  rng.state=int(str(d.rng))
  changes.clear()
  for a in people:
   for key in ["id","clan","gen","partner","friend"]:a[key]=int(a[key])
+  a["sick"]=int(a.get("sick",0))
+  a["prophet"]=bool(a.get("prophet",false))
+  a["activity"]=str(a.get("activity","Esplora"))
  for v in villages:
   for key in ["era","houses","tech"]:v[key]=int(v[key])
  return true

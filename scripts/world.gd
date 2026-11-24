@@ -59,6 +59,16 @@ var cursor:MeshInstance3D
 var weather_timer=0.0
 var test_mode=false
 var visual_time=0.0
+var map_view:Control
+var activity_labels={}
+var show_labels=false
+var power_buttons:Array=[]
+var power_category:OptionButton
+var power_grid:VBoxContainer
+var help_dialog:AcceptDialog
+var selected_status:Label
+const GROUPS=[["Osserva","Vita","Foresta","Provviste","Guarigione","Pioggia","Resurrezione"],["Conoscenza","Pace","Fede","Profeta","Mutazione","Nuova specie"],["Meteorite","Conflitto","Fulmine","Tsunami","Vulcano","Carestia"],["Montagna","Lago"]]
+const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"Crea un abitante nel popolo più vicino.","Foresta":"Pianta alberi e aggiunge legna.","Provviste":"Aggiunge 100 unità di cibo.","Guarigione":"Ripristina salute e cura malattie in un raggio di 6 m.","Pioggia":"Aumenta le risorse alimentari.","Resurrezione":"Riporta in vita un abitante defunto.","Conoscenza":"Accelera la ricerca del popolo.","Pace":"Migliora le relazioni fra le civiltà.","Fede":"Aumenta la fiducia nel Creatore.","Profeta":"Ispira un profeta persistente.","Mutazione":"Cambia i tratti genetici degli abitanti vicini.","Nuova specie":"Genera un individuo con tratti casuali.","Meteorite":"Danneggia la zona e scava un cratere.","Conflitto":"Riduce la pace fra i popoli.","Fulmine":"Colpisce gli abitanti nelle vicinanze.","Tsunami":"Danneggia abitanti e scorte.","Vulcano":"Solleva il terreno e scatena un'eruzione.","Carestia":"Riduce le scorte alimentari.","Montagna":"Solleva il terreno.","Lago":"Abbassa il terreno."}
 
 func _ready():
  test_mode="--self-test" in OS.get_cmdline_user_args()
@@ -360,6 +370,7 @@ func reset_visuals():
  earth=null
  sea=null
  actors.clear()
+ activity_labels.clear()
  animals.clear()
  effects.clear()
  houses=[[],[]]
@@ -592,6 +603,16 @@ func create_actor(a:Dictionary):
   rig={"body":visual,"arms":[],"legs":[]}
  actors[a.id]={"node":parent,"body":rig.body,"arms":rig.arms,"legs":rig.legs,"target":random_near(centers[a.clan],7),"phase":rng.randf()*TAU}
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
+ var name_tag=Label3D.new()
+ parent.add_child(name_tag)
+ name_tag.position.y=2.25
+ name_tag.text=a.name
+ name_tag.font_size=28
+ name_tag.outline_size=5
+ name_tag.pixel_size=.007
+ name_tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ name_tag.hide()
+ activity_labels[a.id]=name_tag
 
 func apply_changes():
  for e in sim.changes:
@@ -605,6 +626,7 @@ func apply_changes():
      spark(n.position+Vector3(0,.6,0),Color("b8dad0"),.55)
      n.queue_free()
      actors.erase(e.id)
+     activity_labels.erase(e.id)
     if selected==e.id:selected=-1
    "house","era":sync_houses(int(e.clan))
  sim.changes.clear()
@@ -654,9 +676,22 @@ func _process(delta:float):
    var r=actors[a.id]
    var n:Node3D=r.node
    var step=delta*minf(speed,5.0)
-   if n.position.distance_to(r.target)<.26:
-    var radius=5.0 if a.role=="Coltivatore" else 11.0 if a.role=="Esploratore" else 7.0
-    r.target=random_near(centers[a.clan],radius)
+   if n.position.distance_to(r.target)<.26 or int(r.get("activity_day",-1))!=sim.day:
+    r.activity_day=sim.day
+    var activity=str(a.get("activity","Esplora"))
+    if activity=="Riposa":
+     r.target=house_location(a.clan, a.id%maxi(1,houses[a.clan].size()))
+    elif activity=="Incontra la famiglia" and actors.has(a.partner):
+     r.target=actors[a.partner].node.position
+    elif activity=="Studia":
+     r.target=random_near(centers[a.clan],2.2)
+    else:
+     var radius=5.0 if activity=="Cerca cibo" else 11.0
+     r.target=random_near(centers[a.clan],radius)
+   if activity_labels.has(a.id):
+    var tag:Label3D=activity_labels[a.id]
+    tag.visible=(show_labels or a.id==selected) and distance<36
+    tag.text=a.name+" · "+str(a.get("activity","Esplora"))
    var direction:Vector3=r.target-n.position
    direction.y=0
    if direction.length()>.04:
@@ -706,8 +741,11 @@ func _process(delta:float):
 func _unhandled_input(event:InputEvent):
  if event is InputEventKey and event.pressed and not event.echo:
   if event.keycode==KEY_F10:toggle_photo()
+  if event.keycode==KEY_F1:show_help()
+  if event.keycode==KEY_F5:save_game(true)
+  if event.keycode==KEY_F9:load_game()
   if event.keycode==KEY_SPACE:speed=1 if speed==0 else 0
-  if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh()
+  if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh();populate_powers(power_category.selected)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
   azimuth-=event.relative.x*.006
   pitch=clampf(pitch+event.relative.y*.005,.24,1.48)
@@ -860,6 +898,7 @@ func divine(p:Vector3):
   "Guarigione":
    for a in near:
     a.health=100
+    a.sick=0
     a.mood=minf(100,a.mood+20)
     a.faith=minf(100,a.faith+12)
     sim.remember(a,"Il Creatore mi ha guarito.")
@@ -917,6 +956,7 @@ func divine(p:Vector3):
   "Profeta":
    for a in near:
     a.role="Profeta"
+    a.prophet=true
     a.faith=100
     sim.remember(a,"Il Creatore mi ha affidato una visione.")
    v.faith=minf(100,v.faith+24)
@@ -1003,6 +1043,7 @@ func setup_ui():
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ button(row,"Guida",show_help)
  button(row,"Nuovo",open_welcome)
  var slots=OptionButton.new()
  for i in range(3):slots.add_item("Slot "+str(i+1))
@@ -1019,16 +1060,24 @@ func setup_ui():
  text_label(lv,"POTERI DIVINI",17)
  power_label=text_label(lv,"Osserva",14)
  power_label.modulate=Color("a7d9bc")
+ power_category=OptionButton.new()
+ for label in ["Vita e natura","Civiltà e mente","Catastrofi","Terraformazione"]:power_category.add_item(label)
+ lv.add_child(power_category)
+ power_category.item_selected.connect(func(i):populate_powers(i))
  var scroll=ScrollContainer.new()
- scroll.custom_minimum_size=Vector2(155,499)
+ scroll.custom_minimum_size=Vector2(155,285)
  scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
  scroll.size_flags_vertical=Control.SIZE_EXPAND_FILL
  lv.add_child(scroll)
- var powers_list=VBoxContainer.new()
- scroll.add_child(powers_list)
- powers_list.size_flags_horizontal=Control.SIZE_EXPAND_FILL
- for name_value in POWERS:
-  button(powers_list,name_value,func():power=name_value;power_label.text=name_value;hint.text="Clicca sul terreno per usare "+name_value+".")
+ power_grid=VBoxContainer.new()
+ scroll.add_child(power_grid)
+ power_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ populate_powers(0)
+ text_label(lv,"MAPPA DEL MONDO",13)
+ map_view=preload("res://scripts/minimap.gd").new()
+ map_view.world=self
+ map_view.custom_minimum_size=Vector2(155,135)
+ lv.add_child(map_view)
  var infinite=CheckButton.new()
  infinite.text="Energia infinita"
  infinite.toggled.connect(func(on):unlimited=on)
@@ -1037,7 +1086,9 @@ func setup_ui():
  var rv=VBoxContainer.new()
  right.add_child(rv)
  text_label(rv,"VITA  /  CIVILTÀ",18)
- details=rich(rv,320)
+ selected_status=text_label(rv,"Osservazione del mondo",13)
+ selected_status.modulate=Color("a7d9bc")
+ details=rich(rv,285)
  var line=HBoxContainer.new()
  rv.add_child(line)
  button(line,"Segui",func():
@@ -1059,6 +1110,11 @@ func setup_ui():
  button(line2,"Atlante",show_atlas)
  button(line2,"Segnali",show_signals)
  button(line2,"Scoperte",show_tech)
+ var extra=HBoxContainer.new()
+ rv.add_child(extra)
+ button(extra,"Traguardi",show_achievements)
+ button(extra,"Statistiche",show_history)
+ button(extra,"Nomi",func():show_labels=not show_labels)
  text_label(rv,"PARLA CON LA VITA",15)
  input=LineEdit.new()
  input.placeholder_text="Scrivi al tuo universo..."
@@ -1082,6 +1138,8 @@ func setup_ui():
  for i in range(2):
   button(controls,Sim.CLANS[i],func():following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
  hint=text_label(controls,"WASD · rotella · tasto destro · F10 foto",13)
+ hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+ hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  objective=text_label(bv,"",14)
  chronicle=rich(bv,38)
  chronicle.scroll_following=false
@@ -1093,8 +1151,11 @@ func toggle_photo():
 func refresh():
  if top==null or sim.villages.size()!=2:return
  top.text="GIORNO %03d    ·    %d VIVENTI    ·    ENERGIA %d/100    ·    PACE %d%%    ·    %d SCOPERTE    ·    %d SCAMBI"%[sim.day,sim.people.size(),int(sim.energy),int(sim.peace),sim.discoveries.size(),sim.trades]
+ top.text+="    ·    "+sim.season+" / "+sim.weather_name
  power_label.text=power
+ if map_view!=null:map_view.queue_redraw()
  var a=sim.find(selected)
+ if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("activity","Esplora"))+" · "+("Malato" if int(a.get("sick",0))>0 else "In salute")
  if a.is_empty():
   var lines=[]
   for i in range(2):
@@ -1271,11 +1332,11 @@ func capture_preview():
  hud.hide()
  for i in range(55):
   sim.daily()
- sim.changes.clear()
+ apply_changes()
  for i in range(2):sync_houses(i)
  focus=(centers[0]+centers[1])*.5
- distance=66
- pitch=.82
+ distance=55
+ pitch=.76
  update_camera()
  await get_tree().create_timer(.5).timeout
  await RenderingServer.frame_post_draw
@@ -1283,3 +1344,39 @@ func capture_preview():
  var err=image.save_png("res://preview.png")
  print("CAPTURE ",err)
  get_tree().quit(0 if err==OK else 1)
+
+func populate_powers(i:int):
+ if power_grid==null:return
+ for child in power_grid.get_children():
+  power_grid.remove_child(child)
+  child.queue_free()
+ power_buttons.clear()
+ var group=GROUPS[clampi(i,0,GROUPS.size()-1)]
+ var entries=group.duplicate()
+ if not entries.has("Osserva"):entries.push_front("Osserva")
+ for name_value in entries:
+  var cost=18 if name_value in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago"] else 9
+  var display=name_value if name_value=="Osserva" else name_value+"  ·  "+str(cost)
+  var b=button(power_grid,display,func():
+   power=name_value
+   power_label.text=name_value
+   if hint!=null:hint.text=POWER_TIPS.get(name_value,"")
+   for item in power_buttons:item.button_pressed=item.get_meta("power")==power)
+  b.toggle_mode=true
+  b.set_pressed_no_signal(power==name_value)
+  b.set_meta("power",name_value)
+  b.tooltip_text=POWER_TIPS.get(name_value,"")
+  power_buttons.append(b)
+func show_help():
+ open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nOllama è facoltativo. Il mondo non ha bisogno di Internet e continua autonomamente.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
+func show_achievements():
+ var entries=["Un mondo vivo","La via del commercio","Il secolo delle scoperte","La mano del Creatore","Eredità"]
+ var lines=["TRAGUARDI  %d / %d"%[sim.achievements.size(),entries.size()]]
+ for e in entries:lines.append(("\u2713  " if sim.achievements.has(e) else "\u25cb  ")+e)
+ lines.append("\n60 abitanti · 5 scambi · 14 scoperte · 10 poteri · 4 generazioni")
+ open_dialog("TRAGUARDI","\n\n".join(lines))
+func show_history():
+ var lines=["GIORNO        POPOLAZIONE        PACE"]
+ for row in sim.history.slice(maxi(0,sim.history.size()-30)):
+  lines.append("%03d                   %03d                  %d%%"%[int(row.day),int(row.population),int(row.peace)])
+ open_dialog("STORIA DEL MONDO","\n".join(lines))
