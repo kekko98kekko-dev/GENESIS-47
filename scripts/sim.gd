@@ -182,7 +182,7 @@ func daily():
    v.wood-=22
    v.houses+=1
    changes.append({"kind":"house","clan":i})
-  if day%5==0 and n>1 and v.food>n*.65 and people.size()<LIMIT:
+  if not spatial_autonomy and day%5==0 and n>1 and v.food>n*.65 and people.size()<LIMIT:
    var adults=people.filter(func(a):return a.clan==i and a.age>=14 and a.health>55)
    if adults.size()>1:
     var a=adults[rng.randi_range(0,adults.size()-1)]
@@ -273,6 +273,7 @@ func daily():
     elif intent=="ESPLORA":a.activity="Esplora"
    a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
    if mode==0 and a.age>=14 and a.health>0:choose_social_action(a,v)
+  if spatial_autonomy:a.goal="Proteggere la famiglia" if a.partner>=0 else "Far crescere la civiltà" if a.genes[0]>.6 else "Vivere bene nella comunità"
   if a.health<=0 or a.age>83:die(a,"vecchiaia" if a.age>83 else "malattia" if int(a.sick)>0 else "carestia" if a.hunger>75 else "ferite")
  if day%25==0 and not people.is_empty():
   var a=people[rng.randi_range(0,people.size()-1)]
@@ -686,6 +687,9 @@ func init_tasks(a:Dictionary):
  a["task_reason"]=str(a.get("task_reason",""))
  a["tasks_done"]=int(a.get("tasks_done",0))
  a["last_task"]=str(a.get("last_task",""))
+ a["bonds"]=a.get("bonds",{})
+ if not a.bonds is Dictionary:a.bonds={}
+ a["last_child_day"]=int(a.get("last_child_day",-40))
  a["task_stage"]="In viaggio" if a.task!="" else "Decide"
 
 func tick_needs(a:Dictionary,dt:float):
@@ -722,12 +726,10 @@ func choose_task(a:Dictionary)->Dictionary:
   if int(v.project)>=0:
    scores.build=25+(18 if a.role=="Artigiano" else 0)
    reasons.build="Completare un'opera"
- var friend_data=find(int(a.friend))
+ var friend_data=find(int(a.partner)) if a.partner>=0 else find(int(a.friend))
  if friend_data.is_empty() or friend_data.clan!=a.clan:
-  for other in people:
-   if other.id!=a.id and other.clan==a.clan:
-    friend_data=other
-    break
+  var candidates=people.filter(func(other):return other.id!=a.id and other.clan==a.clan and other.health>40)
+  if not candidates.is_empty():friend_data=candidates[(int(a.id)+int(a.tasks_done))%candidates.size()]
  if not friend_data.is_empty():
   scores.social=pow(float(a.social_need)/100,2)*95+float(a.genes[1])*10
   targets.social=int(friend_data.id)
@@ -750,7 +752,9 @@ func choose_task(a:Dictionary)->Dictionary:
  var best=""
  var best_score=-1.0
  for key in scores:
-  var value=float(scores[key])
+  var value=float(scores[key])+float(posmod(int(a.id)*17+int(a.tasks_done)*13+str(key).hash(),9))*.6
+  if key=="eat" and a.hunger>=85:value+=100
+  if key=="sleep" and a.fatigue>=92:value+=65
   if key==a.last_task and value<95:value*=.55
   if value>best_score:
    best=key
@@ -804,7 +808,8 @@ func complete_task(a:Dictionary)->bool:
     a.social_need=maxf(0,a.social_need-65)
     friend_data.social_need=maxf(0,friend_data.social_need-25)
     a.mood=minf(100,a.mood+5)
-    if a.friend<0 and friend_data.friend<0:
+    if spatial_autonomy:build_relationship(a,friend_data)
+    elif a.friend<0 and friend_data.friend<0:
      a.friend=friend_data.id
      friend_data.friend=a.id
      milestone(a,"Amicizia","Ho conosciuto "+friend_data.name+".")
@@ -838,3 +843,31 @@ func complete_task(a:Dictionary)->bool:
  a.social_target=-1
  a.task_left=0
  return ok
+
+func build_relationship(a:Dictionary,b:Dictionary):
+ var ak=str(b.id)
+ var bk=str(a.id)
+ if a.bonds.size()>=24 and not a.bonds.has(ak):a.bonds.erase(a.bonds.keys()[0])
+ if b.bonds.size()>=24 and not b.bonds.has(bk):b.bonds.erase(b.bonds.keys()[0])
+ var gain=12.0+float(a.genes[1])*9.0
+ var level=minf(100,float(a.bonds.get(ak,0))+gain)
+ a.bonds[ak]=level
+ b.bonds[bk]=minf(100,float(b.bonds.get(bk,0))+gain)
+ if level>=30 and a.friend<0 and b.friend<0:
+  a.friend=b.id
+  b.friend=a.id
+  milestone(a,"Amicizia","Ho conosciuto "+b.name+".")
+  milestone(b,"Amicizia","Ho conosciuto "+a.name+".")
+ if a.age<14 or b.age<14 or a.health<60 or b.health<60 or a.clan!=b.clan or close_family(a,b):return
+ if level>=65 and a.partner<0 and b.partner<0:
+  a.partner=b.id
+  b.partner=a.id
+  milestone(a,"Unione","Ho scelto "+b.name+".")
+  milestone(b,"Unione","Ho scelto "+a.name+".")
+ if a.partner==b.id and b.partner==a.id and level>=75 and day-int(a.last_child_day)>=18 and day-int(b.last_child_day)>=18 and villages[a.clan].food>=count(a.clan)*2 and people.size()<LIMIT:
+  a.last_child_day=day
+  b.last_child_day=day
+  var child=birth(a.clan,[a,b])
+  if not child.is_empty():
+   milestone(a,"Famiglia","È nato "+child.name+".")
+   milestone(b,"Famiglia","È nato "+child.name+".")

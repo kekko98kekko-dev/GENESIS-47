@@ -149,6 +149,7 @@ var nav_grid=AStarGrid2D.new()
 var nav_dirty=true
 var nav_version=0
 var autonomy_clock=0.0
+var timber_points:Array=[]
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -514,6 +515,7 @@ func new_world(seed_value:int,which:int):
 
 func reset_visuals():
  nav_dirty=true
+ timber_points.clear()
  for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root]:
   if is_instance_valid(n):
    remove_child(n)
@@ -630,6 +632,7 @@ func far_village(p:Vector3,r:float)->bool:
  return true
 
 func make_tree(p:Vector3,h:float,i:int):
+ timber_points.append(p)
  var n=asset(scenery,"tree",i,p,h,rng.randf()*TAU)
  if n!=null:return
  n=Node3D.new()
@@ -953,7 +956,7 @@ func _process(delta:float):
    var anim=actors[a.id].get("animation")
    if is_instance_valid(anim):anim.active=speed>0
  if speed>0:
-  tick+=minf(delta,.1)*speed/(5.0 if sim.spatial_autonomy else 1.0)
+  tick+=minf(delta,.1)*(minf(speed,20.0)/5.0 if sim.spatial_autonomy else speed)
   var loops=0
   while tick>=1.7 and loops<8 and speed>0:
    tick-=1.7
@@ -1600,7 +1603,7 @@ func setup_ui():
  var controls=HBoxContainer.new()
  bv.add_child(controls)
  text_label(controls,"TEMPO",15)
- for s in [0.0,1.0,3.0,12.0,60.0]:
+ for s in [0.0,1.0,3.0,12.0,20.0]:
   var tb=button(controls,"Pausa" if s==0 else str(int(s))+"×",func():speed=s;update_time_buttons())
   tb.toggle_mode=true
   tb.set_meta("speed",s)
@@ -1988,7 +1991,7 @@ func load_path(p:String)->bool:
  unlimited=bool(player.get("unlimited",false))
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(unlimited)
  show_ending=sim.ended==""
- speed=clampf(float(player.get("speed",1)),0,60)
+ speed=clampf(float(player.get("speed",1)),0,20)
  tick=clampf(float(player.get("tick",0)),0,1.69)
  refresh()
  hint.text="Universo ripristinato."
@@ -2122,6 +2125,8 @@ func self_test():
  onboarding_enabled=true
  print("ONBOARDING_TEST complete=",not onboarding.visible)
  if not test_autonomy():failed=true
+ if not test_spatial_meal():failed=true
+ unlimited=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
@@ -3060,6 +3065,7 @@ func rebuild_navigation():
  nav_grid.cell_size=Vector2.ONE
  nav_grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
  nav_grid.update()
+ nav_grid.fill_solid_region(nav_grid.region,false)
  for z in range(-50,51):
   for x in range(-50,51):
    var h=walking_height(x,z)
@@ -3099,7 +3105,15 @@ func task_destination(a:Dictionary)->Vector3:
   "farm":
    if not farm_points[a.clan].is_empty():return farm_points[a.clan][int(a.id)%farm_points[a.clan].size()]+offset*.6
    return c+Vector3(3,0,4)+offset
-  "gather":return c+offset*9.0
+  "gather":
+   var nearest=c+offset*9.0
+   var best=INF
+   var origin=c+offset*6.0
+   for tree_point in timber_points:
+    var q:Vector3=tree_point
+    var cost=q.distance_squared_to(origin)
+    if cost<best:best=cost;nearest=q+(c-q).normalized()*.8
+   return nearest
   "research":return c+Vector3(-2,0,-2)+offset
   "build":return c+Vector3(2,0,-3)+offset
   "social","aid":
@@ -3185,9 +3199,13 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
     r.social_retry=0.0
     cancel_task(a,r)
    else:
-    r.planned_task=""
+    r["repath_wait"]=float(r.get("repath_wait",0))+dt
+    if r.repath_wait>=.65:
+     r.repath_wait=0.0
+     r.planned_task=""
    return false
   r.social_retry=0.0
+  r["repath_wait"]=0.0
  a.task_stage="In corso"
  a.task_left=maxf(0,float(a.task_left)-dt)
  if a.task_left<=0:
@@ -3227,3 +3245,38 @@ func test_autonomy()->bool:
   if nav_grid.is_point_solid(cell):return false
  print("AUTONOMY_TEST priority=eat,sleep path=",path.size()," persistent_task=",copy.people[0].task)
  return true
+
+func test_spatial_meal()->bool:
+ deformation.clear()
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ rebuild_navigation()
+ var a=sim.people[0]
+ var r=actors[a.id]
+ var n:Node3D=r.node
+ a.hunger=95.0
+ a.fatigue=0.0
+ a.health=100.0
+ a.boredom=0.0
+ var origin=near_cell(centers[0]+Vector3(7,0,2))
+ if not nav_grid.region.has_point(origin):return false
+ n.position=Vector3(origin.x,walking_height(origin.x,origin.y),origin.y)
+ var initial=n.position
+ var food=float(sim.villages[0].food)
+ advance_actor_task(a,r,.1)
+ if a.task!="eat" or a.tasks_done!=0 or sim.villages[0].food!=food:return false
+ sim.daily()
+ if a.task!="eat":return false
+ var travelled=false
+ var worked=false
+ var food_after_day=float(sim.villages[0].food)
+ for i in range(300):
+  advance_actor_task(a,r,.1)
+  if n.position.distance_to(initial)>1.0:travelled=true
+  if a.task_stage=="In corso":worked=true
+  if a.tasks_done>0:break
+  if sim.villages[0].food!=food_after_day:return false
+ var passed=travelled and worked and a.tasks_done==1 and a.last_task=="eat" and a.hunger<50 and absf(float(sim.villages[0].food)-food_after_day+1)<.01
+ print("SPATIAL_MEAL_TEST ",passed," travelled=",travelled," worked=",worked," hunger=",a.hunger," completed=",a.tasks_done)
+ sim.spatial_autonomy=false
+ return passed
