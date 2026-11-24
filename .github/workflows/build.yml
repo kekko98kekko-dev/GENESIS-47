@@ -1,9 +1,9 @@
-name: Godot Windows build
+name: GENESIS 47 — Windows build and tests
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['project.godot', 'main.tscn', 'scripts/**', 'shaders/**', 'assets/**', 'export_presets.cfg']
+    paths: ['project.godot', 'main.tscn', 'scripts/**', 'shaders/**', 'tools/**', 'assets/**', 'export_presets.cfg', '.github/workflows/build.yml']
 permissions:
   contents: read
 concurrency:
@@ -12,11 +12,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       GODOT_VERSION: 4.4.1
     steps:
       - uses: actions/checkout@v4
+      - name: Download free licensed art
+        run: python3 tools/fetch_assets.py
       - name: Install Godot and export templates
         shell: bash
         run: |
@@ -35,17 +37,26 @@ jobs:
           set -o pipefail
           godot --headless --path . --editor --import 2>&1 | tee import.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' import.log; then exit 1; fi
-      - name: Run smoke test
+      - name: Test simulated paths and powers
         run: |
           set -o pipefail
-          timeout 90s godot --headless --path . --quit-after 180 2>&1 | tee smoke.log
+          timeout 180s godot --headless --path . -- --self-test 2>&1 | tee smoke.log
+          grep -q 'SELF_TEST PASS' smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' smoke.log; then exit 1; fi
-      - name: Export Windows
+      - name: Capture real rendered screenshot
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          timeout 100s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
+          test -s preview.png
+      - name: Export Windows x64
         run: |
           mkdir -p build
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
-          cp README.md build/
+          cp README.md ASSET-CREDITS.md build/
+          if [ -f preview.png ]; then cp preview.png build/; fi
+          cp assets/generated/catalog.json build/asset-catalog.json
       - uses: actions/upload-artifact@v4
         with:
           name: GENESIS-47-Windows
@@ -55,5 +66,23 @@ jobs:
         if: always()
         with:
           name: test-logs
-          path: '*.log'
+          path: |
+            *.log
+            preview.png
+            assets/generated/catalog.json
           retention-days: 7
+  windows-smoke:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GENESIS-47-Windows
+          path: build
+      - name: Start exported Windows executable
+        shell: pwsh
+        run: |
+          $p=Start-Process -FilePath (Resolve-Path 'build/GENESIS47.exe') -ArgumentList '--headless','--','--self-test' -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'Windows self-test timed out' }
+          if ($p.ExitCode -ne 0) { throw "Windows exit code $($p.ExitCode)" }

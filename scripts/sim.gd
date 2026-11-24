@@ -1,0 +1,221 @@
+extends RefCounted
+const CLANS=["Auralis","Nerith"]
+const ERAS=["Origini","Tribù","Agricoltura","Regni","Industria","Stelle","Contatto"]
+const NAMES=["Arel","Nima","Sorin","Elya","Taro","Lumi","Kiran","Iria","Nox","Sela","Oren","Veya","Miro","Fenn","Lior","Asha"]
+const TECH=["Fuoco","Utensili","Agricoltura","Scrittura","Medicina","Architettura","Commercio","Metallurgia","Elettricità","Industria","Calcolo","Astronomia","Reti neurali","Segnale oltre il cielo"]
+const LIMIT=160
+var rng=RandomNumberGenerator.new()
+var seed_value=47
+var day=0
+var mode=0
+var energy=100.0
+var peace=72.0
+var next_id=1
+var ended=""
+var people:Array=[]
+var dead:Array=[]
+var villages:Array=[]
+var events:Array=[]
+var discoveries:Array=[]
+var signals:Array=[]
+var trades=0
+var miracles=0
+var changes:Array=[]
+func start(s:int,m:int):
+ seed_value=s
+ mode=m
+ rng.seed=s
+ day=0
+ energy=100
+ peace=72
+ next_id=1
+ ended=""
+ trades=0
+ miracles=0
+ people.clear()
+ dead.clear()
+ villages.clear()
+ events.clear()
+ discoveries.clear()
+ signals.clear()
+ changes.clear()
+ for i in range(2):
+  villages.append({"food":72.0 if m!=3 else 26.0,"wood":35.0,"knowledge":0.0,"faith":55.0,"era":0,"houses":3,"government":"Consiglio","belief":"Il cielo vivente","tech":0})
+  for j in range(14):
+   birth(i,[])
+ log_event("Il mondo si risveglia. Due popoli, un cielo.")
+func birth(c:int,parents:Array)->Dictionary:
+ if people.size()>=LIMIT: return {}
+ var genes=[rng.randf_range(.25,.85),rng.randf_range(.25,.85),rng.randf_range(.25,.85),rng.randf_range(.25,.85)]
+ var ids=[]
+ var gen=1
+ if parents.size()==2:
+  gen=maxi(int(parents[0].gen),int(parents[1].gen))+1
+  for p in parents: ids.append(p.id)
+  for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
+ var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false}
+ next_id+=1
+ people.append(a)
+ changes.append({"kind":"birth","id":a.id})
+ return a
+func find(id:int)->Dictionary:
+ for a in people:
+  if a.id==id:return a
+ return {}
+func remember(a:Dictionary,s:String):
+ a.memories.push_front("G%d · %s"%[day,s])
+ if a.memories.size()>18:a.memories.pop_back()
+func log_event(s:String):
+ events.push_front("G%03d  %s"%[day,s])
+ if events.size()>80:events.pop_back()
+func die(a:Dictionary,why:String):
+ if not people.has(a):return
+ for id in [a.partner,a.friend]:
+  var b=find(int(id))
+  if not b.is_empty():
+   b.mood=maxf(0,b.mood-18)
+   remember(b,"Ho perso "+a.name+".")
+   if b.partner==a.id:b.partner=-1
+   if b.friend==a.id:b.friend=-1
+ dead.append({"id":a.id,"name":a.name,"gen":a.gen,"day":day,"reason":why})
+ changes.append({"kind":"death","id":a.id})
+ people.erase(a)
+func count(c:int)->int:
+ var n=0
+ for a in people:
+  if a.clan==c:n+=1
+ return n
+func daily():
+ day+=1
+ energy=minf(100,energy+3.5)
+ var counts=[count(0),count(1)]
+ for i in range(2):
+  var v=villages[i]
+  var n=counts[i]
+  if n==0:continue
+  var weather=.58 if mode==3 and day<60 else 1.0
+  weather*=.68 if day%39<5 else 1.0
+  var productivity=1.20+float(v.era)*.15
+  v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
+  v.wood=minf(400,v.wood+n*.16)
+  var thinkers=0.0
+  for a in people:
+   if a.clan==i:thinkers+=float(a.genes[0])
+  v.knowledge+=thinkers*.23
+  var unlocked=mini(14,int(v.knowledge/23.0))
+  while v.tech<unlocked:
+   discoveries.append({"clan":i,"day":day,"name":TECH[v.tech]})
+   log_event(CLANs_name(i)+" scopre: "+TECH[v.tech])
+   v.tech+=1
+  var era=mini(6,int(v.tech/2))
+  if era>v.era:
+   v.era=era
+   log_event(CLANs_name(i)+" entra nell'era "+ERAS[era]+".")
+   changes.append({"kind":"era","clan":i})
+   v.government=["Consiglio","Anziani","Assemblea","Regno","Repubblica","Tecnocrazia","Federazione"][era]
+   if era>=4:v.belief="Custodi del codice" if v.faith<50 else "Ordine della luce"
+  if v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
+   v.wood-=22
+   v.houses+=1
+   changes.append({"kind":"house","clan":i})
+  if day%5==0 and n>1 and v.food>n*.65 and people.size()<LIMIT:
+   var adults=people.filter(func(a):return a.clan==i and a.age>=14 and a.health>55)
+   if adults.size()>1:
+    var a=adults[rng.randi_range(0,adults.size()-1)]
+    var b=find(int(a.partner))
+    if b.is_empty(): b=adults[rng.randi_range(0,adults.size()-1)]
+    if a.id!=b.id:
+     a.partner=b.id
+     b.partner=a.id
+     var child=birth(i,[a,b])
+     if not child.is_empty():
+      remember(a,"È nato "+child.name+".")
+      remember(b,"È nato "+child.name+".")
+  if day%17==0 and n>2:
+   var clan_people=people.filter(func(a):return a.clan==i)
+   var a=clan_people[rng.randi_range(0,clan_people.size()-1)]
+   var b=clan_people[rng.randi_range(0,clan_people.size()-1)]
+   if a.id!=b.id:
+    a.friend=b.id
+    b.friend=a.id
+    remember(a,"Mi sono avvicinato a "+b.name+".")
+    a.mood=minf(100,a.mood+8)
+  if day%23==0 and v.food<n*.5:
+   v.government="Consiglio di emergenza"
+   log_event(CLANs_name(i)+" cambia governo per la crisi.")
+ if counts[0]>0 and counts[1]>0:
+  peace=clampf(peace+rng.randf_range(-2,2)+(.4 if villages[0].food>20 and villages[1].food>20 else -.6),0,100)
+  if day%12==0 and peace>45:
+   var donor=0 if villages[0].food>villages[1].food else 1
+   var amount=minf(18,villages[donor].food*.12)
+   villages[donor].food-=amount
+   villages[1-donor].food+=amount
+   villages[1-donor].knowledge+=2
+   trades+=1
+   log_event("Una carovana commercia fra i due popoli.")
+  if peace<25 and day%5==0 and not people.is_empty():
+   var victim=people[rng.randi_range(0,people.size()-1)]
+   victim.health-=25
+   remember(victim,"Sono stato ferito in guerra.")
+ for a in people.duplicate():
+  var v=villages[a.clan]
+  a.age+=.22
+  a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
+  a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0),0,100)
+  a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
+  a.role="Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore")
+  a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
+  if a.health<=0 or a.age>83:die(a,"fine della vita")
+ if day%25==0 and not people.is_empty():
+  var a=people[rng.randi_range(0,people.size()-1)]
+  var question="Creatore, perché esiste la sofferenza?" if a.mood<50 else ("Abbiamo osservato anomalie. Il nostro mondo è reale?" if villages[a.clan].era>=4 else "Creatore, ci ascolti?")
+  remember(a,question)
+  signals.push_front({"id":a.id,"text":question,"day":day,"answered":false})
+  if signals.size()>12:signals.pop_back()
+  log_event(a.name+": «"+question+"»")
+ check_ending()
+func CLANs_name(i:int)->String:return CLANS[i]
+func check_ending():
+ if ended!="":return
+ if people.is_empty():ended="ESTINZIONE — Il cielo è rimasto solo."
+ elif mode==1 and day>=90 and peace>=70 and villages[0].era>=3 and villages[1].era>=3:ended="L'ALLEANZA — Due popoli, un futuro condiviso."
+ elif mode==2 and day>=100 and maxi(villages[0].era,villages[1].era)>=6:ended="OLTRE IL CIELO — Creatore, adesso sappiamo."
+ elif mode==3 and day>=120 and people.size()>=24:ended="L'ULTIMA SCINTILLA — La vita continua."
+func apply_reply(a:Dictionary,txt:String):
+ remember(a,"Il Creatore: "+txt.left(300))
+ var response=""
+ if a.genes[0]>.67 and villages[a.clan].era>=3:response="Ti ascolto, ma le risposte vanno dimostrate. "+a.goal+"."
+ elif a.mood<40:response="Abbiamo paura. Puoi aiutarci davvero?"
+ elif a.faith>65:response="Le tue parole saranno ricordate dai nostri figli."
+ else:response="Ricorderò le tue parole. "+a.goal+"."
+ remember(a,response)
+ for s in signals:
+  if s.id==a.id:s.answered=true
+ log_event(a.name+": «"+response+"»")
+func export_state()->Dictionary:
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state)}
+func import_state(d:Dictionary)->bool:
+ if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
+ seed_value=int(d.seed)
+ day=int(d.day)
+ mode=int(d.mode)
+ energy=float(d.energy)
+ peace=float(d.peace)
+ next_id=int(d.next_id)
+ ended=str(d.ended)
+ people=d.people
+ dead=d.dead
+ villages=d.villages
+ events=d.events
+ discoveries=d.discoveries
+ signals=d.signals
+ trades=int(d.trades)
+ miracles=int(d.miracles)
+ rng.seed=seed_value
+ rng.state=int(str(d.rng))
+ changes.clear()
+ for a in people:
+  for key in ["id","clan","gen","partner","friend"]:a[key]=int(a[key])
+ for v in villages:
+  for key in ["era","houses","tech"]:v[key]=int(v[key])
+ return true
