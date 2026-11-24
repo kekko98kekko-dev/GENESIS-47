@@ -171,7 +171,7 @@ func daily():
     var a=adults[rng.randi_range(0,adults.size()-1)]
     var b=find(int(a.partner))
     if b.is_empty():
-     var candidates=adults.filter(func(other):return other.id!=a.id and other.partner<0 and not a.parents.has(other.id) and not other.parents.has(a.id) and (a.parents.is_empty() or not a.parents.has(other.parents[0] if not other.parents.is_empty() else -1)))
+     var candidates=adults.filter(func(other):return other.id!=a.id and other.partner<0 and not close_family(a,other))
      if not candidates.is_empty():b=candidates[rng.randi_range(0,candidates.size()-1)]
     if b.is_empty():continue
     if a.id!=b.id:
@@ -500,3 +500,9 @@ func advance_crisis():
     changes.append({"kind":"migration","id":a.id})
     break
  log_event(CLANs_name(clan)+" · "+CRISIS_NAMES[kind]+".")
+
+func close_family(a:Dictionary,b:Dictionary)->bool:
+ if a.parents.has(b.id) or b.parents.has(a.id):return true
+ for parent in a.parents:
+  if b.parents.has(parent):return true
+ return false

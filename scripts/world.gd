@@ -111,6 +111,12 @@ var world_started=false
 var last_crises=0
 var path_shader=preload("res://shaders/path.gdshader")
 var health_fill:StyleBoxFlat
+var inspector_tabs:TabContainer
+var season_material:ShaderMaterial
+var last_season=""
+var event_feed:RichTextLabel
+var mood_bar:ProgressBar
+var hunger_bar:ProgressBar
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -423,6 +429,8 @@ func make_terrain():
  var m=ShaderMaterial.new()
  m.shader=preload("res://shaders/terrain.gdshader")
  earth.material_override=m
+ season_material=m
+ last_season=""
  add_child(earth)
  if not is_instance_valid(sea):
   sea=MeshInstance3D.new()
@@ -612,7 +620,7 @@ func make_hub(i:int):
 
 func house_location(i:int,j:int)->Vector3:
  var a=j*2.39996+i*.5
- var r=4.5+sqrt(float(j))*2.9
+ var r=4.5+sqrt(float(j))*3.15
  return land_near(centers[i].x+cos(a)*r,centers[i].z+sin(a)*r)
 
 func make_house(i:int,j:int,era:int):
@@ -620,7 +628,7 @@ func make_house(i:int,j:int,era:int):
  var n=Node3D.new()
  villages_root.add_child(n)
  n.position=p
- n.rotation.y=j*2.39996
+ n.rotation.y=atan2(centers[i].x-p.x,centers[i].z-p.z)
  var roof=Color("a96847") if i==0 else Color("467b83")
  var kind="house" if era<4 else ("industrial" if era==4 else "future")
  var imported:Node3D=null
@@ -656,6 +664,13 @@ func make_house(i:int,j:int,era:int):
    else:cone(n,Color("786a60"),Vector3(.65,h+.5,0),.16,1.0,.16,10)
  if j%3==1 and era>=2:
   asset(n,"prop",j,Vector3(1.3,0,.55),.55)
+ if j%4==0 and era>=2:
+  var lamp=Node3D.new()
+  n.add_child(lamp)
+  lamp.position=Vector3(1.1,0,1.6)
+  cone(lamp,Color("695d48"),Vector3.UP*.48,.045,.96,.035,6)
+  block(lamp,Color("584b3a"),Vector3.UP*1.02,Vector3(.23,.10,.23))
+  sphere(lamp,Color("ffcc83"),Vector3.UP*.94,Vector3(.17,.20,.17),.55)
  if j%3==0:
   for row in range(3):
    for col in range(4):
@@ -821,6 +836,9 @@ func _process(delta:float):
   focus.x=clampf(focus.x,-50,50)
   focus.z=clampf(focus.z,-50,50)
   update_camera()
+ if last_season!=sim.season:
+  last_season=sim.season
+  if is_instance_valid(season_material):season_material.set_shader_parameter("season_tint",{"Primavera":Color("e5ffd5"),"Estate":Color("fff2ca"),"Autunno":Color("f6ce96"),"Inverno":Color("c6dce3")}.get(last_season,Color.WHITE))
  if speed>0:
   tick+=minf(delta,.1)*speed
   var loops=0
@@ -832,7 +850,7 @@ func _process(delta:float):
    if not actors.has(a.id):continue
    var r=actors[a.id]
    var n:Node3D=r.node
-   var step=delta*minf(speed,5.0)
+   var step=delta*minf(speed,5.0)*lerpf(.75,1.25,float(a.genes[3]))
    var reached=Vector2(n.position.x-r.target.x,n.position.z-r.target.z).length()<.45
    var resting=str(a.get("activity","Esplora")) in ["Riposa","Studia","Cerca cibo","Incontra la famiglia"]
    if (reached and not resting) or int(r.get("activity_day",-1))!=sim.day:
@@ -1145,6 +1163,14 @@ func divine(p:Vector3):
    for a in near:
     a.genes[0]=clampf(a.genes[0]+.14,0,1)
     a.genes[2]=clampf(a.genes[2]+rng.randf_range(-.25,.25),0,1)
+    a.genes[3]=clampf(a.genes[3]+rng.randf_range(-.15,.15),0,1)
+    if actors.has(a.id):
+     var old_position:Vector3=actors[a.id].node.position
+     actors[a.id].node.queue_free()
+     actors.erase(a.id)
+     activity_labels.erase(a.id)
+     create_actor(a)
+     actors[a.id].node.position=old_position
     sim.remember(a,"Una mutazione ha cambiato le mie capacità.")
   "Pioggia":
    v.food=minf(850,v.food+42)
@@ -1307,6 +1333,7 @@ func setup_ui():
  scroll.add_child(power_grid)
  power_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  populate_powers(0)
+ button(lv,"Osserva il mondo",func():power="Osserva";selected=-1;following=false;refresh();populate_powers(power_category.selected))
  text_label(lv,"MAPPA DEL MONDO",13)
  map_view=preload("res://scripts/minimap.gd").new()
  map_view.world=self
@@ -1321,6 +1348,12 @@ func setup_ui():
  var rv=VBoxContainer.new()
  right.add_child(rv)
  text_label(rv,"VITA  /  CIVILTÀ",18)
+ inspector_tabs=TabContainer.new()
+ inspector_tabs.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ rv.add_child(inspector_tabs)
+ var inspect=VBoxContainer.new()
+ inspect.name="Osserva"
+ inspector_tabs.add_child(inspect)
  status_bar=ProgressBar.new()
  status_bar.custom_minimum_size.y=12
  status_bar.show_percentage=false
@@ -1333,14 +1366,17 @@ func setup_ui():
  health_fill.bg_color=Color("83c8a4")
  health_fill.set_corner_radius_all(5)
  status_bar.add_theme_stylebox_override("fill",health_fill)
- rv.add_child(status_bar)
- stats_bar=text_label(rv,"",13)
+ inspect.add_child(status_bar)
+ stats_bar=text_label(inspect,"",13)
  stats_bar.modulate=Color("a7d9bc")
- selected_status=text_label(rv,"Osservazione del mondo",13)
+ selected_status=text_label(inspect,"Osservazione del mondo",13)
  selected_status.modulate=Color("a7d9bc")
- details=rich(rv,240)
+ mood_bar=small_meter(inspect,"Umore",Color("79bda2"))
+ hunger_bar=small_meter(inspect,"Sazietà",Color("e1bc78"))
+ details=rich(inspect,265)
+ details.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var line=HBoxContainer.new()
- rv.add_child(line)
+ inspect.add_child(line)
  button(line,"Segui",func():
   if actors.has(selected):
    following=true
@@ -1355,36 +1391,49 @@ func setup_ui():
  button(line,"Preferito",func():
   var a=sim.find(selected)
   if not a.is_empty():a.favorite=not a.favorite;refresh())
+ var archive=VBoxContainer.new()
+ archive.name="Mondo"
+ inspector_tabs.add_child(archive)
+ text_label(archive,"ARCHIVI E CIVILTÀ",15)
  var line2=HBoxContainer.new()
- rv.add_child(line2)
+ archive.add_child(line2)
  button(line2,"Atlante",show_atlas)
  signals_button=button(line2,"Segnali",show_signals)
  button(line2,"Scoperte",show_tech)
- button(rv,"Progetti delle civiltà",show_projects)
+ button(archive,"Progetti delle civiltà",show_projects)
  var extra=HBoxContainer.new()
- rv.add_child(extra)
+ archive.add_child(extra)
  button(extra,"Traguardi",show_achievements)
  button(extra,"Statistiche",show_history)
  button(extra,"Nomi",func():show_labels=not show_labels)
- text_label(rv,"PARLA CON LA VITA",15)
+ button(archive,"Cronaca completa",func():open_dialog("CRONACA","\n".join(sim.events)))
+ button(archive,"Storia delle crisi",show_crisis_history)
+ event_feed=rich(archive,260)
+ event_feed.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ var chat=VBoxContainer.new()
+ chat.name="Dialogo"
+ inspector_tabs.add_child(chat)
+ text_label(chat,"PARLA CON LA VITA",15)
  input=LineEdit.new()
  input.placeholder_text="Scrivi al tuo universo..."
  input.max_length=400
- rv.add_child(input)
- button(rv,"Invia messaggio",send_message)
+ chat.add_child(input)
+ button(chat,"Invia messaggio",send_message)
  input.text_submitted.connect(func(_message):send_message())
  model=LineEdit.new()
  model.text="qwen2.5:1.5b"
  model.placeholder_text="Modello Ollama locale"
- rv.add_child(model)
+ chat.add_child(model)
  model.visible=not portable_ai
- ai_button=button(rv,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
+ ai_button=button(chat,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
  if portable_ai:
   var autonomy=CheckButton.new()
   autonomy.text="Iniziativa autonoma AI"
   autonomy.button_pressed=ai_autonomy
   autonomy.toggled.connect(func(on):ai_autonomy=on;store_settings())
-  rv.add_child(autonomy)
+  chat.add_child(autonomy)
+ button(chat,"Segnali delle creature",show_signals)
+ text_label(chat,"Seleziona un abitante prima di parlargli.",12).autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
  var bottom=panel(hud,Rect2(14,769,1412,117),.91)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
@@ -1433,6 +1482,12 @@ func refresh():
   status_bar.value=sim.energy if a.is_empty() else float(a.health)
   health_fill.bg_color=Color("e1bc78") if a.is_empty() else Color("d7796c").lerp(Color("83c8a4"),float(a.health)/100)
   stats_bar.text="Energia divina · %d%%"%int(sim.energy) if a.is_empty() else "Salute · %d%%"%int(a.health)
+ if mood_bar!=null:
+  mood_bar.value=sim.peace if a.is_empty() else float(a.mood)
+  hunger_bar.value=sim.energy if a.is_empty() else 100.0-float(a.hunger)
+  mood_bar.get_parent().visible=not a.is_empty()
+  hunger_bar.get_parent().visible=not a.is_empty()
+ if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
  if a.is_empty():
   var lines=[]
   for i in range(2):
@@ -1451,6 +1506,9 @@ func refresh():
   objective.text=Sim.CRISIS_NAMES[int(sim.active_crisis.kind)]+" · "+Sim.CLANS[int(sim.active_crisis.clan)]+" · fino al giorno "+str(sim.active_crisis.until)
  if sim.ended!="":objective.text=sim.ended
  chronicle.text="\n".join(sim.events.slice(0,12))
+ if inspector_tabs!=null:
+  var unread=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
+  inspector_tabs.set_tab_title(1,"Mondo"+(" · "+str(unread) if unread>0 else ""))
 
 func open_welcome():
  if welcome_open:return
@@ -2269,3 +2327,27 @@ func _notification(what:int):
   if world_started and autosave_enabled and sim.villages.size()==2:
    save_path("user://genesis47_auto.json",false)
   get_tree().quit()
+
+func small_meter(parent:Node,caption:String,tint:Color)->ProgressBar:
+ var row=HBoxContainer.new()
+ parent.add_child(row)
+ var lbl=text_label(row,caption,12)
+ lbl.custom_minimum_size.x=64
+ var bar=ProgressBar.new()
+ bar.custom_minimum_size=Vector2(0,10)
+ bar.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ bar.size_flags_vertical=Control.SIZE_SHRINK_CENTER
+ bar.show_percentage=false
+ bar.max_value=100
+ var style=StyleBoxFlat.new()
+ style.bg_color=tint
+ style.set_corner_radius_all(4)
+ bar.add_theme_stylebox_override("fill",style)
+ row.add_child(bar)
+ return bar
+
+func show_crisis_history():
+ var lines=[]
+ for event in sim.crisis_history:
+  lines.append("Giorno %d · %s · %s"%[int(event.day),Sim.CLANS[int(event.clan)],Sim.CRISIS_NAMES[int(event.kind)]])
+ open_dialog("STORIA DELLE CRISI","\n".join(lines) if not lines.is_empty() else "Nessuna crisi storica. Il mondo è ancora giovane.")
