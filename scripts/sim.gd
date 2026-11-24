@@ -42,6 +42,8 @@ var aid_actions=0
 var meet_actions=0
 var active_crisis={}
 var crisis_history:Array=[]
+var spatial_autonomy=false
+const TASK_LABELS={"eat":"Mangia","sleep":"Riposa","farm":"Coltiva","gather":"Raccoglie legna","research":"Studia","build":"Lavora al progetto","social":"Incontra un amico","aid":"Aiuta un vicino","play":"Si svaga","heal":"Si cura","explore":"Esplora"}
 const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
 const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
@@ -99,6 +101,7 @@ func birth(c:int,parents:Array)->Dictionary:
   for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
  var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0,"trust":50.0,"life_story":[],"dialogue":[],"social_need":35.0,"skill":0.0,"social_target":-1}
  next_id+=1
+ init_tasks(a)
  people.append(a)
  milestone(a,"Nascita","Sono venuto al mondo.")
  total_births+=1
@@ -156,7 +159,7 @@ func daily():
    elif active_crisis.kind==3:weather*=.66
    elif active_crisis.kind==4:weather*=1.15
   var productivity=1.20+float(v.era)*.15+minf(.22,float(v.bonuses[0])*.025)
-  v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
+  v.food=clampf(v.food+n*(productivity*weather-(.30 if spatial_autonomy else .96)),0,850)
   v.wood=minf(400,v.wood+n*.16)
   var thinkers=0.0
   for a in people:
@@ -201,7 +204,7 @@ func daily():
       remember(b,"È nato "+child.name+".")
       milestone(a,"Famiglia","È nato "+child.name+".")
       milestone(b,"Famiglia","È nato "+child.name+".")
-  if day%17==0 and n>2:
+  if not spatial_autonomy and day%17==0 and n>2:
    var clan_people=people.filter(func(a):return a.clan==i)
    var a=clan_people[rng.randi_range(0,clan_people.size()-1)]
    var b=clan_people[rng.randi_range(0,clan_people.size()-1)]
@@ -239,7 +242,7 @@ func daily():
   var old_age=int(a.age)
   a.age+=.22
   if int(a.age)>old_age and int(a.age) in [14,30,50,70]:milestone(a,"Età","Ho raggiunto "+str(int(a.age))+" anni.")
-  a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
+  if not spatial_autonomy:a.hunger=clampf(a.hunger+(8 if v.food<counts[a.clan]*.38 else -6),0,100)
   a.health=clampf(a.health+(1.4 if a.hunger<40 else -2.7)-(1.5 if a.age>65 else 0)+minf(.25,float(v.bonuses[2])*.035),0,100)
   a.mood=clampf(a.mood+(1 if a.health>70 and a.hunger<35 else -2),0,100)
   if day%19==0 and rng.randf()<.045:a.sick=6
@@ -251,24 +254,25 @@ func daily():
   var old_role=str(a.role)
   a.role="Profeta" if a.get("prophet",false) else ("Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore"))
   if a.role!=old_role:milestone(a,"Vocazione","Ora sono "+a.role+".")
-  a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
-  if int(a.get("intention_until",0))>day:
-   var intent=str(a.get("intention",""))
-   if intent=="RICERCA":
-    a.activity="Studia"
-    v.knowledge+=.75
-   elif intent=="CIBO":
-    a.activity="Cerca cibo"
-    v.food=minf(850,v.food+1.0)
-   elif intent=="CURA":
-    a.activity="Riposa"
-    a.health=minf(100,a.health+1.5)
-   elif intent=="PACE":
-    a.activity="Incontra la famiglia"
-    peace=minf(100,peace+.18)
-   elif intent=="ESPLORA":a.activity="Esplora"
-  a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
-  if mode==0 and a.age>=14 and a.health>0:choose_social_action(a,v)
+  if not spatial_autonomy:
+   a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
+   if int(a.get("intention_until",0))>day:
+    var intent=str(a.get("intention",""))
+    if intent=="RICERCA":
+     a.activity="Studia"
+     v.knowledge+=.75
+    elif intent=="CIBO":
+     a.activity="Cerca cibo"
+     v.food=minf(850,v.food+1.0)
+    elif intent=="CURA":
+     a.activity="Riposa"
+     a.health=minf(100,a.health+1.5)
+    elif intent=="PACE":
+     a.activity="Incontra la famiglia"
+     peace=minf(100,peace+.18)
+    elif intent=="ESPLORA":a.activity="Esplora"
+   a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
+   if mode==0 and a.age>=14 and a.health>0:choose_social_action(a,v)
   if a.health<=0 or a.age>83:die(a,"vecchiaia" if a.age>83 else "malattia" if int(a.sick)>0 else "carestia" if a.hunger>75 else "ferite")
  if day%25==0 and not people.is_empty():
   var a=people[rng.randi_range(0,people.size()-1)]
@@ -423,6 +427,7 @@ func import_state(d:Dictionary)->bool:
   a["social_need"]=clampf(float(a.get("social_need",35)),0,100)
   a["skill"]=clampf(float(a.get("skill",0)),0,100)
   a["social_target"]=int(a.get("social_target",-1))
+  init_tasks(a)
   a["life_story"]=a.get("life_story",[])
   if not a.life_story is Array:a.life_story=[]
   a["dialogue"]=a.get("dialogue",[])
@@ -670,3 +675,166 @@ func choose_social_action(a:Dictionary,v:Dictionary):
   social_actions+=1
  elif a.activity=="Studia":
   a.skill=minf(100,a.skill+.45)
+
+func init_tasks(a:Dictionary):
+ a["fatigue"]=clampf(float(a.get("fatigue",25+int(a.id)%32)),0,100)
+ a["boredom"]=clampf(float(a.get("boredom",20+int(a.id)%25)),0,100)
+ a["task"]=str(a.get("task",""))
+ if not TASK_LABELS.has(a.task):a.task=""
+ a["task_target"]=int(a.get("task_target",-1))
+ a["task_left"]=clampf(float(a.get("task_left",0)),0,8)
+ a["task_reason"]=str(a.get("task_reason",""))
+ a["tasks_done"]=int(a.get("tasks_done",0))
+ a["last_task"]=str(a.get("last_task",""))
+ a["task_stage"]="In viaggio" if a.task!="" else "Decide"
+
+func tick_needs(a:Dictionary,dt:float):
+ a.hunger=minf(100,float(a.hunger)+dt*1.65)
+ a.fatigue=minf(100,float(a.fatigue)+dt*1.15)
+ a.boredom=minf(100,float(a.boredom)+dt*.9)
+ a.social_need=minf(100,float(a.social_need)+dt*(.8+float(a.genes[1])*.55))
+
+func choose_task(a:Dictionary)->Dictionary:
+ var v=villages[a.clan]
+ var scores={}
+ var targets={}
+ var reasons={}
+ var adult=float(a.age)>=14
+ if v.food>=1:
+  scores.eat=pow(float(a.hunger)/100,2)*140
+  reasons.eat="Fame: "+str(int(a.hunger))+"%"
+ scores.sleep=pow(float(a.fatigue)/100,2)*125+maxf(0,65-float(a.health))
+ reasons.sleep="Stanchezza: "+str(int(a.fatigue))+"%"
+ if a.health<85 or a.sick>0:
+  scores.heal=(100-float(a.health))*.8+float(a.sick)*9
+  reasons.heal="Ha bisogno di cure"
+ scores.play=8+pow(float(a.boredom)/100,2)*80
+ reasons.play="Ha bisogno di svago"
+ scores.explore=10+float(a.genes[0])*15
+ reasons.explore="Curiosità"
+ if adult:
+  scores.farm=18+maxf(0,90-float(v.food))*0.55+(18 if a.role=="Coltivatore" else 0)
+  reasons.farm="Rifornire le scorte"
+  scores.gather=12+maxf(0,50-float(v.wood))*.5+(10 if a.role=="Artigiano" else 0)
+  reasons.gather="Servono materiali"
+  scores.research=13+float(a.genes[0])*25+(18 if a.role=="Ricercatore" else 0)
+  reasons.research="Desiderio di conoscenza"
+  if int(v.project)>=0:
+   scores.build=25+(18 if a.role=="Artigiano" else 0)
+   reasons.build="Completare un'opera"
+ var friend_data=find(int(a.friend))
+ if friend_data.is_empty() or friend_data.clan!=a.clan:
+  for other in people:
+   if other.id!=a.id and other.clan==a.clan:
+    friend_data=other
+    break
+ if not friend_data.is_empty():
+  scores.social=pow(float(a.social_need)/100,2)*95+float(a.genes[1])*10
+  targets.social=int(friend_data.id)
+  reasons.social="Desiderio di compagnia"
+ if adult and a.genes[1]>.48 and a.health>55:
+  var greatest=0.0
+  for other in people:
+   if other.id==a.id or other.clan!=a.clan or other.health<=0 or int(other.get("last_aid_day",-1))==day:continue
+   if other.health>=80 and other.sick<=0 and other.hunger<65:continue
+   var need=maxf(0,80-float(other.health))+float(other.sick)*7+maxf(0,float(other.hunger)-60)
+   if need>greatest:
+    greatest=need
+    targets.aid=int(other.id)
+  if greatest>0:
+   scores.aid=25+greatest*.9
+   reasons.aid="Un vicino ha bisogno di aiuto"
+ if int(a.intention_until)>day:
+  var wanted={"RICERCA":"research","CIBO":"farm","CURA":"heal","PACE":"social","ESPLORA":"explore"}.get(a.intention,"")
+  if scores.has(wanted):scores[wanted]+=28
+ var best=""
+ var best_score=-1.0
+ for key in scores:
+  var value=float(scores[key])
+  if key==a.last_task and value<95:value*=.55
+  if value>best_score:
+   best=key
+   best_score=value
+ var durations={"eat":2.5,"sleep":5.0,"heal":3.5,"farm":4.5,"gather":4.0,"research":5.0,"build":5.0,"social":3.5,"aid":3.0,"play":3.0,"explore":2.0}
+ return {"kind":best,"target":int(targets.get(best,-1)),"duration":float(durations.get(best,2.0)),"reason":str(reasons.get(best,""))}
+
+func begin_task(a:Dictionary,plan:Dictionary):
+ a.task=plan.kind
+ a.task_target=plan.target
+ a.task_left=plan.duration
+ a.task_reason=plan.reason
+ a.task_stage="In viaggio"
+ a.activity=TASK_LABELS.get(a.task,"Decide")
+ a.social_target=a.task_target
+
+func complete_task(a:Dictionary)->bool:
+ if not TASK_LABELS.has(a.task):return false
+ var v=villages[a.clan]
+ var ok=true
+ match a.task:
+  "eat":
+   if v.food<1:ok=false
+   else:
+    v.food-=1
+    a.hunger=maxf(0,a.hunger-65)
+  "sleep":
+   a.fatigue=maxf(0,a.fatigue-82)
+   a.health=minf(100,a.health+3)
+  "heal":
+   a.health=minf(100,a.health+10)
+   a.sick=maxi(0,int(a.sick)-2)
+  "farm":
+   v.food=minf(850,v.food+3.5)
+   a.skill=minf(100,a.skill+.5)
+  "gather":
+   v.wood=minf(400,v.wood+3)
+   a.skill=minf(100,a.skill+.3)
+  "research":
+   v.knowledge+=1.3+float(a.genes[0])
+   a.skill=minf(100,a.skill+.7)
+  "build":
+   if int(v.project)<0:ok=false
+   else:
+    v.progress=minf(99.9,float(v.progress)+1.0)
+    a.skill=minf(100,a.skill+.6)
+  "social":
+   var friend_data=find(int(a.task_target))
+   if friend_data.is_empty():ok=false
+   else:
+    a.social_need=maxf(0,a.social_need-65)
+    friend_data.social_need=maxf(0,friend_data.social_need-25)
+    a.mood=minf(100,a.mood+5)
+    if a.friend<0 and friend_data.friend<0:
+     a.friend=friend_data.id
+     friend_data.friend=a.id
+     milestone(a,"Amicizia","Ho conosciuto "+friend_data.name+".")
+    social_actions+=1
+    meet_actions+=1
+  "aid":
+   var patient=find(int(a.task_target))
+   if patient.is_empty():ok=false
+   else:
+    patient.health=minf(100,patient.health+4)
+    patient.sick=maxi(0,int(patient.sick)-1)
+    patient.last_aid_day=day
+    if patient.hunger>60 and v.food>=1:
+     v.food-=1
+     patient.hunger=maxf(0,patient.hunger-12)
+    a.social_need=maxf(0,a.social_need-25)
+    social_actions+=1
+    aid_actions+=1
+    milestone(a,"Solidarietà","Ho aiutato "+patient.name+".")
+    milestone(patient,"Solidarietà",a.name+" mi ha aiutato.")
+    log_event(a.name+" aiuta "+patient.name+".")
+  "play","explore":
+   a.boredom=maxf(0,a.boredom-(65 if a.task=="play" else 30))
+   a.mood=minf(100,a.mood+3)
+ if ok:
+  a.tasks_done+=1
+  a.last_task=a.task
+ a.task=""
+ a.task_stage="Decide"
+ a.task_target=-1
+ a.social_target=-1
+ a.task_left=0
+ return ok

@@ -45,3 +45,6 @@ Creature procedurali originali con morfologia genetica, colori dei due popoli, a
 
 ## 2.0 — Qualità e verifica
 Solidarietà per feriti, malati e affamati; test mirato di aiuto con persistenza. Materiali originali procedurali, occhi animati, geometrie condivise. BENCHMARK.bat avvia una simulazione isolata, misura FPS medi e il percentile 99 del tempo frame su tre profili, apre la cartella del rapporto benchmark-genesis47.json. Il test grafico CI verifica il funzionamento ma non rappresenta le prestazioni di un PC reale. In Opzioni, Scheda prova giocatore registra sei compiti e commenti senza inviare dati. Il collaudo umano richiede un giocatore effettivo.
+
+## 2.1 — Autonomia intenzionale
+Nella partita interattiva le creature valutano bisogni, tratti, scorte e intenzioni, scelgono un compito, percorrono una griglia A* e ne ricevono gli effetti solo dopo l'arrivo e una fase di esecuzione. I compiti persistono tra giorni e salvataggi. Le urgenze possono interromperli. A velocità 1x il giorno dura circa 8,5 secondi. La simulazione aggregata di assenza e i vecchi test demografici mantengono il modello giornaliero astratto; non sono una prova del movimento in tempo reale. Gli edifici e le celle allagate vengono evitati, salvo i ponti. Il test verifica scelta di cibo e riposo, persistenza e percorso.

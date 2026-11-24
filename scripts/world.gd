@@ -145,6 +145,10 @@ var shared_sphere:SphereMesh
 var shared_box:BoxMesh
 var skin_cache:Dictionary={}
 var benchmark_mode=false
+var nav_grid=AStarGrid2D.new()
+var nav_dirty=true
+var nav_version=0
+var autonomy_clock=0.0
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -497,6 +501,7 @@ func new_world(seed_value:int,which:int):
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
  planted.clear()
  sim.start(seed_value,which)
+ sim.spatial_autonomy=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
  last_auto_day=-1
  reset_visuals()
  tick=0
@@ -508,6 +513,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
+ nav_dirty=true
  for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root]:
   if is_instance_valid(n):
    remove_child(n)
@@ -860,6 +866,7 @@ func apply_changes():
     if selected==e.id:selected=-1
    "house","era":
     sync_houses(int(e.clan))
+    nav_dirty=true
     rebuild_farms()
     rebuild_settlement_details()
     rebuild_landmarks()
@@ -869,8 +876,9 @@ func apply_changes():
    "migration":
     var a=sim.find(int(e.id))
     if not a.is_empty() and actors.has(a.id):
-     actors[a.id].target=random_near(centers[a.clan],5)
-     actors[a.id].activity_day=-1
+     a.task=""
+     actors[a.id]["route"]=[]
+     actors[a.id]["planned_task"]=""
  sim.changes.clear()
 
 func step_day():
@@ -945,58 +953,26 @@ func _process(delta:float):
    var anim=actors[a.id].get("animation")
    if is_instance_valid(anim):anim.active=speed>0
  if speed>0:
-  tick+=minf(delta,.1)*speed
+  tick+=minf(delta,.1)*speed/(5.0 if sim.spatial_autonomy else 1.0)
   var loops=0
   while tick>=1.7 and loops<8 and speed>0:
    tick-=1.7
    step_day()
    loops+=1
+  if nav_dirty:rebuild_navigation()
   for a in sim.people:
    if not actors.has(a.id):continue
    var r=actors[a.id]
    var n:Node3D=r.node
-   var step=delta*minf(speed,5.0)*lerpf(.75,1.25,float(a.genes[3]))
-   var reached=Vector2(n.position.x-r.target.x,n.position.z-r.target.z).length()<.45
-   var resting=str(a.get("activity","Esplora")) in ["Riposa","Studia","Cerca cibo","Incontra la famiglia","Aiuta un vicino","Incontra un amico","Lavora al progetto"]
-   if (reached and not resting) or int(r.get("activity_day",-1))!=sim.day:
-    r.activity_day=sim.day
-    var activity=str(a.get("activity","Esplora"))
-    if activity=="Riposa":
-     r.target=house_location(a.clan, a.id%maxi(1,houses[a.clan].size()))
-    elif activity=="Incontra la famiglia" and actors.has(a.partner):
-     r.target=actors[a.partner].node.position
-    elif activity in ["Aiuta un vicino","Incontra un amico"] and actors.has(int(a.get("social_target",-1))):
-     r.target=actors[int(a.social_target)].node.position
-    elif activity=="Lavora al progetto":
-     r.target=random_near(centers[a.clan]+Vector3(2,0,-2),1.6)
-    elif activity=="Cerca cibo" and not farm_points[a.clan].is_empty():
-     r.target=farm_points[a.clan][int(a.id)%farm_points[a.clan].size()]
-    elif activity=="Studia":
-     r.target=random_near(centers[a.clan],2.2)
-    else:
-     var radius=5.0 if activity=="Cerca cibo" else 11.0
-     r.target=random_near(centers[a.clan],radius)
-   if activity_labels.has(a.id):
-    var tag:Label3D=activity_labels[a.id]
-    tag.visible=(show_labels or a.id==selected) and distance<36
-    tag.text=a.name+" · "+str(a.get("activity","Esplora"))
-   var direction:Vector3=r.target-n.position
-   direction.y=0
-   var moving=direction.length()>.35
+   var step=delta*minf(speed,20.0)*lerpf(.75,1.25,float(a.genes[3]))
+   var moving=advance_actor_task(a,r,delta*minf(speed,20.0))
    if r.get("moving",true)!=moving:
     r.moving=moving
     if is_instance_valid(r.get("animation")):choose_motion(r.animation,moving)
-   if moving:
-    var p=n.position+direction.normalized()*minf(step*.92,direction.length())
-    for home in houses[a.clan]:
-     var away=p-home.node.position
-     away.y=0
-     if away.length()<1.12 and away.length()>.001:p+=away.normalized()*.12
-    p.y=height_at(p.x,p.z)
-    if p.y>SEA+.12:
-     n.position=p
-     n.rotation.y=lerp_angle(n.rotation.y,atan2(direction.x,direction.z),minf(delta*7,1))
-    else:r.target=centers[a.clan]
+   if activity_labels.has(a.id):
+    var tag:Label3D=activity_labels[a.id]
+    tag.visible=(show_labels or a.id==selected) and distance<36
+    tag.text=a.name+" · "+str(a.get("task_stage",""))+" · "+str(a.get("activity","Decide"))
    r.phase+=step*7 if moving else delta*1.8
    if not r.legs.is_empty():
     r.body.position.y=absf(sin(r.phase))*(.05 if moving else .015)
@@ -1005,7 +981,7 @@ func _process(delta:float):
     for i in range(2):
      r.legs[i].rotation.x=sin(r.phase+i*PI)*(.46 if moving else .025)
      r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*(.32 if moving else .045)
-     if not moving and a.activity in ["Studia","Lavora al progetto","Aiuta un vicino"]:r.arms[i].rotation.x=-.55+sin(r.phase*2.0+i)*.22
+     if not moving and a.activity in ["Studia","Lavora al progetto","Aiuta un vicino","Coltiva","Raccoglie legna","Mangia","Si cura"]:r.arms[i].rotation.x=-.55+sin(r.phase*2.0+i)*.22
    if distance<24:
     var blink_phase=fposmod(visual_time+float(a.id)*1.37,4.2+float(a.genes[0]))
     var blink=1.0-.93*maxf(0.0,1.0-absf(blink_phase-.12)/.12)
@@ -1026,6 +1002,10 @@ func _process(delta:float):
      n.position=p
      n.rotation.y=lerp_angle(n.rotation.y,atan2(dir.x,dir.z),minf(delta*4,1))
     else:animal.target=animal.center
+  autonomy_clock+=delta
+  if autonomy_clock>=.5:
+   autonomy_clock=0.0
+   if actors.has(selected):refresh()
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
   sun.light_energy=.14+daylight*.83
@@ -1252,6 +1232,7 @@ func update_effects(delta:float):
    effects.erase(e)
 
 func alter_ground(p:Vector3,amount:float,r:float):
+ nav_dirty=true
  if deformation.size()>=48:deformation.pop_front()
  deformation.append({"x":p.x,"z":p.z,"h":amount,"r":r})
  make_terrain()
@@ -1668,7 +1649,7 @@ func refresh():
   var pending=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
   signals_button.text="Segnali "+str(pending) if pending>0 else "Segnali"
  var a=sim.find(selected)
- if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("activity","Esplora"))+" · "+("Malato" if int(a.get("sick",0))>0 else "In salute")
+ if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("task_stage",""))+" · "+str(a.get("activity","Decide"))
  if status_bar!=null:
   status_bar.value=sim.energy if a.is_empty() else float(a.health)
   health_fill.bg_color=Color("e1bc78") if a.is_empty() else Color("d7796c").lerp(Color("83c8a4"),float(a.health)/100)
@@ -1693,6 +1674,7 @@ func refresh():
   details.text="\n\n".join(lines)+"\n\nClicca una creatura per conoscerla."
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
+  details.text="AZIONE: "+str(a.get("activity","Decide"))+"\n"+str(a.get("task_stage",""))+" · "+str(a.get("task_reason",""))+"\nStanchezza "+str(int(a.get("fatigue",0)))+"% · Noia "+str(int(a.get("boredom",0)))+"%\nAttività concluse: "+str(a.get("tasks_done",0))+"\n\n"+details.text
   details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
   details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
   if int(a.get("social_target",-1))>=0:details.text+="\nIncontro: "+family_names([a.social_target])
@@ -1982,6 +1964,9 @@ func load_path(p:String)->bool:
  var advanced=0
  if absent_progress and not test_mode:
   advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
+ sim.spatial_autonomy=not test_mode and not benchmark_mode
+ if advanced>0:
+  for person in sim.people:person.task="";person.task_stage="Decide"
  deformation=data.get("deformation",[])
  planted=data.get("planted",[])
  reset_visuals()
@@ -2136,6 +2121,7 @@ func self_test():
  if onboarding.visible:failed=true
  onboarding_enabled=true
  print("ONBOARDING_TEST complete=",not onboarding.visible)
+ if not test_autonomy():failed=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
@@ -3061,3 +3047,183 @@ func show_playtest():
  dlg.confirmed.connect(dlg.queue_free)
  dlg.canceled.connect(dlg.queue_free)
  dlg.popup_centered(Vector2i(560,470))
+
+func walking_height(x:float,z:float)->float:
+ var h=height_at(x,z)
+ if h<SEA+.55:
+  for p in trade_route:
+   if Vector2(x-p.x,z-p.z).length()<.65:return maxf(h,p.y)
+ return h
+
+func rebuild_navigation():
+ nav_grid.region=Rect2i(-50,-50,101,101)
+ nav_grid.cell_size=Vector2.ONE
+ nav_grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+ nav_grid.update()
+ for z in range(-50,51):
+  for x in range(-50,51):
+   var h=walking_height(x,z)
+   if h<SEA+.18:
+    nav_grid.set_point_solid(Vector2i(x,z))
+ for clan in range(2):
+  for home in houses[clan]:
+   var q:Vector3=home.node.position
+   for z in range(floori(q.z-1.3),ceili(q.z+1.3)+1):
+    for x in range(floori(q.x-1.3),ceili(q.x+1.3)+1):
+     var cell=Vector2i(x,z)
+     if nav_grid.region.has_point(cell) and Vector2(x-q.x,z-q.z).length()<1.3:nav_grid.set_point_solid(cell)
+ nav_dirty=false
+ nav_version+=1
+
+func near_cell(p:Vector3)->Vector2i:
+ var base=Vector2i(roundi(p.x),roundi(p.z))
+ var best=Vector2i(999,999)
+ var cost=INF
+ for z in range(base.y-4,base.y+5):
+  for x in range(base.x-4,base.x+5):
+   var cell=Vector2i(x,z)
+   if not nav_grid.region.has_point(cell) or nav_grid.is_point_solid(cell):continue
+   var dist=Vector2(x-p.x,z-p.z).length_squared()
+   if dist<cost:cost=dist;best=cell
+ return best
+
+func task_destination(a:Dictionary)->Vector3:
+ var c:Vector3=centers[a.clan]
+ var angle=float(int(a.id)%12)*TAU/12
+ var offset=Vector3(cos(angle),0,sin(angle))
+ match a.task:
+  "sleep","heal":
+   var h=house_location(a.clan,int(a.id)%maxi(1,houses[a.clan].size()))
+   return h+(c-h).normalized()*2.0
+  "eat":return c+offset*2.1
+  "farm":
+   if not farm_points[a.clan].is_empty():return farm_points[a.clan][int(a.id)%farm_points[a.clan].size()]+offset*.6
+   return c+Vector3(3,0,4)+offset
+  "gather":return c+offset*9.0
+  "research":return c+Vector3(-2,0,-2)+offset
+  "build":return c+Vector3(2,0,-3)+offset
+  "social","aid":
+   if actors.has(int(a.task_target)):return actors[int(a.task_target)].node.position+offset*.7
+   return c+offset*2
+  "play":return c+Vector3(-3,0,3)+offset
+  "explore":return c+Vector3(cos(angle+float(a.tasks_done)*1.7),0,sin(angle+float(a.tasks_done)*1.7))*8.0
+ return c+offset
+
+func route_actor(a:Dictionary,r:Dictionary)->bool:
+ var n:Node3D=r.node
+ var start=near_cell(n.position)
+ var finish=near_cell(task_destination(a))
+ if not nav_grid.region.has_point(start) or not nav_grid.region.has_point(finish):return false
+ var ids=nav_grid.get_id_path(start,finish)
+ if ids.is_empty():return false
+ var points:Array=[]
+ for cell in ids:
+  points.append(Vector3(cell.x,walking_height(cell.x,cell.y),cell.y))
+ r.route=points
+ r.route_index=0
+ r.planned_task=a.task
+ r.nav_version=nav_version
+ r.travel_time=0.0
+ return true
+
+func cancel_task(a:Dictionary,r:Dictionary):
+ a.last_task=a.task
+ a.task=""
+ a.task_stage="Decide"
+ a.task_target=-1
+ a.social_target=-1
+ a.task_left=0
+ r.planned_task=""
+ r.route=[]
+ r.retry=1.0
+
+func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
+ var n:Node3D=r.node
+ if dt<=0:return false
+ if sim.spatial_autonomy:sim.tick_needs(a,dt)
+ if float(r.get("retry",0))>0:
+  r.retry=maxf(0,float(r.retry)-dt)
+  return false
+ if a.task!="" and a.task not in ["eat","sleep","heal"] and (a.hunger>=91 and sim.villages[a.clan].food>=1 or a.fatigue>=94 or a.health<35):
+  cancel_task(a,r)
+  return false
+ if a.task=="":
+  sim.begin_task(a,sim.choose_task(a))
+ if a.task in ["social","aid"] and not actors.has(int(a.task_target)):
+  cancel_task(a,r)
+  return false
+ if str(r.get("planned_task",""))!=a.task or int(r.get("nav_version",-1))!=nav_version:
+  if not route_actor(a,r):
+   cancel_task(a,r)
+   return false
+  a.task_stage="In viaggio"
+ if int(r.route_index)<r.route.size():
+  var destination:Vector3=r.route[int(r.route_index)]
+  var diff=destination-n.position
+  diff.y=0
+  var budget=dt*2.7*lerpf(.8,1.2,float(a.genes[3]))
+  while int(r.route_index)<r.route.size():
+   destination=r.route[int(r.route_index)]
+   diff=destination-n.position
+   diff.y=0
+   if diff.length()>budget:
+    if budget>0:
+     var point=n.position+diff.normalized()*budget
+     point.y=walking_height(point.x,point.z)
+     n.position=point
+     n.rotation.y=lerp_angle(n.rotation.y,atan2(diff.x,diff.z),minf(dt*8,1))
+    break
+   n.position=destination
+   budget-=diff.length()
+   r.route_index+=1
+  if int(r.route_index)<r.route.size():return true
+ if a.task in ["social","aid"]:
+  var partner:Node3D=actors[int(a.task_target)].node
+  if Vector2(n.position.x-partner.position.x,n.position.z-partner.position.z).length()>2.0:
+   r["social_retry"]=float(r.get("social_retry",0))+dt
+   if float(r.social_retry)>9:
+    r.social_retry=0.0
+    cancel_task(a,r)
+   else:
+    r.planned_task=""
+   return false
+  r.social_retry=0.0
+ a.task_stage="In corso"
+ a.task_left=maxf(0,float(a.task_left)-dt)
+ if a.task_left<=0:
+  if sim.spatial_autonomy:sim.complete_task(a)
+  else:a.task=""
+  r.planned_task=""
+  r.retry=.35
+ return false
+
+func test_autonomy()->bool:
+ var sample=Sim.new()
+ sample.start(47,0)
+ var citizen=sample.people[0]
+ citizen.hunger=98.0
+ citizen.fatigue=10.0
+ citizen.health=100.0
+ citizen.boredom=0.0
+ var plan=sample.choose_task(citizen)
+ if plan.kind!="eat":return false
+ sample.begin_task(citizen,plan)
+ var food=float(sample.villages[0].food)
+ if citizen.hunger!=98 or sample.villages[0].food!=food:return false
+ if not sample.complete_task(citizen) or citizen.hunger>=40 or sample.villages[0].food!=food-1:return false
+ citizen.hunger=0
+ citizen.fatigue=98
+ if sample.choose_task(citizen).kind!="sleep":return false
+ sample.begin_task(citizen,sample.choose_task(citizen))
+ var copy=Sim.new()
+ if not copy.import_state(JSON.parse_string(JSON.stringify(sample.export_state()))) or copy.people[0].task!="sleep":return false
+ rebuild_navigation()
+ var start=near_cell(centers[0]+Vector3(2,0,0))
+ var finish=near_cell(centers[0]+Vector3(-2,0,0))
+ if not nav_grid.region.has_point(start) or not nav_grid.region.has_point(finish):return false
+ var path=nav_grid.get_id_path(start,finish)
+ if path.size()<2:return false
+ for cell in path:
+  if nav_grid.is_point_solid(cell):return false
+ print("AUTONOMY_TEST priority=eat,sleep path=",path.size()," persistent_task=",copy.people[0].task)
+ return true
