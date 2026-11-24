@@ -37,6 +37,9 @@ var total_deaths=0
 var total_births=0
 var projects_completed=0
 var crises_seen=0
+var social_actions=0
+var aid_actions=0
+var meet_actions=0
 var active_crisis={}
 var crisis_history:Array=[]
 const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
@@ -73,6 +76,9 @@ func start(s:int,m:int):
  total_births=0
  projects_completed=0
  crises_seen=0
+ social_actions=0
+ aid_actions=0
+ meet_actions=0
  active_crisis.clear()
  crisis_history.clear()
  weather_name="Sereno"
@@ -91,7 +97,7 @@ func birth(c:int,parents:Array)->Dictionary:
   gen=maxi(int(parents[0].gen),int(parents[1].gen))+1
   for p in parents: ids.append(p.id)
   for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
- var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0,"trust":50.0,"life_story":[],"dialogue":[]}
+ var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0,"trust":50.0,"life_story":[],"dialogue":[],"social_need":35.0,"skill":0.0,"social_target":-1}
  next_id+=1
  people.append(a)
  milestone(a,"Nascita","Sono venuto al mondo.")
@@ -262,6 +268,7 @@ func daily():
     peace=minf(100,peace+.18)
    elif intent=="ESPLORA":a.activity="Esplora"
   a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
+  if mode==0 and a.age>=14 and a.health>0:choose_social_action(a,v)
   if a.health<=0 or a.age>83:die(a,"vecchiaia" if a.age>83 else "malattia" if int(a.sick)>0 else "carestia" if a.hunger>75 else "ferite")
  if day%25==0 and not people.is_empty():
   var a=people[rng.randi_range(0,people.size()-1)]
@@ -334,7 +341,7 @@ func apply_reply(a:Dictionary,txt:String)->String:
  log_event(a.name+": «"+response+"»")
  return response
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history,"social_actions":social_actions,"aid_actions":aid_actions,"meet_actions":meet_actions}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -398,6 +405,9 @@ func import_state(d:Dictionary)->bool:
    for key in ["kind","clan","until"]:active_crisis[key]=int(active_crisis[key])
  crises_seen=int(d.get("crises_seen",0))
  crisis_history=d.get("crisis_history",[])
+ social_actions=int(d.get("social_actions",0))
+ aid_actions=int(d.get("aid_actions",0))
+ meet_actions=int(d.get("meet_actions",0))
  if mode==0:ended=""
  rng.seed=seed_value
  rng.state=int(str(d.rng))
@@ -410,6 +420,9 @@ func import_state(d:Dictionary)->bool:
   a["intention"]=str(a.get("intention",""))
   a["intention_until"]=int(a.get("intention_until",0))
   a["trust"]=clampf(float(a.get("trust",50)),0,100)
+  a["social_need"]=clampf(float(a.get("social_need",35)),0,100)
+  a["skill"]=clampf(float(a.get("skill",0)),0,100)
+  a["social_target"]=int(a.get("social_target",-1))
   a["life_story"]=a.get("life_story",[])
   if not a.life_story is Array:a.life_story=[]
   a["dialogue"]=a.get("dialogue",[])
@@ -602,3 +615,43 @@ func rename_person(a:Dictionary,value:String)->bool:
  if clean.is_empty() or not people.has(a):return false
  a.name=clean
  return true
+
+func choose_social_action(a:Dictionary,v:Dictionary):
+ a.social_target=-1
+ a.social_need=minf(100,float(a.social_need)+2.5+float(a.genes[1])*2.0)
+ if a.health<55 or a.hunger>60 or int(a.intention_until)>day:return
+ if (day+int(a.id))%5!=0:return
+ if float(a.genes[1])>.55:
+  for other in people:
+   if other.id==a.id or other.clan!=a.clan or other.health>=55:continue
+   a.activity="Aiuta un vicino"
+   a.social_target=other.id
+   other.health=minf(100,other.health+1.0)
+   other.mood=minf(100,other.mood+2)
+   a.social_need=maxf(0,a.social_need-18)
+   social_actions+=1
+   aid_actions+=1
+   if (day+int(a.id))%25==0:milestone(a,"Solidarietà","Ho aiutato "+other.name+".")
+   return
+ if a.social_need>=60:
+  var friend_data=find(int(a.friend))
+  if friend_data.is_empty() or friend_data.clan!=a.clan:
+   for other in people:
+    if other.id!=a.id and other.clan==a.clan:
+     friend_data=other
+     break
+  if not friend_data.is_empty():
+   a.activity="Incontra un amico"
+   a.social_target=friend_data.id
+   a.social_need=maxf(0,a.social_need-45)
+   a.mood=minf(100,a.mood+1)
+   social_actions+=1
+   meet_actions+=1
+   return
+ if int(v.project)>=0 and a.role=="Artigiano":
+  a.activity="Lavora al progetto"
+  v.progress=minf(99.9,float(v.progress)+.14)
+  a.skill=minf(100,a.skill+.6)
+  social_actions+=1
+ elif a.activity=="Studia":
+  a.skill=minf(100,a.skill+.45)

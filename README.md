@@ -39,3 +39,6 @@ Biografie individuali, personalità derivata dai geni, fiducia nel Creatore, dia
 
 ## 1.8 — Natura e osservazione
 Vegetazione animata in un MultiMesh (fino a 4.200 ciuffi), materiale del suolo e acqua migliorati, tour panoramico F6, contatore FPS, ripristino di tempo, energia infinita e selezione nei salvataggi. Il profilo Prestazioni nasconde la vegetazione extra; Bilanciata usa fino a 2.600 istanze. Grafica stilizzata, compatibilità GL.
+
+## 1.9 — Identità
+Creature procedurali originali con morfologia genetica, colori dei due popoli, animazioni di lavoro e riposo, monumenti e luci notturne. In Eternità gli abitanti cercano compagnia, aiutano chi è in difficoltà e contribuiscono alle opere. Tutorial in cinque passi, richiamabile con F2. Test automatici di comportamento e tutorial; non sostituiscono test con utenti reali.

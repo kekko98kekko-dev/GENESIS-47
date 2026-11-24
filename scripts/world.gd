@@ -134,6 +134,13 @@ var tour_button:Button
 var fps_label:Label
 var fps_clock=0.0
 var unlimited_toggle:CheckButton
+var onboarding:PanelContainer
+var onboarding_label:Label
+var onboarding_step=0
+var onboarding_enabled=true
+var landmark_root:Node3D
+var village_lights:Array=[]
+var social_summary:Label
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -491,7 +498,7 @@ func new_world(seed_value:int,which:int):
  refresh()
 
 func reset_visuals():
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -502,6 +509,7 @@ func reset_visuals():
  caravans.clear()
  clouds.clear()
  civic_spinners.clear()
+ village_lights.clear()
  farm_points=[[],[]]
  animals.clear()
  effects.clear()
@@ -525,7 +533,8 @@ func reset_visuals():
  civic_root=Node3D.new()
  route_root=Node3D.new()
  settlement_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root]:add_child(n)
+ landmark_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -535,6 +544,7 @@ func reset_visuals():
  rebuild_farms()
  rebuild_civic()
  rebuild_settlement_details()
+ rebuild_landmarks()
  rebuild_meadow()
  for i in range(350):
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
@@ -731,19 +741,23 @@ func sync_houses(i:int):
  rebuild_roads()
 
 func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
- var skin=Color("67ac97") if a.clan==0 else Color("c89c62")
- skin=skin.lerp(Color("d0dcb3"),float(a.genes[2])*.24)
+ var skin=Color("399c98").lerp(Color("93d6b6"),float(a.genes[2])) if a.clan==0 else Color("a95c3f").lerp(Color("e8be78"),float(a.genes[2]))
+ var cloth=Color("244b59") if a.clan==0 else Color("683e4c")
+ var accent=Color("c5f2d7") if a.clan==0 else Color("ffe3a1")
  var body=Node3D.new()
  parent.add_child(body)
  sphere(body,skin,Vector3(0,.70,0),Vector3(.67,.80,.53))
+ sphere(body,cloth,Vector3(0,.62,-.19),Vector3(.62,.57,.25))
  sphere(body,skin.lightened(.07),Vector3(0,1.24,.025),Vector3(.77,.70,.65))
  sphere(body,skin.lightened(.25),Vector3(0,.77,.245),Vector3(.41,.45,.12))
- sphere(body,Color("d5ae78"),Vector3(0,.50,0),Vector3(.66,.15,.54))
+ sphere(body,cloth,Vector3(0,.50,0),Vector3(.66,.15,.54))
+ sphere(body,accent,Vector3(0,.51,.27),Vector3(.14,.13,.06),.15)
  var arms=[]
  var legs=[]
  for side in [-1,1]:
   var ear=sphere(body,skin.darkened(.08),Vector3(side*.39,1.42,.0),Vector3(.24,.38,.18))
   ear.rotation.z=side*-.56
+  ear.scale.y*=lerpf(.75,1.30,float(a.genes[0]))
   sphere(body,skin.lightened(.25),Vector3(side*.39,1.43,.083),Vector3(.11,.22,.05)).rotation.z=side*-.56
   sphere(body,Color("f2e6c9"),Vector3(side*.18,1.30,.29),Vector3(.25,.28,.15))
   sphere(body,Color("8b673d"),Vector3(side*.18,1.30,.36),Vector3(.16,.19,.07))
@@ -763,7 +777,11 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   legs.append(leg)
  sphere(body,skin.darkened(.12),Vector3(0,1.13,.345),Vector3(.12,.065,.04))
  for j in range(3):
-  sphere(body,Color("dceab0"),Vector3((j-1)*.10,1.55,.20),Vector3(.06,.08,.035),.5)
+  sphere(body,accent,Vector3((j-1)*.10,1.55,.20),Vector3(.06,.08,.035),.5)
+ var crest=cone(body,skin.lightened(.18),Vector3(0,1.68,-.08),.11,.18+float(a.genes[3])*.22,.015,7)
+ crest.rotation.x=-.35
+ if a.genes[1]>.55:
+  for side in [-1,1]:sphere(body,accent,Vector3(side*.27,1.16,.28),Vector3(.09,.045,.027))
  return {"body":body,"arms":arms,"legs":legs}
 
 func create_actor(a:Dictionary):
@@ -771,11 +789,12 @@ func create_actor(a:Dictionary):
  var parent=Node3D.new()
  people_root.add_child(parent)
  parent.position=random_near(centers[a.clan],6.5)
- var visual=asset(parent,"creature",int(a.clan)*4+mini(3,int(float(a.genes[2])*4)),Vector3.ZERO,1.0)
+ var visual:Node3D=null
+ # Original coherent species; legacy stock models remain licensed in the catalog.
  var rig={}
  if visual==null:
   rig=original_creature(parent,a)
-  rig.body.scale=Vector3.ONE*.62
+  rig.body.scale=Vector3.ONE*.68
  else:
   start_animation(visual,["walk","run","idle"])
   rig={"body":visual,"arms":[],"legs":[]}
@@ -823,6 +842,7 @@ func apply_changes():
     sync_houses(int(e.clan))
     rebuild_farms()
     rebuild_settlement_details()
+    rebuild_landmarks()
    "trade":spawn_caravan(int(e.id))
    "trade_arrived":remove_caravan(int(e.id))
    "project":rebuild_civic()
@@ -882,7 +902,8 @@ func _process(delta:float):
  if toast_time>0:
   toast_time-=delta
   if toast_time<=0 and is_instance_valid(toast_panel):toast_panel.hide()
- var keyboard_ok=not (input.has_focus() or model.has_focus())
+ var focused=get_viewport().gui_get_focus_owner()
+ var keyboard_ok=not (focused is LineEdit or focused is TextEdit) and not welcome_open
  var mov=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  if keyboard_ok and mov.length()>0:
   set_tour(false)
@@ -916,7 +937,7 @@ func _process(delta:float):
    var n:Node3D=r.node
    var step=delta*minf(speed,5.0)*lerpf(.75,1.25,float(a.genes[3]))
    var reached=Vector2(n.position.x-r.target.x,n.position.z-r.target.z).length()<.45
-   var resting=str(a.get("activity","Esplora")) in ["Riposa","Studia","Cerca cibo","Incontra la famiglia"]
+   var resting=str(a.get("activity","Esplora")) in ["Riposa","Studia","Cerca cibo","Incontra la famiglia","Aiuta un vicino","Incontra un amico","Lavora al progetto"]
    if (reached and not resting) or int(r.get("activity_day",-1))!=sim.day:
     r.activity_day=sim.day
     var activity=str(a.get("activity","Esplora"))
@@ -924,6 +945,10 @@ func _process(delta:float):
      r.target=house_location(a.clan, a.id%maxi(1,houses[a.clan].size()))
     elif activity=="Incontra la famiglia" and actors.has(a.partner):
      r.target=actors[a.partner].node.position
+    elif activity in ["Aiuta un vicino","Incontra un amico"] and actors.has(int(a.get("social_target",-1))):
+     r.target=actors[int(a.social_target)].node.position
+    elif activity=="Lavora al progetto":
+     r.target=random_near(centers[a.clan]+Vector3(2,0,-2),1.6)
     elif activity=="Cerca cibo" and not farm_points[a.clan].is_empty():
      r.target=farm_points[a.clan][int(a.id)%farm_points[a.clan].size()]
     elif activity=="Studia":
@@ -955,9 +980,12 @@ func _process(delta:float):
    r.phase+=step*7 if moving else delta*1.8
    if not r.legs.is_empty():
     r.body.position.y=absf(sin(r.phase))*(.05 if moving else .015)
+    r.body.rotation.z=sin(r.phase*.5)*(.05 if moving else .025)
+    r.body.rotation.x=lerpf(r.body.rotation.x,-.10 if moving else .10 if a.activity=="Riposa" else 0.0,minf(delta*5,1))
     for i in range(2):
      r.legs[i].rotation.x=sin(r.phase+i*PI)*(.46 if moving else .025)
      r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*(.32 if moving else .045)
+     if not moving and a.activity in ["Studia","Lavora al progetto","Aiuta un vicino"]:r.arms[i].rotation.x=-.55+sin(r.phase*2.0+i)*.22
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
@@ -981,6 +1009,8 @@ func _process(delta:float):
   sun.rotation_degrees=Vector3(-22-daylight*38,-37+sin(phase*TAU)*24,0)
   env.ambient_light_color=Color("a4bdd8").lerp(Color("e2e7d3"),daylight)
   env.ambient_light_energy=.12+daylight*.31
+  for lamp in village_lights:
+   if is_instance_valid(lamp):lamp.light_energy=(1.0-daylight)*.85 if quality_mode>0 else 0.0
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
   sky_material.sky_horizon_color=Color("495478").lerp(Color("cfdfd4"),daylight)
   env.fog_light_color=Color("374f68").lerp(Color("afc8cf"),daylight)
@@ -1030,6 +1060,7 @@ func _unhandled_input(event:InputEvent):
  if event is InputEventKey and event.pressed and not event.echo:
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
+  if event.keycode==KEY_F2:start_onboarding()
   if event.keycode==KEY_TAB:toggle_compact()
   if event.keycode==KEY_F6:set_tour(not tour)
   if event.keycode==KEY_HOME:
@@ -1073,6 +1104,7 @@ func _unhandled_input(event:InputEvent):
    set_tour(false)
    if power=="Osserva":
     select_at(event.position)
+    if selected>=0 and onboarding_step==1 and onboarding.visible:advance_onboarding()
     if event.double_click and actors.has(selected):follow_person(selected)
    else:
     var p=ground_at(event.position)
@@ -1206,6 +1238,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  rebuild_roads()
  rebuild_trade_route()
  rebuild_settlement_details()
+ rebuild_landmarks()
  rebuild_meadow()
 
 func divine(p:Vector3):
@@ -1522,9 +1555,11 @@ func setup_ui():
  button(extra,"Nomi",func():show_labels=not show_labels)
  button(archive,"Cronaca completa",func():open_dialog("CRONACA","\n".join(sim.events)))
  button(archive,"Storia delle crisi",show_crisis_history)
+ social_summary=text_label(archive,"",13)
+ social_summary.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
  route_status=text_label(archive,"",13)
  button(archive,"Osserva la via commerciale",func():following=false;focus=(centers[0]+centers[1])*.5;distance=37;pitch=.8;update_camera())
- event_feed=rich(archive,260)
+ event_feed=rich(archive,170)
  event_feed.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var chat=VBoxContainer.new()
  chat.name="Dialogo"
@@ -1582,6 +1617,17 @@ func setup_ui():
  toast_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
  toast_label.mouse_filter=Control.MOUSE_FILTER_IGNORE
  toast_panel.hide()
+ onboarding=panel(hud,Rect2(415,182,610,135),.97)
+ var guide=VBoxContainer.new()
+ onboarding.add_child(guide)
+ text_label(guide,"PRIMI PASSI DEL CREATORE",15)
+ onboarding_label=text_label(guide,"",16)
+ onboarding_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+ var actions=HBoxContainer.new()
+ guide.add_child(actions)
+ button(actions,"Avanti",advance_onboarding)
+ button(actions,"Salta guida",finish_onboarding)
+ onboarding.hide()
 
 func toggle_photo():
  photo_mode=not photo_mode
@@ -1612,6 +1658,7 @@ func refresh():
   trust_bar.get_parent().visible=not a.is_empty()
  if dialogue_view!=null:refresh_dialogue(a)
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
+ if social_summary!=null:social_summary.text="Vita sociale: %d azioni · %d aiuti · %d incontri"%[sim.social_actions,sim.aid_actions,sim.meet_actions]
  if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate"%[sim.shipments.size(),sim.trades]
  if a.is_empty():
   var lines=[]
@@ -1623,6 +1670,8 @@ func refresh():
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
   details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
+  details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
+  if int(a.get("social_target",-1))>=0:details.text+="\nIncontro: "+family_names([a.social_target])
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.mode==0:
@@ -1668,8 +1717,9 @@ func open_welcome():
   world_started=true
   deformation.clear()
   new_world(maxi(1,abs(int(seed_input.text))),option.selected)
-  dlg.queue_free())
- dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free())
+  dlg.queue_free()
+  if onboarding_enabled:start_onboarding())
+ dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free();maybe_onboard())
  dlg.popup_centered(Vector2i(620,220))
 
 func open_dialog(heading:String,content:String):
@@ -2016,6 +2066,18 @@ func self_test():
  if not life_copy.import_state(JSON.parse_string(JSON.stringify(life.export_state()))):failed=true
  elif life_copy.people[0].name!="Astra" or life_copy.people[0].dialogue.size()!=2 or life_copy.people[0].life_story.is_empty():failed=true
  print("LIFE_TEST dialogue=",citizen.dialogue.size()," trust=",citizen.trust," biography=",citizen.life_story.size())
+ var social=Sim.new()
+ social.start(57,0)
+ for j in range(160):social.daily()
+ if social.social_actions<10 or social.aid_actions+social.meet_actions<=0:failed=true
+ var social_clone=Sim.new()
+ if not social_clone.import_state(JSON.parse_string(JSON.stringify(social.export_state()))) or social_clone.social_actions!=social.social_actions:failed=true
+ print("SOCIAL_TEST actions=",social.social_actions," aid=",social.aid_actions," encounters=",social.meet_actions)
+ start_onboarding()
+ for i in range(5):advance_onboarding()
+ if onboarding.visible:failed=true
+ onboarding_enabled=true
+ print("ONBOARDING_TEST complete=",not onboarding.visible)
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
@@ -2364,6 +2426,7 @@ func restore_settings():
  if settings.load("user://genesis47_settings.cfg")!=OK:return
  apply_quality(int(settings.get_value("game","quality",1)))
  autosave_enabled=bool(settings.get_value("game","autosave",true))
+ onboarding_enabled=bool(settings.get_value("game","onboarding",true))
  absent_progress=bool(settings.get_value("game","absence",false))
  ai_autonomy=bool(settings.get_value("game","ai_autonomy",true))
  volume_value=float(settings.get_value("game","volume",50))
@@ -2373,6 +2436,7 @@ func restore_settings():
 func store_settings():
  settings.set_value("game","quality",quality_mode)
  settings.set_value("game","autosave",autosave_enabled)
+ settings.set_value("game","onboarding",onboarding_enabled)
  settings.set_value("game","absence",absent_progress)
  settings.set_value("game","ai_autonomy",ai_autonomy)
  settings.set_value("game","volume",volume_value)
@@ -2779,3 +2843,63 @@ func rebuild_meadow():
  meadow.multimesh=mm
  meadow.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
  add_child(meadow)
+
+func maybe_onboard():
+ if onboarding_enabled:start_onboarding()
+
+func start_onboarding():
+ if not is_instance_valid(onboarding):return
+ onboarding_step=0
+ onboarding.show()
+ show_onboarding_step()
+
+func show_onboarding_step():
+ var steps=["1/5 · Sposta la vista con WASD, ruota tenendo premuto il destro e usa la rotella per avvicinarti.","2/5 · Clicca una creatura per conoscerla. Un doppio clic la segue; puoi anche usare Casuale e Segui.","3/5 · A sinistra scegli Vita o Guarigione, poi clicca sul terreno. Osserva annulla il potere.","4/5 · A destra, Mondo mostra civiltà, scoperte e segnali. Dialogo permette di parlare con un abitante.","5/5 · Usa Pausa e le velocità in basso. F5 salva, F9 carica, F6 avvia il tour. In Eternità non devi vincere."]
+ onboarding_label.text=steps[clampi(onboarding_step,0,4)]
+
+func advance_onboarding():
+ onboarding_step+=1
+ if onboarding_step>=5:finish_onboarding()
+ else:show_onboarding_step()
+
+func finish_onboarding():
+ onboarding.hide()
+ onboarding_enabled=false
+ if not test_mode:store_settings()
+
+func rebuild_landmarks():
+ if not is_instance_valid(landmark_root) or centers.size()!=2:return
+ for child in landmark_root.get_children():
+  landmark_root.remove_child(child)
+  child.queue_free()
+ village_lights.clear()
+ for i in range(2):
+  if sim.villages[i].era<1:continue
+  var tint=Color("60c3ac") if i==0 else Color("e5ae73")
+  var center=centers[i]
+  for j in range(4):
+   var angle=float(j)*TAU/4+.4
+   var point=ground(center.x+cos(angle)*3.4,center.z+sin(angle)*3.4)
+   if point.y<SEA+.2:continue
+   var n=Node3D.new()
+   landmark_root.add_child(n)
+   n.position=point
+   cone(n,Color("777d70"),Vector3.UP*.12,.35,.24,.27,8)
+   cone(n,Color("465c55"),Vector3.UP*.64,.075,1.1,.055,8)
+   cone(n,tint,Vector3.UP*1.24,.19,.30,.035,8,.45)
+   if j==0 or j==2:
+    var l=OmniLight3D.new()
+    n.add_child(l)
+    l.position.y=1.25
+    l.light_color=tint
+    l.omni_range=3.0
+    l.light_energy=.25
+    village_lights.append(l)
+  var point=ground(center.x+2.6,center.z-2.6)
+  if point.y>SEA+.2:
+   var monument=Node3D.new()
+   landmark_root.add_child(monument)
+   monument.position=point
+   cone(monument,Color("a6a895"),Vector3.UP*.1,.66,.2,.58,10)
+   cone(monument,Color("687e70"),Vector3.UP*.55,.36,.7,.25,7)
+   cone(monument,tint,Vector3.UP*1.16,.29,.55,.02,7,.3)
