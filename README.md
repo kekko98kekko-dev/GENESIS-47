@@ -53,3 +53,6 @@ Le relazioni nella partita interattiva crescono tramite incontri completati; uni
 
 ## 2.2 — Catastrofi fisiche
 Meteoriti con danni al momento dell'impatto; tsunami, vulcano, fulmine e deformazioni colpiscono le abitazioni effettivamente comprese nel raggio. Perdita di risorse, vittime, macerie, vegetazione rimossa, terreni danneggiati temporaneamente. Posizioni delle case e macerie persistenti; ricostruzione con risorse e attesa. Test mirato di impatto, cratere, villaggio distante intatto e salvataggio. Le infrastrutture non residenziali non sono tutte distruttibili; non è una simulazione di fluidi o frattura fisica.
+
+## 3.0 — Comunità funzionali
+Architettura originale ispirata ai principi di FreeSO (MPL-2.0), Colony Sim Template (MIT) e Deepholm (MIT), senza importare il codice di tali motori. Registro di stazioni con capacità e prenotazioni, abitazioni assegnate, scorte alimentari prenotate, raccolta e consegna al magazzino, costruzione con consumo di legna, azioni con prop e segnali 3D. In modalità spaziale la produzione ordinaria deriva da azioni concluse; le crisi, i doni divini, le opere concluse e il commercio possono ancora modificare le risorse. Riposo presso ripari visibili, non interni arredati. Il modello offline aggregato resta distinto. Test di prenotazione, perdita di dimora e assenza di produzione passiva.

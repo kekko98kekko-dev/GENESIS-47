@@ -43,7 +43,7 @@ var meet_actions=0
 var active_crisis={}
 var crisis_history:Array=[]
 var spatial_autonomy=false
-const TASK_LABELS={"eat":"Mangia","sleep":"Riposa","farm":"Coltiva","gather":"Raccoglie legna","research":"Studia","build":"Lavora al progetto","social":"Incontra un amico","aid":"Aiuta un vicino","play":"Si svaga","heal":"Si cura","explore":"Esplora"}
+const TASK_LABELS={"house":"Costruisce casa","eat":"Mangia","sleep":"Riposa","farm":"Coltiva","gather":"Raccoglie legna","research":"Studia","build":"Lavora al progetto","social":"Incontra un amico","aid":"Aiuta un vicino","play":"Si svaga","heal":"Si cura","explore":"Esplora"}
 const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
 const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
@@ -159,12 +159,13 @@ func daily():
    elif active_crisis.kind==3:weather*=.66
    elif active_crisis.kind==4:weather*=1.15
   var productivity=1.20+float(v.era)*.15+minf(.22,float(v.bonuses[0])*.025)
-  v.food=clampf(v.food+n*(productivity*weather-(.30 if spatial_autonomy else .96)),0,850)
-  v.wood=minf(400,v.wood+n*.16)
+  if not spatial_autonomy:
+   v.food=clampf(v.food+n*(productivity*weather-.96),0,850)
+   v.wood=minf(400,v.wood+n*.16)
   var thinkers=0.0
   for a in people:
    if a.clan==i:thinkers+=float(a.genes[0])
-  v.knowledge+=thinkers*(.23+minf(.10,float(v.bonuses[1])*.01))
+  if not spatial_autonomy:v.knowledge+=thinkers*(.23+minf(.10,float(v.bonuses[1])*.01))
   if v.era>=2:advance_project(i,n)
   var unlocked=mini(14,int(v.knowledge/23.0))
   while v.tech<unlocked:
@@ -178,7 +179,7 @@ func daily():
    changes.append({"kind":"era","clan":i})
    v.government=["Consiglio","Anziani","Assemblea","Regno","Repubblica","Tecnocrazia","Federazione"][era]
    if era>=4:v.belief="Custodi del codice" if v.faith<50 else "Ordine della luce"
-  if day>=int(v.get("rebuild_after",0)) and v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
+  if not spatial_autonomy and day>=int(v.get("rebuild_after",0)) and v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
    v.wood-=22
    v.houses+=1
    changes.append({"kind":"house","clan":i})
@@ -504,7 +505,7 @@ func advance_project(clan:int,n:int):
   v.wood-=12
   log_event(CLANs_name(clan)+" avvia "+PROJECT_NAMES[kind]+".")
  if v.food<n*.25:return
- v.progress=minf(100,float(v.progress)+2.0+minf(5.0,n*.065))
+ if not spatial_autonomy:v.progress=minf(100,float(v.progress)+2.0+minf(5.0,n*.065))
  if v.progress<100:return
  var kind=int(v.project)
  v.completed+=1
@@ -691,6 +692,10 @@ func init_tasks(a:Dictionary):
  if not a.bonds is Dictionary:a.bonds={}
  a["last_child_day"]=int(a.get("last_child_day",-40))
  a["task_stage"]="In viaggio" if a.task!="" else "Decide"
+ a["home_key"]=str(a.get("home_key",""))
+ a["station_id"]=str(a.get("station_id",""))
+ a["delivery"]=bool(a.get("delivery",false))
+ a["cargo"]=str(a.get("cargo",""))
 
 func tick_needs(a:Dictionary,dt:float):
  a.hunger=minf(100,float(a.hunger)+dt*1.65)
@@ -698,7 +703,7 @@ func tick_needs(a:Dictionary,dt:float):
  a.boredom=minf(100,float(a.boredom)+dt*.9)
  a.social_need=minf(100,float(a.social_need)+dt*(.8+float(a.genes[1])*.55))
 
-func choose_task(a:Dictionary)->Dictionary:
+func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
  var v=villages[a.clan]
  var scores={}
  var targets={}
@@ -719,6 +724,9 @@ func choose_task(a:Dictionary)->Dictionary:
  if adult:
   scores.farm=18+maxf(0,90-float(v.food))*0.55+(18 if a.role=="Coltivatore" else 0)
   reasons.farm="Rifornire le scorte"
+  if v.wood>=22 and day>=int(v.get("rebuild_after",0)) and v.houses<mini(25,3+int(count(a.clan)/4)+v.era):
+   scores.house=45+(25 if str(a.get("home_key",""))=="" else 0)+(12 if a.role=="Artigiano" else 0)
+   reasons.house="La comunità necessita di nuove case"
   scores.gather=12+maxf(0,50-float(v.wood))*.5+(10 if a.role=="Artigiano" else 0)
   reasons.gather="Servono materiali"
   scores.research=13+float(a.genes[0])*25+(18 if a.role=="Ricercatore" else 0)
@@ -752,14 +760,17 @@ func choose_task(a:Dictionary)->Dictionary:
  var best=""
  var best_score=-1.0
  for key in scores:
+  if not available.is_empty() and not available.has(key):continue
   var value=float(scores[key])+float(posmod(int(a.id)*17+int(a.tasks_done)*13+str(key).hash(),9))*.6
   if key=="eat" and a.hunger>=85:value+=100
   if key=="sleep" and a.fatigue>=92:value+=65
+  if available.has(key):value/=1.0+float(available[key])*.018
   if key==a.last_task and value<95:value*=.55
   if value>best_score:
    best=key
    best_score=value
- var durations={"eat":2.5,"sleep":5.0,"heal":3.5,"farm":4.5,"gather":4.0,"research":5.0,"build":5.0,"social":3.5,"aid":3.0,"play":3.0,"explore":2.0}
+ if best=="":best="explore"
+ var durations={"house":6.0,"eat":2.5,"sleep":5.0,"heal":3.5,"farm":4.5,"gather":4.0,"research":5.0,"build":5.0,"social":3.5,"aid":3.0,"play":3.0,"explore":2.0}
  return {"kind":best,"target":int(targets.get(best,-1)),"duration":float(durations.get(best,2.0)),"reason":str(reasons.get(best,""))}
 
 func begin_task(a:Dictionary,plan:Dictionary):
@@ -787,11 +798,18 @@ func complete_task(a:Dictionary)->bool:
   "heal":
    a.health=minf(100,a.health+10)
    a.sick=maxi(0,int(a.sick)-2)
+  "house":
+   if v.wood<22:ok=false
+   else:
+    v.wood-=22
+    v.houses+=1
+    changes.append({"kind":"house","clan":a.clan})
+    log_event(CLANs_name(a.clan)+" costruisce una nuova casa.")
   "farm":
-   v.food=minf(850,v.food+3.5)
+   v.food=minf(850,v.food+5.0)
    a.skill=minf(100,a.skill+.5)
   "gather":
-   v.wood=minf(400,v.wood+3)
+   v.wood=minf(400,v.wood+5)
    a.skill=minf(100,a.skill+.3)
   "research":
    v.knowledge+=1.3+float(a.genes[0])
@@ -799,7 +817,7 @@ func complete_task(a:Dictionary)->bool:
   "build":
    if int(v.project)<0:ok=false
    else:
-    v.progress=minf(99.9,float(v.progress)+1.0)
+    v.progress=minf(100,float(v.progress)+5.0)
     a.skill=minf(100,a.skill+.6)
   "social":
    var friend_data=find(int(a.task_target))
@@ -842,6 +860,9 @@ func complete_task(a:Dictionary)->bool:
  a.task_target=-1
  a.social_target=-1
  a.task_left=0
+ a.station_id=""
+ a.delivery=false
+ a.cargo=""
  return ok
 
 func build_relationship(a:Dictionary,b:Dictionary):

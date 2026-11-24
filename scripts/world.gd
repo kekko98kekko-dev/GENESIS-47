@@ -22,6 +22,11 @@ var actors:Dictionary={}
 var animals:Array=[]
 var houses:Array=[[],[]]
 var house_sites:Array=[[],[]]
+var service_root:Node3D
+var services:Dictionary={}
+var claims:Dictionary={}
+var services_dirty=true
+var completed_visible=0
 var ruins:Array=[]
 var scars:Array=[]
 var ruin_root:Node3D
@@ -526,8 +531,11 @@ func new_world(seed_value:int,which:int):
 
 func reset_visuals():
  nav_dirty=true
+ services_dirty=true
+ services.clear()
+ claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -568,6 +576,7 @@ func reset_visuals():
  settlement_root=Node3D.new()
  landmark_root=Node3D.new()
  ruin_root=Node3D.new()
+ service_root=Node3D.new()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
@@ -612,6 +621,8 @@ func reset_visuals():
   start_animation(n,["walk","run","idle"])
   animals.append({"node":n,"target":random_near(p,5),"center":centers[i%2],"phase":rng.randf()*TAU})
  for a in sim.people:create_actor(a)
+ rebuild_navigation()
+ rebuild_services()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -895,6 +906,19 @@ func create_actor(a:Dictionary):
  signet.billboard=BaseMaterial3D.BILLBOARD_ENABLED
  signet.hide()
  actors[a.id]["signet"]=signet
+ var marker=Label3D.new()
+ parent.add_child(marker)
+ marker.position=Vector3(0,1.68,0)
+ marker.font_size=34
+ marker.outline_size=7
+ marker.pixel_size=.006
+ marker.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ marker.hide()
+ actors[a.id]["action_marker"]=marker
+ var prop=Node3D.new()
+ rig.body.add_child(prop)
+ prop.position=Vector3(.0,.82,.38)
+ actors[a.id]["action_prop"]=prop
 
 func apply_changes():
  for e in sim.changes:
@@ -903,6 +927,7 @@ func apply_changes():
     var a=sim.find(int(e.id))
     if not a.is_empty():create_actor(a)
    "death":
+    claims.erase(int(e.id))
     if actors.has(e.id):
      var n=actors[e.id].node
      spark(n.position+Vector3(0,.6,0),Color("b8dad0"),.55)
@@ -920,9 +945,14 @@ func apply_changes():
    "trade_arrived":remove_caravan(int(e.id))
    "project":rebuild_civic()
    "migration":
+    claims.erase(int(e.id))
     var a=sim.find(int(e.id))
     if not a.is_empty() and actors.has(a.id):
      a.task=""
+     a.home_key=""
+     a.station_id=""
+     a.delivery=false
+     a.cargo=""
      actors[a.id]["route"]=[]
      actors[a.id]["planned_task"]=""
  sim.changes.clear()
@@ -933,6 +963,9 @@ func step_day():
  var previous_crises=sim.crises_seen
  sim.daily()
  apply_changes()
+ if sim.day%7==0:
+  rebuild_farms()
+  services_dirty=true
  if sim.crises_seen>previous_crises:
   notify_event("CAMBIAMENTO NEL MONDO",sim.events[0])
  elif sim.discoveries.size()>old_tech:
@@ -1005,8 +1038,11 @@ func _process(delta:float):
    tick-=1.7
    step_day()
    loops+=1
-  if nav_dirty:rebuild_navigation()
-  for a in sim.people:
+  if nav_dirty:
+   rebuild_navigation()
+   services_dirty=true
+  if services_dirty:rebuild_services()
+  for a in sim.people.duplicate():
    if not actors.has(a.id):continue
    var r=actors[a.id]
    var n:Node3D=r.node
@@ -1033,9 +1069,11 @@ func _process(delta:float):
     var blink=1.0-.93*maxf(0.0,1.0-absf(blink_phase-.12)/.12)
     for eye in r.get("eyes",[]):eye.scale.y=blink
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
+   update_action_visual(a,r,moving)
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
     r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
+  if not sim.changes.is_empty():apply_changes()
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1717,6 +1755,7 @@ func refresh():
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
   details.text="AZIONE: "+str(a.get("activity","Decide"))+"\n"+str(a.get("task_stage",""))+" · "+str(a.get("task_reason",""))+"\nStanchezza "+str(int(a.get("fatigue",0)))+"% · Noia "+str(int(a.get("boredom",0)))+"%\nAttività concluse: "+str(a.get("tasks_done",0))+"\n\n"+details.text
+  details.text+="\nDimora: "+("assegnata" if not str(a.get("home_key","")).is_empty() else "senza casa")+" · Carico: "+(str(a.get("cargo","")) if not str(a.get("cargo","")).is_empty() else "—")
   details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
   details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
   if int(a.get("social_target",-1))>=0:details.text+="\nIncontro: "+family_names([a.social_target])
@@ -2182,6 +2221,7 @@ func self_test():
  if not test_autonomy():failed=true
  if not test_spatial_meal():failed=true
  if not test_destruction():failed=true
+ if not test_services():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
@@ -3184,7 +3224,11 @@ func task_destination(a:Dictionary)->Vector3:
 func route_actor(a:Dictionary,r:Dictionary)->bool:
  var n:Node3D=r.node
  var start=near_cell(n.position)
- var finish=near_cell(task_destination(a))
+ var goal:Vector3=task_destination(a)
+ if sim.spatial_autonomy and a.task not in ["social","aid","explore"]:
+  if not claim_service(a,r):return false
+  goal=services[str(a.station_id)].pos
+ var finish=near_cell(goal)
  if not nav_grid.region.has_point(start) or not nav_grid.region.has_point(finish):return false
  var ids=nav_grid.get_id_path(start,finish)
  if ids.is_empty():return false
@@ -3199,6 +3243,10 @@ func route_actor(a:Dictionary,r:Dictionary)->bool:
  return true
 
 func cancel_task(a:Dictionary,r:Dictionary):
+ claims.erase(int(a.id))
+ a.station_id=""
+ a.delivery=false
+ a.cargo=""
  a.last_task=a.task
  a.task=""
  a.task_stage="Decide"
@@ -3220,7 +3268,10 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   cancel_task(a,r)
   return false
  if a.task=="":
-  sim.begin_task(a,sim.choose_task(a))
+  sim.begin_task(a,sim.choose_task(a,available_actions(a,r) if sim.spatial_autonomy else {}))
+ if sim.spatial_autonomy and a.task not in ["social","aid","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
+  cancel_task(a,r)
+  return false
  if a.task in ["social","aid"] and not actors.has(int(a.task_target)):
   cancel_task(a,r)
   return false
@@ -3228,7 +3279,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   if not route_actor(a,r):
    cancel_task(a,r)
    return false
-  a.task_stage="In viaggio"
+  a.task_stage="Trasporta" if a.delivery else "In viaggio"
  if int(r.route_index)<r.route.size():
   var destination:Vector3=r.route[int(r.route_index)]
   var diff=destination-n.position
@@ -3264,10 +3315,28 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
    return false
   r.social_retry=0.0
   r["repath_wait"]=0.0
- a.task_stage="In corso"
+ a.task_stage="Consegna" if a.delivery else "In corso"
  a.task_left=maxf(0,float(a.task_left)-dt)
  if a.task_left<=0:
-  if sim.spatial_autonomy:sim.complete_task(a)
+  if sim.spatial_autonomy and a.task in ["farm","gather"] and not a.delivery:
+   claims.erase(int(a.id))
+   a.cargo="Cibo" if a.task=="farm" else "Legna"
+   a.delivery=true
+   a.station_id=""
+   a.task_left=1.0
+   a.task_stage="Trasporta"
+   r.planned_task=""
+   return false
+  if sim.spatial_autonomy:
+   var kind=str(a.task)
+   var site=services.get(str(a.station_id),{})
+   if kind=="house" and not site.is_empty() and sim.villages[a.clan].wood>=22:
+    var q:Vector3=site.get("site",site.pos)
+    house_sites[a.clan].append({"x":q.x,"z":q.z})
+   if sim.complete_task(a):
+    completed_visible+=1
+    if not test_mode and distance<40:spark(n.position+Vector3.UP*.45,Color("9bdfb6"),.28)
+   claims.erase(int(a.id))
   else:a.task=""
   r.planned_task=""
   r.retry=.35
@@ -3434,6 +3503,9 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  rebuild_farms()
  rebuild_meadow()
  nav_dirty=true
+ services_dirty=true
+ rebuild_navigation()
+ rebuild_services()
  sim.log_event("%s: %d edifici distrutti, %d vittime."%[kind,destroyed,dead_count])
  apply_changes()
  refresh()
@@ -3462,4 +3534,229 @@ func test_destruction()->bool:
   if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
  print("DESTRUCTION_TEST destroyed=",destroyed_total," ruins=",ruins.size()," untouched_other=",other_count)
  power="Osserva"
+ return true
+
+func site_key(kind:String,clan:int,p:Vector3)->String:
+ return "%s:%d:%d:%d"%[kind,clan,roundi(p.x*10),roundi(p.z*10)]
+
+func register_service(kind:String,clan:int,p:Vector3,capacity:int,caption:String,draw=true)->String:
+ var cell=near_cell(p)
+ if not nav_grid.region.has_point(cell):return ""
+ var q=Vector3(cell.x,walking_height(cell.x,cell.y),cell.y)
+ if flat_dist(q,p)>3.5 or scarred(q) or scarred(p):return ""
+ var key=site_key(kind,clan,p)
+ services[key]={"kind":kind,"clan":clan,"pos":q,"capacity":capacity,"site":p}
+ if draw:
+  var node=Node3D.new()
+  service_root.add_child(node)
+  node.position=q
+  var tint=Color("7bbcb1") if clan==0 else Color("dcac76")
+  match kind:
+   "eat","store":
+    block(node,Color("876748"),Vector3(-.6,.25,0),Vector3(.9,.5,.72))
+    for j in range(3):
+     sphere(node,Color("e6b962") if kind=="eat" else Color("a38460"),Vector3(-.8+j*.22,.57,0),Vector3(.18,.18,.18))
+   "sleep":
+    block(node,Color("84674b"),Vector3(-.5,.10,0),Vector3(.65,.18,.95))
+    block(node,tint,Vector3(-.5,.23,0),Vector3(.58,.13,.83))
+    block(node,Color("efe1bc"),Vector3(-.5,.31,-.29),Vector3(.45,.10,.22))
+   "heal":
+    block(node,Color("dfd8bc"),Vector3(-.6,.35,0),Vector3(.85,.7,.8))
+    block(node,Color("75b79e"),Vector3(-.6,.75,0),Vector3(1.05,.16,.9))
+    block(node,Color("e78e79"),Vector3(-.6,.45,.43),Vector3(.13,.34,.04))
+    block(node,Color("e78e79"),Vector3(-.6,.45,.45),Vector3(.34,.13,.04))
+   "farm":
+    for j in range(4):
+     block(node,Color("6d5238"),Vector3(-.65,.04,(j-1.5)*.30),Vector3(.6,.08,.25))
+     sphere(node,Color("87aa56"),Vector3(-.65,.23,(j-1.5)*.30),Vector3(.19,.37,.19))
+   "research":
+    block(node,Color("795c45"),Vector3(-.6,.4,0),Vector3(.8,.13,.7))
+    block(node,Color("decba4"),Vector3(-.6,.5,0),Vector3(.40,.09,.32))
+   "build","house":
+    block(node,Color("9c7953"),Vector3(-.65,.07,0),Vector3(.85,.14,.85))
+    for j in range(3):
+     block(node,Color("b18a59"),Vector3(-.65,.21+j*.12,0),Vector3(.75,.1,.17))
+   "play":
+    sphere(node,tint,Vector3(-.6,.18,0),Vector3(.35,.35,.35))
+  var label=Label3D.new()
+  node.add_child(label)
+  label.position=Vector3(-.55,1.05,0)
+  label.text=caption
+  label.font_size=29
+  label.pixel_size=.008
+  label.outline_size=6
+  label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+  label.modulate=Color("f4e7c5")
+  services[key]["label"]=label
+ return key
+
+func rebuild_services():
+ if not is_instance_valid(service_root) or centers.size()!=2:return
+ for child in service_root.get_children():
+  service_root.remove_child(child)
+  child.queue_free()
+ services.clear()
+ claims.clear()
+ for i in range(2):
+  var c:Vector3=centers[i]
+  for j in range(4):
+   var angle=float(j)*TAU/4+.5
+   var q=c+Vector3(cos(angle),0,sin(angle))*2.7
+   register_service("eat",i,q,3,"RISTORO")
+  register_service("store",i,c+Vector3(-2.6,0,3.2),4,"MAGAZZINO")
+  register_service("heal",i,c+Vector3(2.5,0,-2.4),3,"CURE")
+  register_service("research",i,c+Vector3(-3.0,0,-3.0),3,"RICERCA")
+  register_service("play",i,c+Vector3(-3.0,0,3.0),4,"PIAZZA")
+  register_service("build",i,c+Vector3(3.0,0,-3.0),3,"OPERA CIVILE")
+  for home in houses[i]:
+   var q:Vector3=home.node.position
+   var door=q+(c-q).normalized()*2.0
+   var key=register_service("sleep",i,door,4,"DIMORA")
+   if key!="":services[key]["home"]=site_key("home",i,q)
+  for q in farm_points[i]:register_service("farm",i,q,3,"CAMPO")
+  if sim.villages[i].era<2:
+   for j in range(3):
+    var q=c+Vector3(4.0+j*2.2,0,4.5 if i==0 else -4.5)
+    register_service("farm",i,q,3,"RACCOLTA")
+  for j in range(180):
+   var q=house_location(i,j)
+   if q.y>SEA+.7 and not occupied_site(i,q) and not blocked_site(q):
+    if register_service("house",i,q,1,"CANTIERE")!="":break
+  for q in timber_points:
+   if flat_dist(q,c)<24:register_service("gather",i,q+(c-q).normalized()*.75,1,"LEGNA",false)
+ assign_homes()
+ for a in sim.people:
+  if actors.has(a.id):actors[a.id]["planned_task"]=""
+ services_dirty=false
+
+func assign_homes():
+ var usage={}
+ for a in sim.people:
+  var key=str(a.get("home_key",""))
+  if not services.has(key) or int(services[key].clan)!=int(a.clan) or str(services[key].kind)!="sleep" or int(usage.get(key,0))>=4:
+   a.home_key=""
+  else:usage[key]=int(usage.get(key,0))+1
+ for a in sim.people:
+  if a.home_key!="":continue
+  var family=sim.find(int(a.partner))
+  if family.is_empty() and not a.parents.is_empty():family=sim.find(int(a.parents[0]))
+  var preferred=str(family.get("home_key",""))
+  if services.has(preferred) and int(services[preferred].clan)==int(a.clan) and int(usage.get(preferred,0))<4:
+   a.home_key=preferred
+   usage[preferred]=int(usage.get(preferred,0))+1
+   continue
+  for key in services:
+   var row=services[key]
+   if row.kind=="sleep" and row.clan==a.clan and int(usage.get(key,0))<4:
+    a.home_key=key
+    usage[key]=int(usage.get(key,0))+1
+    break
+
+func service_open(key:String,a:Dictionary)->bool:
+ if not services.has(key):return false
+ var row=services[key]
+ if row.clan!=a.clan:return false
+ var used=0
+ var meals=0
+ for id in claims:
+  if int(id)==int(a.id):continue
+  if claims[id]==key:used+=1
+  if services.has(claims[id]) and services[claims[id]].kind=="eat" and services[claims[id]].clan==a.clan:meals+=1
+ if used>=int(row.capacity):return false
+ if row.kind=="eat" and sim.villages[a.clan].food<meals+1:return false
+ if row.kind=="house" and sim.villages[a.clan].wood<22:return false
+ if row.kind=="sleep" and a.home_key!="" and a.home_key!=key:return false
+ return true
+
+func nearest_service(a:Dictionary,kind:String,origin:Vector3)->String:
+ var best=""
+ var cost=INF
+ for key in services:
+  var row=services[key]
+  if row.kind!=kind or not service_open(key,a):continue
+  var d=flat_dist(origin,row.pos)
+  if d<cost:cost=d;best=key
+ return best
+
+func available_actions(a:Dictionary,r:Dictionary)->Dictionary:
+ var result={"explore":8.0,"social":4.0,"aid":4.0}
+ var origin:Vector3=r.node.position
+ for kind in ["eat","sleep","heal","farm","gather","research","build","house","play"]:
+  var key=nearest_service(a,kind,origin)
+  if key!="":result[kind]=flat_dist(origin,services[key].pos)
+ # Emergency rest on safe ground, even when every dwelling is gone.
+ if not result.has("sleep") and a.home_key=="":result.sleep=0.0
+ return result
+
+func claim_service(a:Dictionary,r:Dictionary)->bool:
+ var kind="store" if a.delivery else str(a.task)
+ var key=str(a.station_id)
+ if key=="" or not services.has(key) or services[key].kind!=kind or not service_open(key,a):
+  key=nearest_service(a,kind,r.node.position)
+ if key=="" and kind=="sleep" and a.home_key=="":
+  key=register_service("sleep",a.clan,r.node.position,1,"RIPARO",false)
+  if key!="":services[key]["temporary"]=true
+ if key=="":return false
+ claims[int(a.id)]=key
+ a.station_id=key
+ return true
+
+func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
+ var active=str(a.task)
+ var marker:Label3D=r.action_marker
+ var prop:Node3D=r.action_prop
+ var shown=active!="" and (not moving or a.delivery)
+ marker.visible=shown and distance<35 and not photo_mode
+ var marks={"eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
+ marker.text="TRASPORTO" if a.delivery else str(marks.get(active,""))
+ marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
+ var visual="cargo_"+str(a.cargo) if a.delivery else active if not moving else ""
+ if str(r.get("prop_kind",""))!=visual:
+  r["prop_kind"]=visual
+  for child in prop.get_children():
+   prop.remove_child(child)
+   child.queue_free()
+  match visual:
+   "eat","cargo_Cibo":
+    block(prop,Color("96714b"),Vector3.ZERO,Vector3(.34,.15,.27))
+    for j in range(3):sphere(prop,Color("e4b65e"),Vector3((j-1)*.11,.12,0),Vector3(.13,.13,.13))
+   "gather","build","house","cargo_Legna":
+    for j in range(3):block(prop,Color("9f774e"),Vector3(0,j*.09,0),Vector3(.48,.075,.11))
+   "research":block(prop,Color("e1d2a9"),Vector3.ZERO,Vector3(.38,.07,.30))
+   "heal","aid":
+    block(prop,Color("e6e3cf"),Vector3.ZERO,Vector3(.25,.24,.21))
+    block(prop,Color("d37d6c"),Vector3(0,0,.12),Vector3(.05,.16,.025))
+    block(prop,Color("d37d6c"),Vector3(0,0,.135),Vector3(.16,.05,.025))
+   "play":sphere(prop,Color("e5bd70"),Vector3.ZERO,Vector3(.23,.23,.23))
+ if not moving and active=="sleep":
+  r.body.rotation.x=lerpf(r.body.rotation.x,PI*.42,.25)
+  r.body.position.y=.14
+  for eye in r.get("eyes",[]):eye.scale.y=.10
+
+func test_services()->bool:
+ deformation.clear()
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ if services.is_empty():return false
+ var a=sim.people[0]
+ var key=nearest_service(a,"eat",centers[a.clan])
+ if key=="" or a.home_key=="":return false
+ var row=services[key]
+ for i in range(int(row.capacity)):claims[9000+i]=key
+ if service_open(key,a):return false
+ claims.clear()
+ if not service_open(key,a):return false
+ var home=str(a.home_key)
+ var q:Vector3=services[home].pos
+ disaster(q,"Fulmine",2.4,0.0,0.0,0.0)
+ if services.has(home):return false
+ var sample=Sim.new()
+ sample.start(47,0)
+ sample.spatial_autonomy=true
+ var food=float(sample.villages[0].food)
+ var wood=float(sample.villages[0].wood)
+ sample.daily()
+ if sample.villages[0].food!=food or sample.villages[0].wood!=wood:return false
+ print("SERVICES_TEST reservation=true housing=true no_passive_production=true")
+ sim.spatial_autonomy=false
  return true
