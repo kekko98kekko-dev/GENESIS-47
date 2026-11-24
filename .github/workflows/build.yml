@@ -57,6 +57,13 @@ jobs:
           cp README.md ASSET-CREDITS.md build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
+          cp tools/Avvia-AI.ps1 tools/GIOCA-CON-AI.bat build/
+          mkdir -p build/AI/runtime
+          curl -fL --retry 2 https://github.com/ggml-org/llama.cpp/releases/download/b6000/llama-b6000-bin-win-cpu-x64.zip -o /tmp/llama.zip
+          echo "b32ae2698268562f951c983cac8333607b9d5b546de17fd800a02fbc58b06b6d  /tmp/llama.zip" | sha256sum -c -
+          unzip -q /tmp/llama.zip -d build/AI/runtime
+          curl -fL https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/LICENSE -o build/AI/LLAMA-LICENSE.txt
+          printf "%s\n" "Qwen2.5-0.5B-Instruct-GGUF — Apache-2.0. https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF" > build/AI/MODEL-CREDITS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: GENESIS-47-Windows
@@ -74,7 +81,7 @@ jobs:
   windows-smoke:
     needs: build
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -86,3 +93,8 @@ jobs:
           $p=Start-Process -FilePath (Resolve-Path 'build/GENESIS47.exe') -ArgumentList '--headless','--','--self-test' -PassThru
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'Windows self-test timed out' }
           if ($p.ExitCode -ne 0) { throw "Windows exit code $($p.ExitCode)" }
+
+      - name: Real portable local AI inference and Godot integration
+        shell: pwsh
+        run: |
+          & ./build/Avvia-AI.ps1 -TestOnly

@@ -84,6 +84,9 @@ var hover_elapsed=0.0
 var event_player:AudioStreamPlayer
 var event_sounds:Dictionary={}
 var atlas_window:AcceptDialog
+var portable_ai=false
+var ai_test=false
+var ai_reply_received=false
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -97,7 +100,9 @@ const GROUPS=[["Osserva","Vita","Foresta","Provviste","Guarigione","Pioggia","Re
 const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"Crea un abitante nel popolo più vicino.","Foresta":"Pianta alberi e aggiunge legna.","Provviste":"Aggiunge 100 unità di cibo.","Guarigione":"Ripristina salute e cura malattie in un raggio di 6 m.","Pioggia":"Aumenta le risorse alimentari.","Resurrezione":"Riporta in vita un abitante defunto.","Conoscenza":"Accelera la ricerca del popolo.","Pace":"Migliora le relazioni fra le civiltà.","Fede":"Aumenta la fiducia nel Creatore.","Profeta":"Ispira un profeta persistente.","Mutazione":"Cambia i tratti genetici degli abitanti vicini.","Nuova specie":"Genera un individuo con tratti casuali.","Meteorite":"Danneggia la zona e scava un cratere.","Conflitto":"Riduce la pace fra i popoli.","Fulmine":"Colpisce gli abitanti nelle vicinanze.","Tsunami":"Danneggia abitanti e scorte.","Vulcano":"Solleva il terreno e scatena un'eruzione.","Carestia":"Riduce le scorte alimentari.","Montagna":"Solleva il terreno.","Lago":"Abbassa il terreno."}
 
 func _ready():
- test_mode="--self-test" in OS.get_cmdline_user_args()
+ portable_ai="--portable-ai" in OS.get_cmdline_user_args()
+ ai_test="--ai-test" in OS.get_cmdline_user_args()
+ test_mode="--self-test" in OS.get_cmdline_user_args() or ai_test
  load_catalog()
  setup_environment()
  setup_ui()
@@ -107,7 +112,9 @@ func _ready():
  request.timeout=90
  request.request_completed.connect(ai_response)
  new_world(47,0)
- if test_mode:
+ if ai_test:
+  call_deferred("self_test_ai")
+ elif test_mode:
   call_deferred("self_test")
  elif "--capture" in OS.get_cmdline_user_args():
   call_deferred("capture_preview")
@@ -965,7 +972,7 @@ func update_effects(delta:float):
     impact_cloud(e.dest)
   elif e.kind=="wave":
    e.node.scale=Vector3(1+frac*10,1+sin(frac*PI)*2.2,1+frac*10)
- elif e.kind=="impact":
+  elif e.kind=="impact":
    for child in e.node.get_children():
     if child is OmniLight3D:child.light_energy=6*(1-frac)
     elif child is MeshInstance3D:child.scale=Vector3.ONE*(.3+frac*8)
@@ -1258,7 +1265,9 @@ func setup_ui():
  model.text="qwen2.5:1.5b"
  model.placeholder_text="Modello Ollama locale"
  rv.add_child(model)
- button(rv,"Risposta generativa (Ollama)",ask_ai)
+ model.visible=not portable_ai
+ button(rv,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
+ if portable_ai:text_label(rv,"AI portatile attiva · solo locale",13)
  var bottom=panel(hud,Rect2(14,769,1412,117))
  bottom_panel=bottom
  var bv=VBoxContainer.new()
@@ -1467,7 +1476,11 @@ func ask_ai():
   return
  var prompt="Interpreta un personaggio immaginario di GENESIS 47. Nome %s, popolo %s, età %d, fede %d, obiettivo %s. Ricordi %s. Messaggio del Creatore: %s. Rispondi in italiano in prima persona, massimo 45 parole. Puoi dissentire. Non fingere di agire fuori dal gioco."%[a.name,Sim.CLANS[a.clan],int(a.age),int(a.faith),a.goal,"; ".join(a.memories),input.text]
  var payload={"model":model.text.strip_edges(),"prompt":prompt,"stream":false,"options":{"num_predict":100}}
- var err=request.request("http://127.0.0.1:11434/api/generate",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
+ var endpoint="http://127.0.0.1:11434/api/generate"
+ if portable_ai:
+  endpoint="http://127.0.0.1:17847/v1/chat/completions"
+  payload={"model":"genesis-local","messages":[{"role":"system","content":"Interpreta una creatura immaginaria del gioco, rispondi brevemente in italiano e non uscire dal personaggio."},{"role":"user","content":prompt}],"stream":false,"max_tokens":100,"temperature":.72}
+ var err=request.request(endpoint,["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
  if err==OK:
   request_target=a.id
   sim.remember(a,"Il Creatore: "+input.text.left(300))
@@ -1476,13 +1489,17 @@ func ask_ai():
 
 func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray):
  if result!=HTTPRequest.RESULT_SUCCESS or code!=200:
-  hint.text="Ollama non disponibile. La simulazione continua offline."
+  hint.text="AI locale non disponibile. Usa il dialogo offline o avvia il gioco con AI portatile."
   return
  var data=JSON.parse_string(body.get_string_from_utf8())
  var a=sim.find(request_target)
  if data is Dictionary and not a.is_empty():
   var reply=str(data.get("response","")).strip_edges().left(650)
+  if portable_ai:
+   var choices=data.get("choices",[])
+   if not choices.is_empty():reply=str(choices[0].get("message",{}).get("content","")).strip_edges().left(650)
   if reply!="":
+   ai_reply_received=true
    sim.remember(a,reply)
    sim.log_event(a.name+" [AI]: "+reply)
    hint.text="Risposta generativa ricevuta."
@@ -1915,3 +1932,16 @@ func store_settings():
  settings.set_value("game","volume",volume_value)
  settings.set_value("game","muted",audio.stream_paused)
  settings.save("user://genesis47_settings.cfg")
+
+func self_test_ai():
+ if sim.people.is_empty():
+  get_tree().quit(1)
+  return
+ selected=int(sim.people[0].id)
+ input.text="Ciao, come ti senti oggi?"
+ ask_ai()
+ for i in range(180):
+  if ai_reply_received:break
+  await get_tree().create_timer(.5).timeout
+ print("AI_TEST ", "PASS" if ai_reply_received else "FAIL")
+ get_tree().quit(0 if ai_reply_received else 1)
