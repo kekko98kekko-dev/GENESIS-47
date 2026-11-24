@@ -87,6 +87,19 @@ var atlas_window:AcceptDialog
 var portable_ai=false
 var ai_test=false
 var ai_reply_received=false
+var ai_autonomy=true
+var ai_busy=false
+var ai_is_autonomous=false
+var ai_cooldown=0.0
+var last_ai_day=-1
+var absent_progress=false
+var ai_button:Button
+var toast_panel:PanelContainer
+var toast_label:Label
+var toast_time=0.0
+var planted:Array=[]
+var snow_mesh:SphereMesh
+var rain_mesh:BoxMesh
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -259,7 +272,7 @@ func setup_environment():
  env.ambient_light_energy=.40
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
- env.fog_density=.0018
+ env.fog_density=.0025
  var en=WorldEnvironment.new()
  en.environment=env
  add_child(en)
@@ -292,6 +305,13 @@ func setup_environment():
  drop.size=Vector3(.027,.32,.027)
  drop.material=material(Color("b7d8df"),.65,.1)
  precipitation.mesh=drop
+ rain_mesh=drop
+ snow_mesh=SphereMesh.new()
+ snow_mesh.radius=.07
+ snow_mesh.height=.14
+ snow_mesh.radial_segments=6
+ snow_mesh.rings=3
+ snow_mesh.material=material(Color("e7f3f5"),.9,.1)
  audio=AudioStreamPlayer.new()
  add_child(audio)
  event_player=AudioStreamPlayer.new()
@@ -359,7 +379,9 @@ func terrain_color(p:Vector3)->Color:
  if p.y<SEA+.75:return Color("d9c89c").lerp(Color("b3bb79"),clampf((p.y-SEA)/.75,0,1))
  if p.y>10:return Color("a3a99e").lerp(Color("e7e7dc"),clampf((p.y-10)/4,0,1))
  if p.y>7.5:return Color("8c917c").lerp(Color("a8a69c"),clampf((p.y-7.5)/3,0,1))
- var grass=Color("38634a").lerp(Color("8ca45f"),v)
+ var grass=Color("315f49").lerp(Color("9db46a"),v)
+ var broad=clampf(noise.get_noise_2d(p.x*.45+97,p.z*.45)*.8+.5,0,1)
+ grass=grass.lerp(Color("7b9560"),broad*.24)
  for c in centers:
   if Vector2(p.x-c.x,p.z-c.z).length()<6:
    grass=grass.lerp(Color("b0a280"),.35)
@@ -412,6 +434,8 @@ func make_terrain():
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
 
 func new_world(seed_value:int,which:int):
+ reset_ai_request()
+ planted.clear()
  sim.start(seed_value,which)
  last_auto_day=-1
  reset_visuals()
@@ -465,6 +489,9 @@ func reset_visuals():
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9):
    make_tree(p,rng.randf_range(2.3,4.8),i)
+ for row in planted:
+  var place=ground(float(row.x),float(row.z))
+  if place.y>SEA+.12:make_tree(place,float(row.h),int(row.i))
  for i in range(100):
   var p=ground(rng.randf_range(-46,46),rng.randf_range(-43,43))
   if p.y>SEA+.2 and far_village(p,4):
@@ -719,8 +746,14 @@ func apply_changes():
  sim.changes.clear()
 
 func step_day():
+ var old_tech=sim.discoveries.size()
  sim.daily()
  apply_changes()
+ if sim.discoveries.size()>old_tech:
+  var last=sim.discoveries.back()
+  notify_event("NUOVA SCOPERTA",Sim.CLANS[last.clan]+" · "+last.name)
+ elif sim.day%25==0 and not sim.signals.is_empty():
+  notify_event("SEGNALE DAL MONDO",str(sim.signals[0].text))
  if sim.ended!="" and show_ending:
   show_ending=false
   speed=0
@@ -743,6 +776,12 @@ func update_camera():
 func _process(delta:float):
  if camera==null or centers.size()!=2 or test_mode:return
  visual_time+=delta
+ ai_cooldown=maxf(0,ai_cooldown-delta)
+ if speed>0 and portable_ai and ai_autonomy and not ai_busy and sim.day>=12 and sim.day-last_ai_day>=12 and ai_cooldown<=0:
+  ask_autonomous()
+ if toast_time>0:
+  toast_time-=delta
+  if toast_time<=0 and is_instance_valid(toast_panel):toast_panel.hide()
  var keyboard_ok=not (input.has_focus() or model.has_focus())
  var mov=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  if keyboard_ok and mov.length()>0:
@@ -833,7 +872,20 @@ func _process(delta:float):
  else:cursor.hide()
  if is_instance_valid(precipitation):
   precipitation.position=Vector3(focus.x, maxf(focus.y+10,14),focus.z)
-  precipitation.emitting=sim.weather_name=="Pioggia" and speed>0 and distance<65
+  var snowy=sim.weather_name=="Neve"
+  if snowy and precipitation.mesh!=snow_mesh:
+   precipitation.mesh=snow_mesh
+   precipitation.gravity=Vector3(0,-1.0,0)
+   precipitation.initial_velocity_min=.4
+   precipitation.initial_velocity_max=1.2
+   precipitation.lifetime=5
+  elif not snowy and precipitation.mesh!=rain_mesh:
+   precipitation.mesh=rain_mesh
+   precipitation.gravity=Vector3(0,-12,0)
+   precipitation.initial_velocity_min=7
+   precipitation.initial_velocity_max=10
+   precipitation.lifetime=1.65
+  precipitation.emitting=sim.weather_name in ["Pioggia","Neve"] and speed>0 and distance<65
  update_caravans(delta)
  update_clouds(delta)
  if is_instance_valid(hover_ring):
@@ -1024,7 +1076,12 @@ func divine(p:Vector3):
     create_actor(a)
     actors[a.id].node.position=p
   "Foresta":
-   for i in range(8):make_tree(random_near(p,3),rng.randf_range(2.1,4.2),i)
+   for i in range(8):
+    if planted.size()>=400:break
+    var place= random_near(p,3)
+    var h=rng.randf_range(2.1,4.2)
+    make_tree(place,h,i)
+    planted.append({"x":place.x,"z":place.z,"h":h,"i":i})
    v.wood+=24
   "Provviste":v.food=minf(850,v.food+100)
   "Guarigione":
@@ -1169,7 +1226,7 @@ func setup_ui():
   s.content_margin_bottom=5
   theme.set_stylebox(state,"Button",s)
  hud.theme=theme
- var header=panel(hud,Rect2(14,12,1412,91))
+ var header=panel(hud,Rect2(14,12,1412,80),.91)
  var col=VBoxContainer.new()
  header.add_child(col)
  var row=HBoxContainer.new()
@@ -1191,7 +1248,7 @@ func setup_ui():
  button(row,"Foto",toggle_photo)
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
- var left=panel(hud,Rect2(14,115,190,640))
+ var left=panel(hud,Rect2(14,104,190,650),.88)
  left_panel=left
  var lv=VBoxContainer.new()
  left.add_child(lv)
@@ -1220,7 +1277,7 @@ func setup_ui():
  infinite.text="Energia infinita"
  infinite.toggled.connect(func(on):unlimited=on)
  lv.add_child(infinite)
- var right=panel(hud,Rect2(1107,115,319,640))
+ var right=panel(hud,Rect2(1107,104,319,650),.88)
  right_panel=right
  var rv=VBoxContainer.new()
  right.add_child(rv)
@@ -1266,9 +1323,14 @@ func setup_ui():
  model.placeholder_text="Modello Ollama locale"
  rv.add_child(model)
  model.visible=not portable_ai
- button(rv,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
- if portable_ai:text_label(rv,"AI portatile attiva · solo locale",13)
- var bottom=panel(hud,Rect2(14,769,1412,117))
+ ai_button=button(rv,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
+ if portable_ai:
+  var autonomy=CheckButton.new()
+  autonomy.text="Iniziativa autonoma AI"
+  autonomy.button_pressed=ai_autonomy
+  autonomy.toggled.connect(func(on):ai_autonomy=on;store_settings())
+  rv.add_child(autonomy)
+ var bottom=panel(hud,Rect2(14,769,1412,117),.91)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
  bottom.add_child(bv)
@@ -1289,6 +1351,12 @@ func setup_ui():
  objective=text_label(bv,"",14)
  chronicle=rich(bv,38)
  chronicle.scroll_following=false
+ toast_panel=panel(hud,Rect2(430,104,570,64),.94)
+ toast_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE
+ toast_label=text_label(toast_panel,"",16)
+ toast_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+ toast_label.mouse_filter=Control.MOUSE_FILTER_IGNORE
+ toast_panel.hide()
 
 func toggle_photo():
  photo_mode=not photo_mode
@@ -1315,6 +1383,7 @@ func refresh():
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),str(a.parents),str(a.partner),a.goal,"\n".join(a.memories)])
  objective.text=["ETERNITÀ  —  Il destino non è scritto.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
+ if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.ended!="":objective.text=sim.ended
  chronicle.text="\n".join(sim.events.slice(0,12))
 
@@ -1470,6 +1539,9 @@ func send_message():
  refresh()
 
 func ask_ai():
+ if ai_busy:
+  hint.text="AI occupata: attendi la risposta."
+  return
  var a=sim.find(selected)
  if a.is_empty():
   hint.text="Seleziona una creatura."
@@ -1483,11 +1555,18 @@ func ask_ai():
  var err=request.request(endpoint,["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
  if err==OK:
   request_target=a.id
+  ai_busy=true
+  ai_is_autonomous=false
+  if ai_button!=null:ai_button.disabled=true
   sim.remember(a,"Il Creatore: "+input.text.left(300))
   hint.text="AI locale in elaborazione..."
  else:hint.text="AI locale occupata o assente."
 
 func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray):
+ var autonomous=ai_is_autonomous
+ ai_busy=false
+ ai_is_autonomous=false
+ if ai_button!=null:ai_button.disabled=false
  if result!=HTTPRequest.RESULT_SUCCESS or code!=200:
   hint.text="AI locale non disponibile. Usa il dialogo offline o avvia il gioco con AI portatile."
   return
@@ -1500,6 +1579,15 @@ func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
    if not choices.is_empty():reply=str(choices[0].get("message",{}).get("content","")).strip_edges().left(650)
   if reply!="":
    ai_reply_received=true
+   if autonomous:
+    var intent=reply.split("|",true,1)[0].strip_edges().to_upper()
+    if not intent in ["RICERCA","CIBO","CURA","PACE","ESPLORA"]:
+     hint.text="La creatura non ha formulato una decisione valida."
+     return
+    var thought=reply.split("|",true,1)[1].strip_edges() if reply.contains("|") else "Ho scelto una nuova priorità."
+    if sim.adopt_intention(a,intent,thought):notify_event("INIZIATIVA AUTONOMA",a.name+" · "+intent.to_lower())
+    refresh()
+    return
    sim.remember(a,reply)
    sim.log_event(a.name+" [AI]: "+reply)
    hint.text="Risposta generativa ricevuta."
@@ -1511,6 +1599,7 @@ func save_game(show_hint:bool):
 func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["deformation"]=deformation
+ d["planted"]=planted
  d["positions"]={}
  for id in actors:
   var p:Vector3=actors[id].node.position
@@ -1551,8 +1640,13 @@ func load_path(p:String)->bool:
   if not data is Dictionary or not candidate.import_state(data):
    hint.text="Salvataggio non valido."
    return false
+ reset_ai_request()
  sim=candidate
+ var advanced=0
+ if absent_progress and not test_mode:
+  advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
  deformation=data.get("deformation",[])
+ planted=data.get("planted",[])
  reset_visuals()
  var cam=data.get("camera",[])
  if cam.size()==5:
@@ -1571,6 +1665,9 @@ func load_path(p:String)->bool:
  tick=0
  refresh()
  hint.text="Universo ripristinato."
+ if advanced>0:
+  notify_event("Bentornato, Creatore","Durante la tua assenza: "+str(advanced)+" giorni.")
+  save_path(p,false)
  return true
 
 func self_test():
@@ -1600,11 +1697,18 @@ func self_test():
   power=p
   divine(centers[0])
  power="Osserva"
+ var test_sim=Sim.new()
+ test_sim.start(77,0)
+ var candidate=test_sim.people[0]
+ if not test_sim.adopt_intention(candidate,"RICERCA","Scelgo di studiare.") or test_sim.adopt_intention(candidate,"INVALIDO",""):failed=true
+ var count_days=test_sim.advance_absence(1800)
+ if count_days!=10 or test_sim.day!=10 or test_sim.autonomous_decisions!=1:failed=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
  var before=sim.people.size()
  var before_day=sim.day
- if not load_path(test_path) or sim.people.size()!=before or sim.day!=before_day:failed=true
+ var before_trees=planted.size()
+ if not load_path(test_path) or sim.people.size()!=before or sim.day!=before_day or planted.size()!=before_trees:failed=true
  if not save_path(test_path,false):failed=true
  var corrupt=FileAccess.open(test_path,FileAccess.WRITE)
  if corrupt!=null:
@@ -1765,6 +1869,11 @@ func show_options():
  auto.button_pressed=autosave_enabled
  auto.toggled.connect(func(v):autosave_enabled=v;store_settings())
  box.add_child(auto)
+ var absence=CheckButton.new()
+ absence.text="Evoluzione durante l’assenza (max 60 giorni)"
+ absence.button_pressed=absent_progress
+ absence.toggled.connect(func(v):absent_progress=v;store_settings())
+ box.add_child(absence)
  button(box,"Schermo intero / finestra",func():DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode()==DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN))
  dlg.confirmed.connect(dlg.queue_free)
  dlg.canceled.connect(dlg.queue_free)
@@ -1922,6 +2031,8 @@ func restore_settings():
  if settings.load("user://genesis47_settings.cfg")!=OK:return
  apply_quality(int(settings.get_value("game","quality",1)))
  autosave_enabled=bool(settings.get_value("game","autosave",true))
+ absent_progress=bool(settings.get_value("game","absence",false))
+ ai_autonomy=bool(settings.get_value("game","ai_autonomy",true))
  volume_value=float(settings.get_value("game","volume",50))
  audio.volume_db=linear_to_db(maxf(.001,volume_value/100.0))-17
  audio.stream_paused=bool(settings.get_value("game","muted",false))
@@ -1929,6 +2040,8 @@ func restore_settings():
 func store_settings():
  settings.set_value("game","quality",quality_mode)
  settings.set_value("game","autosave",autosave_enabled)
+ settings.set_value("game","absence",absent_progress)
+ settings.set_value("game","ai_autonomy",ai_autonomy)
  settings.set_value("game","volume",volume_value)
  settings.set_value("game","muted",audio.stream_paused)
  settings.save("user://genesis47_settings.cfg")
@@ -1945,3 +2058,35 @@ func self_test_ai():
   await get_tree().create_timer(.5).timeout
  print("AI_TEST ", "PASS" if ai_reply_received else "FAIL")
  get_tree().quit(0 if ai_reply_received else 1)
+
+func notify_event(heading:String,message:String):
+ if test_mode or not is_instance_valid(toast_panel):return
+ toast_label.text=heading+"\n"+message
+ toast_panel.show()
+ toast_time=4.0
+
+func reset_ai_request():
+ if is_instance_valid(request):request.cancel_request()
+ request_target=-1
+ ai_busy=false
+ ai_is_autonomous=false
+ last_ai_day=-1
+ ai_cooldown=0.0
+ if is_instance_valid(ai_button):ai_button.disabled=false
+
+func ask_autonomous():
+ if sim.people.is_empty() or not is_instance_valid(request) or ai_busy:return
+ var adults=sim.people.filter(func(a):return a.age>=14 and int(a.get("intention_until",0))<=sim.day)
+ if adults.is_empty():return
+ var a=adults[rng.randi_range(0,adults.size()-1)]
+ var v=sim.villages[a.clan]
+ var prompt="Sei %s, creatura immaginaria autonoma del gioco. Salute %d, fame %d, umore %d, pace tra popoli %d, scorte %d, mestiere %s. Scegli una sola priorità tra RICERCA, CIBO, CURA, PACE, ESPLORA. Scrivi esattamente CODICE|una frase in italiano che spiega la tua scelta. Nessun altro testo."%[a.name,int(a.health),int(a.hunger),int(a.mood),int(sim.peace),int(v.food),a.role]
+ var payload={"model":"genesis-local","messages":[{"role":"user","content":prompt}],"stream":false,"max_tokens":65,"temperature":.35}
+ last_ai_day=sim.day
+ ai_cooldown=22.0
+ var err=request.request("http://127.0.0.1:17847/v1/chat/completions",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
+ if err==OK:
+  request_target=a.id
+  ai_busy=true
+  ai_is_autonomous=true
+  if ai_button!=null:ai_button.disabled=true

@@ -27,6 +27,7 @@ var achievements:Array=[]
 var history:Array=[]
 var decisions:Array=[]
 var diplomacy_state="Neutralità"
+var autonomous_decisions=0
 func start(s:int,m:int):
  seed_value=s
  mode=m
@@ -49,6 +50,7 @@ func start(s:int,m:int):
  history.clear()
  decisions.clear()
  diplomacy_state="Neutralità"
+ autonomous_decisions=0
  weather_name="Sereno"
  season="Primavera"
  for i in range(2):
@@ -65,7 +67,7 @@ func birth(c:int,parents:Array)->Dictionary:
   gen=maxi(int(parents[0].gen),int(parents[1].gen))+1
   for p in parents: ids.append(p.id)
   for i in range(4): genes[i]=clampf((float(parents[0].genes[i])+float(parents[1].genes[i]))*.5+rng.randf_range(-.12,.12),.04,.98)
- var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora"}
+ var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0}
  next_id+=1
  people.append(a)
  changes.append({"kind":"birth","id":a.id})
@@ -193,6 +195,21 @@ func daily():
    if a.sick==5:remember(a,"Mi sono ammalato.")
   a.role="Profeta" if a.get("prophet",false) else ("Ricercatore" if a.genes[0]>.65 and v.era>=2 else ("Coltivatore" if a.genes[1]>.53 else "Artigiano" if v.era>=2 else "Esploratore"))
   a.activity="Riposa" if a.health<50 or day%4==0 else ("Cerca cibo" if a.hunger>50 or a.role=="Coltivatore" else ("Studia" if a.role=="Ricercatore" else ("Incontra la famiglia" if a.partner>=0 and day%3==0 else "Esplora")))
+  if int(a.get("intention_until",0))>day:
+   var intent=str(a.get("intention",""))
+   if intent=="RICERCA":
+    a.activity="Studia"
+    v.knowledge+=.75
+   elif intent=="CIBO":
+    a.activity="Cerca cibo"
+    v.food=minf(850,v.food+1.0)
+   elif intent=="CURA":
+    a.activity="Riposa"
+    a.health=minf(100,a.health+1.5)
+   elif intent=="PACE":
+    a.activity="Incontra la famiglia"
+    peace=minf(100,peace+.18)
+   elif intent=="ESPLORA":a.activity="Esplora"
   a.goal="Capire i confini del cielo" if v.era>=5 and a.genes[0]>.6 else "Proteggere la famiglia" if a.partner>=0 else "Scoprire un luogo nuovo"
   if a.health<=0 or a.age>83:die(a,"vecchiaia" if a.age>83 else "malattia" if int(a.sick)>0 else "carestia" if a.hunger>75 else "ferite")
  if day%25==0 and not people.is_empty():
@@ -244,7 +261,7 @@ func apply_reply(a:Dictionary,txt:String):
   if s.id==a.id:s.answered=true
  log_event(a.name+": «"+response+"»")
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state}
+ return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
@@ -281,6 +298,7 @@ func import_state(d:Dictionary)->bool:
  history=d.get("history",[])
  decisions=d.get("decisions",[])
  diplomacy_state=str(d.get("diplomacy","Neutralità"))
+ autonomous_decisions=int(d.get("autonomous_decisions",0))
  rng.seed=seed_value
  rng.state=int(str(d.rng))
  changes.clear()
@@ -289,6 +307,8 @@ func import_state(d:Dictionary)->bool:
   a["sick"]=int(a.get("sick",0))
   a["prophet"]=bool(a.get("prophet",false))
   a["activity"]=str(a.get("activity","Esplora"))
+  a["intention"]=str(a.get("intention",""))
+  a["intention_until"]=int(a.get("intention_until",0))
  for v in villages:
   for key in ["era","houses","tech"]:v[key]=int(v[key])
  return true
@@ -320,3 +340,22 @@ func answer_signal(index:int,choice:int)->bool:
  decisions.append({"day":day,"name":a.name,"choice":choice,"text":words[choice]})
  log_event("Risposta a "+a.name+": "+words[choice])
  return true
+
+func adopt_intention(a:Dictionary,kind:String,thought:String)->bool:
+ if a.is_empty() or not people.has(a) or not kind in ["RICERCA","CIBO","CURA","PACE","ESPLORA"]:return false
+ a.intention=kind
+ a.intention_until=day+8
+ autonomous_decisions+=1
+ remember(a,thought.left(250))
+ log_event(a.name+" ha scelto: "+kind.to_lower()+".")
+ return true
+
+func advance_absence(elapsed_seconds:float)->int:
+ var amount=clampi(int(elapsed_seconds/180.0),0,60)
+ var advanced=0
+ for i in range(amount):
+  if ended!="" or people.is_empty():break
+  daily()
+  advanced+=1
+ if advanced>0:log_event("Durante la tua assenza sono trascorsi "+str(advanced)+" giorni.")
+ return advanced
