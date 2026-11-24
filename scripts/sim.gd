@@ -620,19 +620,34 @@ func choose_social_action(a:Dictionary,v:Dictionary):
  a.social_target=-1
  a.social_need=minf(100,float(a.social_need)+2.5+float(a.genes[1])*2.0)
  if a.health<55 or a.hunger>60 or int(a.intention_until)>day:return
- if (day+int(a.id))%5!=0:return
- if float(a.genes[1])>.55:
+ if float(a.genes[1])>.48 and (day+int(a.id))%3==0:
+  var recipient={}
+  var highest=0.0
   for other in people:
-   if other.id==a.id or other.clan!=a.clan or other.health>=55:continue
+   if other.id==a.id or other.clan!=a.clan or other.health<=0:continue
+   if other.health>=80 and int(other.sick)<=0 and other.hunger<65:continue
+   if int(other.get("last_aid_day",-1))==day:continue
+   var need=maxf(0,80-float(other.health))+float(other.sick)*6+maxf(0,float(other.hunger)-60)
+   if need>highest:recipient=other;highest=need
+  if not recipient.is_empty():
    a.activity="Aiuta un vicino"
-   a.social_target=other.id
-   other.health=minf(100,other.health+1.0)
-   other.mood=minf(100,other.mood+2)
+   a.social_target=recipient.id
+   recipient.last_aid_day=day
+   recipient.health=minf(100,recipient.health+3.0)
+   recipient.mood=minf(100,recipient.mood+4)
+   if recipient.sick>0:recipient.sick=maxi(0,int(recipient.sick)-1)
+   if recipient.hunger>=65 and v.food>=2:
+    v.food-=2
+    recipient.hunger=maxf(0,recipient.hunger-10)
    a.social_need=maxf(0,a.social_need-18)
+   a.skill=minf(100,a.skill+.25)
    social_actions+=1
    aid_actions+=1
-   if (day+int(a.id))%25==0:milestone(a,"Solidarietà","Ho aiutato "+other.name+".")
+   milestone(a,"Solidarietà","Ho aiutato "+recipient.name+".")
+   milestone(recipient,"Solidarietà",a.name+" mi ha aiutato.")
+   log_event(a.name+" aiuta "+recipient.name+".")
    return
+ if (day+int(a.id))%5!=0:return
  if a.social_need>=60:
   var friend_data=find(int(a.friend))
   if friend_data.is_empty() or friend_data.clan!=a.clan:

@@ -42,3 +42,6 @@ Vegetazione animata in un MultiMesh (fino a 4.200 ciuffi), materiale del suolo e
 
 ## 1.9 — Identità
 Creature procedurali originali con morfologia genetica, colori dei due popoli, animazioni di lavoro e riposo, monumenti e luci notturne. In Eternità gli abitanti cercano compagnia, aiutano chi è in difficoltà e contribuiscono alle opere. Tutorial in cinque passi, richiamabile con F2. Test automatici di comportamento e tutorial; non sostituiscono test con utenti reali.
+
+## 2.0 — Qualità e verifica
+Solidarietà per feriti, malati e affamati; test mirato di aiuto con persistenza. Materiali originali procedurali, occhi animati, geometrie condivise. BENCHMARK.bat avvia una simulazione isolata, misura FPS medi e il percentile 99 del tempo frame su tre profili, apre la cartella del rapporto benchmark-genesis47.json. Il test grafico CI verifica il funzionamento ma non rappresenta le prestazioni di un PC reale. In Opzioni, Scheda prova giocatore registra sei compiti e commenti senza inviare dati. Il collaudo umano richiede un giocatore effettivo.

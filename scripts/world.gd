@@ -141,6 +141,10 @@ var onboarding_enabled=true
 var landmark_root:Node3D
 var village_lights:Array=[]
 var social_summary:Label
+var shared_sphere:SphereMesh
+var shared_box:BoxMesh
+var skin_cache:Dictionary={}
+var benchmark_mode=false
 var precipitation:CPUParticles3D
 var map_view:Control
 var activity_labels={}
@@ -154,13 +158,14 @@ const GROUPS=[["Osserva","Vita","Foresta","Provviste","Guarigione","Pioggia","Re
 const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"Crea un abitante nel popolo più vicino.","Foresta":"Pianta alberi e aggiunge legna.","Provviste":"Aggiunge 100 unità di cibo.","Guarigione":"Ripristina salute e cura malattie in un raggio di 6 m.","Pioggia":"Aumenta le risorse alimentari.","Resurrezione":"Riporta in vita un abitante defunto.","Conoscenza":"Accelera la ricerca del popolo.","Pace":"Migliora le relazioni fra le civiltà.","Fede":"Aumenta la fiducia nel Creatore.","Profeta":"Ispira un profeta persistente.","Mutazione":"Cambia i tratti genetici degli abitanti vicini.","Nuova specie":"Genera un individuo con tratti casuali.","Meteorite":"Danneggia la zona e scava un cratere.","Conflitto":"Riduce la pace fra i popoli.","Fulmine":"Colpisce gli abitanti nelle vicinanze.","Tsunami":"Danneggia abitanti e scorte.","Vulcano":"Solleva il terreno e scatena un'eruzione.","Carestia":"Riduce le scorte alimentari.","Montagna":"Solleva il terreno.","Lago":"Abbassa il terreno."}
 
 func _ready():
- portable_ai="--portable-ai" in OS.get_cmdline_user_args()
+ benchmark_mode="--benchmark" in OS.get_cmdline_user_args() or "--benchmark-test" in OS.get_cmdline_user_args()
+ portable_ai="--portable-ai" in OS.get_cmdline_user_args() and not benchmark_mode
  ai_test="--ai-test" in OS.get_cmdline_user_args()
  test_mode="--self-test" in OS.get_cmdline_user_args() or ai_test
  load_catalog()
  setup_environment()
  setup_ui()
- if not test_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
+ if not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
  request=HTTPRequest.new()
  add_child(request)
  request.timeout=90
@@ -170,6 +175,9 @@ func _ready():
   call_deferred("self_test_ai")
  elif test_mode:
   call_deferred("self_test")
+ elif benchmark_mode:
+  autosave_enabled=false
+  call_deferred("run_benchmark")
  elif "--capture" in OS.get_cmdline_user_args():
   call_deferred("capture_preview")
  else:
@@ -215,17 +223,19 @@ func piece(parent:Node3D,mesh:Mesh,c:Color,p:Vector3,s=Vector3.ONE,glow=0.0)->Me
  return n
 
 func sphere(parent:Node3D,c:Color,p:Vector3,s:Vector3,glow=0.0)->MeshInstance3D:
- var m=SphereMesh.new()
- m.radius=.5
- m.height=1.0
- m.radial_segments=16
- m.rings=8
- return piece(parent,m,c,p,s,glow)
+ if shared_sphere==null:
+  shared_sphere=SphereMesh.new()
+  shared_sphere.radius=.5
+  shared_sphere.height=1.0
+  shared_sphere.radial_segments=24
+  shared_sphere.rings=12
+ return piece(parent,shared_sphere,c,p,s,glow)
 
 func block(parent:Node3D,c:Color,p:Vector3,s:Vector3,glow=0.0)->MeshInstance3D:
- var m=BoxMesh.new()
- m.size=Vector3.ONE
- return piece(parent,m,c,p,s,glow)
+ if shared_box==null:
+  shared_box=BoxMesh.new()
+  shared_box.size=Vector3.ONE
+ return piece(parent,shared_box,c,p,s,glow)
 
 func cone(parent:Node3D,c:Color,p:Vector3,r:float,h:float,upper=0.0,sides=9,glow=0.0)->MeshInstance3D:
  var m=CylinderMesh.new()
@@ -746,23 +756,32 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  var accent=Color("c5f2d7") if a.clan==0 else Color("ffe3a1")
  var body=Node3D.new()
  parent.add_child(body)
- sphere(body,skin,Vector3(0,.70,0),Vector3(.67,.80,.53))
+ var torso=sphere(body,skin,Vector3(0,.70,0),Vector3(.67,.80,.53))
+ torso.material_override=creature_skin(skin)
  sphere(body,cloth,Vector3(0,.62,-.19),Vector3(.62,.57,.25))
- sphere(body,skin.lightened(.07),Vector3(0,1.24,.025),Vector3(.77,.70,.65))
+ var head=sphere(body,skin.lightened(.07),Vector3(0,1.24,.025),Vector3(.77,.70,.65))
+ head.material_override=creature_skin(skin.lightened(.07))
  sphere(body,skin.lightened(.25),Vector3(0,.77,.245),Vector3(.41,.45,.12))
  sphere(body,cloth,Vector3(0,.50,0),Vector3(.66,.15,.54))
  sphere(body,accent,Vector3(0,.51,.27),Vector3(.14,.13,.06),.15)
  var arms=[]
  var legs=[]
+ var eyes=[]
  for side in [-1,1]:
   var ear=sphere(body,skin.darkened(.08),Vector3(side*.39,1.42,.0),Vector3(.24,.38,.18))
   ear.rotation.z=side*-.56
   ear.scale.y*=lerpf(.75,1.30,float(a.genes[0]))
   sphere(body,skin.lightened(.25),Vector3(side*.39,1.43,.083),Vector3(.11,.22,.05)).rotation.z=side*-.56
-  sphere(body,Color("f2e6c9"),Vector3(side*.18,1.30,.29),Vector3(.25,.28,.15))
-  sphere(body,Color("8b673d"),Vector3(side*.18,1.30,.36),Vector3(.16,.19,.07))
-  sphere(body,Color("263b3a"),Vector3(side*.18,1.30,.397),Vector3(.107,.139,.045))
-  sphere(body,Color("fff9e2"),Vector3(side*.18-.035,1.35,.42),Vector3(.047,.047,.024))
+  var eye=Node3D.new()
+  body.add_child(eye)
+  eye.position=Vector3(side*.18,1.30,.29)
+  sphere(eye,Color("f2e6c9"),Vector3.ZERO,Vector3(.25,.28,.15))
+  sphere(eye,Color("8b673d"),Vector3(0,0,.07),Vector3(.16,.19,.07))
+  sphere(eye,Color("263b3a"),Vector3(0,0,.107),Vector3(.107,.139,.045))
+  sphere(eye,Color("fff9e2"),Vector3(-.035,.05,.13),Vector3(.047,.047,.024))
+  eyes.append(eye)
+  var brow=sphere(body,skin.darkened(.26),Vector3(side*.18,1.49,.28),Vector3(.19,.048,.045))
+  brow.rotation.z=side*lerpf(-.10,.18,float(a.genes[0]))
   var arm=Node3D.new()
   body.add_child(arm)
   arm.position=Vector3(side*.34,.98,.0)
@@ -782,7 +801,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  crest.rotation.x=-.35
  if a.genes[1]>.55:
   for side in [-1,1]:sphere(body,accent,Vector3(side*.27,1.16,.28),Vector3(.09,.045,.027))
- return {"body":body,"arms":arms,"legs":legs}
+ return {"body":body,"arms":arms,"legs":legs,"eyes":eyes}
 
 func create_actor(a:Dictionary):
  if actors.has(a.id):return
@@ -801,6 +820,7 @@ func create_actor(a:Dictionary):
  actors[a.id]={"node":parent,"body":rig.body,"arms":rig.arms,"legs":rig.legs,"target":random_near(centers[a.clan],7),"phase":rng.randf()*TAU}
  actors[a.id]["animation"]=animation_player(visual) if visual!=null else null
  actors[a.id]["moving"]=true
+ actors[a.id]["eyes"]=rig.get("eyes",[])
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -986,6 +1006,10 @@ func _process(delta:float):
      r.legs[i].rotation.x=sin(r.phase+i*PI)*(.46 if moving else .025)
      r.arms[i].rotation.x=sin(r.phase+i*PI+PI)*(.32 if moving else .045)
      if not moving and a.activity in ["Studia","Lavora al progetto","Aiuta un vicino"]:r.arms[i].rotation.x=-.55+sin(r.phase*2.0+i)*.22
+   if distance<24:
+    var blink_phase=fposmod(visual_time+float(a.id)*1.37,4.2+float(a.genes[0]))
+    var blink=1.0-.93*maxf(0.0,1.0-absf(blink_phase-.12)/.12)
+    for eye in r.get("eyes",[]):eye.scale.y=blink
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
@@ -2069,12 +2093,39 @@ func self_test():
  var social=Sim.new()
  social.start(57,0)
  for j in range(160):social.daily()
- if social.social_actions<10 or social.aid_actions+social.meet_actions<=0:failed=true
+ if social.social_actions<10 or social.meet_actions<=0:failed=true
+ var aid=Sim.new()
+ aid.start(47,0)
+ var helper=aid.people[0]
+ var patient={}
+ for person in aid.people:
+  if person.id!=helper.id and person.clan==helper.clan:patient=person;break
+ if patient.is_empty():failed=true
+ else:
+  for person in aid.people:person.genes[1]=.1
+  helper.genes[1]=.9
+  helper.age=25
+  helper.health=100
+  helper.hunger=0
+  helper.intention_until=0
+  patient.health=48
+  patient.sick=5
+  patient.hunger=75
+  aid.day=posmod(-int(helper.id)-1,3)
+  aid.villages[helper.clan].food=200
+  aid.daily()
+  if aid.aid_actions<1 or int(helper.social_target)!=int(patient.id) or not patient.has("last_aid_day") or patient.health<=44:failed=true
+  var aid_copy=Sim.new()
+  if not aid_copy.import_state(JSON.parse_string(JSON.stringify(aid.export_state()))) or aid_copy.aid_actions!=aid.aid_actions:failed=true
+  print("SOLIDARITY_TEST actions=",aid.aid_actions," patient_health=",patient.health," target=",helper.social_target)
  var social_clone=Sim.new()
  if not social_clone.import_state(JSON.parse_string(JSON.stringify(social.export_state()))) or social_clone.social_actions!=social.social_actions:failed=true
  print("SOCIAL_TEST actions=",social.social_actions," aid=",social.aid_actions," encounters=",social.meet_actions)
  start_onboarding()
- for i in range(5):advance_onboarding()
+ var guide_buttons=onboarding.find_children("*","Button",true,false)
+ if guide_buttons.size()<2:failed=true
+ else:
+  for i in range(5):guide_buttons[0].pressed.emit()
  if onboarding.visible:failed=true
  onboarding_enabled=true
  print("ONBOARDING_TEST complete=",not onboarding.visible)
@@ -2234,6 +2285,8 @@ func show_options():
   apply_quality(i)
   store_settings())
  box.add_child(quality)
+ button(box,"Come misurare gli FPS",func():open_dialog("BENCHMARK","Chiudi il gioco e apri BENCHMARK.bat nella cartella del gioco. Misura i tre profili in una partita separata e crea un rapporto sul tuo PC."))
+ button(box,"Scheda prova giocatore",show_playtest)
  var volume=HSlider.new()
  volume.min_value=0
  volume.max_value=100
@@ -2255,7 +2308,7 @@ func show_options():
  button(box,"Schermo intero / finestra",func():DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode()==DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN))
  dlg.confirmed.connect(dlg.queue_free)
  dlg.canceled.connect(dlg.queue_free)
- dlg.popup_centered(Vector2i(400,230))
+ dlg.popup_centered(Vector2i(470,360))
 
 func rebuild_farms():
  if not is_instance_valid(farms_root) or centers.size()!=2:return
@@ -2903,3 +2956,101 @@ func rebuild_landmarks():
    cone(monument,Color("a6a895"),Vector3.UP*.1,.66,.2,.58,10)
    cone(monument,Color("687e70"),Vector3.UP*.55,.36,.7,.25,7)
    cone(monument,tint,Vector3.UP*1.16,.29,.55,.02,7,.3)
+
+func creature_skin(c:Color)->ShaderMaterial:
+ # Quantize only the procedural skin palette to limit material allocations.
+ var q=Color(roundf(c.r*24)/24.0,roundf(c.g*24)/24.0,roundf(c.b*24)/24.0)
+ var key=q.to_html(false)
+ if not skin_cache.has(key):
+  var m=ShaderMaterial.new()
+  m.shader=preload("res://shaders/creature_skin.gdshader")
+  m.set_shader_parameter("skin_color",q)
+  skin_cache[key]=m
+ return skin_cache[key]
+
+func run_benchmark():
+ if DisplayServer.get_name()=="headless":
+  print("BENCHMARK_REQUIRES_GRAPHICS")
+  get_tree().quit(1)
+  return
+ var short_test="--benchmark-test" in OS.get_cmdline_user_args()
+ autosave_enabled=false
+ Engine.max_fps=0
+ DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+ speed=0
+ for i in range(125):sim.daily()
+ apply_changes()
+ for i in range(2):sync_houses(i)
+ var info={"version":"2.0.0","cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"seed":47,"day":sim.day,"profiles":[]}
+ var names=["Prestazioni","Bilanciata","Qualita"]
+ for profile in range(3):
+  apply_quality(profile)
+  var samples:Array[float]=[]
+  for shot in range(3):
+   focus=Vector3.ZERO if shot==0 else centers[shot-1]
+   distance=65.0 if shot==0 else 19.0
+   pitch=.78 if shot==0 else .55
+   update_camera()
+   await get_tree().create_timer(.4 if short_test else 1.5).timeout
+   var start=Time.get_ticks_usec()
+   var previous=start
+   var duration=300000 if short_test else 5000000
+   while Time.get_ticks_usec()-start<duration:
+    await RenderingServer.frame_post_draw
+    var now=Time.get_ticks_usec()
+    samples.append(float(now-previous)/1000.0)
+    previous=now
+    azimuth+=.008
+    update_camera()
+  if samples.is_empty():
+   get_tree().quit(1)
+   return
+  samples.sort()
+  var total=0.0
+  for frame in samples:total+=frame
+  var mean_ms=total/samples.size()
+  var p99=samples[clampi(ceili(samples.size()*.99)-1,0,samples.size()-1)]
+  info.profiles.append({"name":names[profile],"fps_average":snappedf(1000/maxf(.01,mean_ms),.1),"fps_p99_equivalent":snappedf(1000/maxf(.01,p99),.1),"frames":samples.size()})
+ var file=FileAccess.open("user://benchmark-genesis47.json",FileAccess.WRITE)
+ if file==null:
+  get_tree().quit(1)
+  return
+ file.store_string(JSON.stringify(info,"  "))
+ file.close()
+ print("BENCHMARK_COMPLETE ",JSON.stringify(info))
+ if not short_test:OS.shell_open(ProjectSettings.globalize_path("user://"))
+ get_tree().quit()
+
+func show_playtest():
+ var dlg=AcceptDialog.new()
+ hud.add_child(dlg)
+ dlg.title="PROVA CON UN GIOCATORE"
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ text_label(box,"Fai provare il gioco a una persona che non lo conosce. Senza suggerimenti.",16).autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+ var tasks=["Creare un mondo Eternità","Selezionare e seguire un abitante","Usare Guarigione","Inviare un messaggio","Salvare e ricaricare","Cambiare qualità grafica"]
+ var checks:Array=[]
+ for task in tasks:
+  var check=CheckBox.new()
+  check.text=task
+  box.add_child(check)
+  checks.append(check)
+ text_label(box,"Commenti: difficoltà, bug, cosa non era chiaro",14)
+ var notes=TextEdit.new()
+ notes.custom_minimum_size=Vector2(510,100)
+ box.add_child(notes)
+ button(box,"Salva rapporto locale",func():
+  var results={}
+  for i in range(tasks.size()):results[tasks[i]]=checks[i].button_pressed
+  var record={"version":"2.0.0","date":Time.get_datetime_string_from_system(),"tasks_completed_without_help":results,"notes":notes.text}
+  var path="user://playtest-"+str(Time.get_unix_time_from_system()).replace(".","-")+".json"
+  var f=FileAccess.open(path,FileAccess.WRITE)
+  if f!=null:
+   f.store_string(JSON.stringify(record,"  "))
+   f.close()
+   OS.shell_open(ProjectSettings.globalize_path("user://"))
+  dlg.hide()
+  dlg.queue_free())
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(560,470))

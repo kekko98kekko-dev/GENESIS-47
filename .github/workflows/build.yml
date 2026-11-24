@@ -51,6 +51,12 @@ jobs:
           test -s preview-gameplay.png
           test -s preview-creature.png
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
+      - name: Benchmark graphical integration
+        run: |
+          set -o pipefail
+          timeout 100s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --resolution 1440x900 -- --benchmark-test 2>&1 | tee benchmark.log
+          grep -q BENCHMARK_COMPLETE benchmark.log
+          if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' benchmark.log; then exit 1; fi
       - name: Export Windows x64
         run: |
           mkdir -p build
@@ -59,7 +65,7 @@ jobs:
           cp README.md ASSET-CREDITS.md build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
-          cp tools/Avvia-AI.ps1 tools/GIOCA-CON-AI.bat build/
+          cp tools/Avvia-AI.ps1 tools/GIOCA-CON-AI.bat tools/BENCHMARK.bat build/
           mkdir -p build/AI/runtime
           curl -fL --retry 2 https://github.com/ggml-org/llama.cpp/releases/download/b6000/llama-b6000-bin-win-cpu-x64.zip -o /tmp/llama.zip
           echo "b32ae2698268562f951c983cac8333607b9d5b546de17fd800a02fbc58b06b6d  /tmp/llama.zip" | sha256sum -c -
