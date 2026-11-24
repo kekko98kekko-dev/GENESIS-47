@@ -1,0 +1,59 @@
+name: Godot Windows build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['project.godot', 'main.tscn', 'scripts/**', 'shaders/**', 'assets/**', 'export_presets.cfg']
+permissions:
+  contents: read
+concurrency:
+  group: genesis-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GODOT_VERSION: 4.4.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
+          curl -fL --retry 3 "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -o /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo ln -sf /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          curl -fL --retry 3 "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -o /tmp/templates.zip
+          unzip -q /tmp/templates.zip -d /tmp/godot-templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          cp -r /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+      - name: Import resources and check scripts
+        run: |
+          set -o pipefail
+          godot --headless --path . --editor --import 2>&1 | tee import.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' import.log; then exit 1; fi
+      - name: Run smoke test
+        run: |
+          set -o pipefail
+          timeout 90s godot --headless --path . --quit-after 180 2>&1 | tee smoke.log
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' smoke.log; then exit 1; fi
+      - name: Export Windows
+        run: |
+          mkdir -p build
+          godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
+          test -s build/GENESIS47.exe
+          cp README.md build/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GENESIS-47-Windows
+          path: build/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs
+          path: '*.log'
+          retention-days: 7
