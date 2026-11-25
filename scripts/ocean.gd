@@ -18,6 +18,9 @@ var turnover=0.0
 var root:Node3D
 var fleet:Dictionary={}
 var colony_nodes:Dictionary={}
+var sea_grid=AStarGrid2D.new()
+var sea_revision=-1
+var routes:Dictionary={}
 
 func reset(w,on:bool):
  world=w
@@ -261,19 +264,63 @@ func shore(region:int,outer:bool)->Vector3:
 
 func endpoints(row:Dictionary)->Array:
  var seller=int(row.seller)
- var from=shore(port_region(seller),seller>=2)
- var to=shore(int(row.region),true) if row.kind=="settle" else shore(port_region(int(row.buyer)),int(row.buyer)>=2)
- return [from,to]
+ var origin=shore(port_region(seller),seller>=2)
+ var destination=shore(int(row.region),true) if row.kind=="settle" else shore(port_region(int(row.buyer)),int(row.buyer)>=2)
+ return [origin,destination]
+
+func rebuild_sea_grid():
+ sea_revision=int(world.terrain_revision)
+ routes.clear()
+ sea_grid.region=Rect2i(-26,-26,53,53)
+ sea_grid.cell_size=Vector2(2,2)
+ sea_grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+ sea_grid.update()
+ for x in range(-26,27):
+  for z in range(-26,27):
+   if world.height_at(x*2,z*2)>world.SEA-.20:sea_grid.set_point_solid(Vector2i(x,z))
+
+func nearest_water(p:Vector3)->Vector2i:
+ var best=Vector2i(999,999)
+ var score=INF
+ for x in range(roundi(p.x/2)-4,roundi(p.x/2)+5):
+  for z in range(roundi(p.z/2)-4,roundi(p.z/2)+5):
+   var cell=Vector2i(x,z)
+   if not sea_grid.region.has_point(cell) or sea_grid.is_point_solid(cell):continue
+   var d=Vector2(x*2-p.x,z*2-p.z).length_squared()
+   if d<score:score=d;best=cell
+ return best
+
+func route_for(row:Dictionary)->Dictionary:
+ if sea_revision!=int(world.terrain_revision):rebuild_sea_grid()
+ var id=int(row.id)
+ if routes.has(id):return routes[id]
+ var ends=endpoints(row)
+ var start=nearest_water(ends[0])
+ var finish=nearest_water(ends[1])
+ var points=[]
+ var length=0.0
+ if sea_grid.region.has_point(start) and sea_grid.region.has_point(finish):
+  for cell in sea_grid.get_id_path(start,finish):
+   var p=Vector3(cell.x*2,world.SEA+.12,cell.y*2)
+   if not points.is_empty():length+=p.distance_to(points.back())
+   points.append(p)
+ if points.is_empty():points.append(ends[0])
+ var route={"points":points,"length":length}
+ routes[id]=route
+ return route
 
 func ship_position(row:Dictionary,day_fraction:float)->Vector3:
- var ends=endpoints(row)
- var a:Vector3=ends[0]
- var b:Vector3=ends[1]
+ var route=route_for(row)
+ var points:Array=route.points
  var progress=clampf((day_fraction-float(row.depart))/maxf(1,float(row.due)-float(row.depart)),0,1)
- if port_region(int(row.seller))==int(row.get("region",port_region(int(row.buyer)))):return a.lerp(b,progress)
- # Cross-regional voyages follow the outer coast via a sea waypoint.
- var mid=Vector3(-49,world.SEA+.12,49) if a.x<0 else Vector3(49,world.SEA+.12,-49)
- return a.lerp(mid,progress*2) if progress<.5 else mid.lerp(b,(progress-.5)*2)
+ var remaining=float(route.length)*progress
+ for i in range(1,points.size()):
+  var a:Vector3=points[i-1]
+  var b:Vector3=points[i]
+  var length=a.distance_to(b)
+  if remaining<=length:return a.lerp(b,remaining/maxf(.001,length))
+  remaining-=length
+ return points.back()
 
 func make_ship()->Node3D:
  var n=Node3D.new()
@@ -289,6 +336,8 @@ func rebuild_visuals(parent:Node3D):
  root=parent
  fleet.clear()
  colony_nodes.clear()
+ routes.clear()
+ sea_revision=-1
  if not enabled:return
  sync_visuals()
 
@@ -298,6 +347,7 @@ func sync_visuals():
   if not voyages.any(func(v):return int(v.id)==int(id)):
    fleet[id].queue_free()
    fleet.erase(id)
+   routes.erase(id)
  for row in voyages:
   var id=int(row.id)
   if not fleet.has(id):fleet[id]=make_ship()
