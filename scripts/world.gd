@@ -20,6 +20,8 @@ const Cave=preload("res://scripts/cave_exploration.gd")
 const Rivers=preload("res://scripts/river_system.gd")
 const Legacy=preload("res://scripts/legacy_society.gd")
 const LivingArt=preload("res://scripts/living_art.gd")
+const Artisan=preload("res://scripts/artisan_kit.gd")
+const DivinePresentation=preload("res://scripts/divine_presentation.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -38,6 +40,7 @@ var legend=Legend.new()
 var districts=Districts.new()
 var origins=Origins.new()
 var legacy=Legacy.new()
+var divine_presentation=DivinePresentation.new()
 var legacy_root:Node3D
 var legacy_view:RichTextLabel
 var citizen_portrait
@@ -700,6 +703,7 @@ func reset_visuals():
  people_root=Node3D.new()
  animals_root=Node3D.new()
  effects_root=Node3D.new()
+ divine_presentation.reset(self)
  roads_root=Node3D.new()
  farms_root=Node3D.new()
  ambient_root=Node3D.new()
@@ -751,6 +755,20 @@ func reset_visuals():
    if maxf(absf(p.x),absf(p.z))<53 or p.y<SEA+.7 or p.y>12:continue
    if Frontier.biome(p)==3 and i%3!=0:continue
    make_tree(p,rng.randf_range(2.5,5.4),i)
+ # Additional clustered forest using a separate seed so simulation RNG is not consumed.
+ if not test_mode:
+  var forest_rng=RandomNumberGenerator.new()
+  forest_rng.seed=sim.seed_value+821
+  var forest_extent=90.0 if vast_world else 48.0
+  for cluster in range(34 if vast_world else 21):
+   var x=forest_rng.randf_range(-forest_extent,forest_extent)
+   var z=forest_rng.randf_range(-forest_extent,forest_extent)
+   for sample in range(13):
+    var p=ground(x+forest_rng.randf_range(-5.8,5.8),z+forest_rng.randf_range(-5.8,5.8))
+    if p.y<SEA+.85 or p.y>10 or not far_village(p,10) or not away_from_route(p,1.8) or scarred(p) or Art.biome(self,p)==3:continue
+    if timber_points.any(func(q):return flat_dist(q,p)<1.4):continue
+    timber_points.append(p)
+    Artisan.pine(self,p,forest_rng.randf_range(2.4,5.3),cluster*13+sample)
  for row in planted:
   var place=ground(float(row.x),float(row.z))
   if place.y>SEA+.12:make_tree(place,float(row.h),int(row.i))
@@ -851,6 +869,9 @@ func make_tree(p:Vector3,h:float,i:int):
  var rotation_value=rng.randf()*TAU
  if scarred(p):return
  timber_points.append(p)
+ if Art.biome(self,p) in [0,2,4,5] and i%3!=1:
+  Artisan.pine(self,p,h,i)
+  return
  if Art.tree(self,p,h,i):return
  var n=asset(scenery,"tree",i,p,h,rotation_value)
  if n!=null:
@@ -908,7 +929,7 @@ func make_hub(i:int):
 
 func house_location(i:int,j:int)->Vector3:
  var a=j*2.39996+i*.5
- var r=4.5+sqrt(float(j))*3.15
+ var r=4.5+sqrt(float(j))*2.64
  return land_near(centers[i].x+cos(a)*r,centers[i].z+sin(a)*r)
 
 func make_house(i:int,j:int,era:int):
@@ -944,10 +965,7 @@ func make_house(i:int,j:int,era:int):
   block(cover,Color("f5ca7d"),Vector3(side*.76,h*.66,1.12),Vector3(.30,.35,.045),.32)
  block(cover,wall,Vector3(0,h-.16,1.01),Vector3(1.12,.32,.18))
  if era<4:
-  if i==0 or era>=2:
-   var roof=piece(cover,PrismMesh.new(),tint,Vector3(0,h+.39,0),Vector3(2.44,.85,2.45))
-   roof.rotation.y=PI*.5
-   roof.material_override=architecture_material(tint,0.0,1.0)
+  pass
  else:
   var roof_panel=block(cover,tint,Vector3(0,h+.10,0),Vector3(2.42,.23,2.42))
   roof_panel.material_override=architecture_material(tint,0.0,.75)
@@ -955,6 +973,7 @@ func make_house(i:int,j:int,era:int):
   if era>=5:cone(cover,Color("b7e4db"),Vector3(0,h+.63,0),.25,.82,.03,8,.5)
  for side in [-1,1]:block(cover,Color("80664f"),Vector3(side*.49,.62,1.13),Vector3(.08,1.25,.10))
  Art.house(self,cover,i,era,j,h)
+ Artisan.cottage(self,cover,i,era,j,h,tint)
  interior.visible=false
  show_structure(n,site)
  return n
@@ -1049,7 +1068,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  if a.genes[3]>.65:
   for side in [-1,1]:sphere(body,cloth,Vector3(side*.34,.88,.03),Vector3(.22,.22,.28))
  if era>=3:block(body,accent,Vector3(0,.92,.29),Vector3(.18,.11,.055),.15 if era>=5 else 0.0)
- var skeletal=CreatureRig.build(self,body,skin,cloth)
+ var skeletal=CreatureRig.build(self,body,skin,cloth,Sim.anatomy(a))
  torso.hide()
  torso.queue_free()
  head.hide()
@@ -1291,7 +1310,7 @@ func _process(delta:float):
   update_camera()
  if is_instance_valid(meadow):
   meadow.visible=quality_mode>0 and distance<82
-  meadow.multimesh.visible_instance_count=meadow.multimesh.instance_count if quality_mode==2 else mini(2600,meadow.multimesh.instance_count)
+  meadow.multimesh.visible_instance_count=meadow.multimesh.instance_count if quality_mode==2 else mini(6200,meadow.multimesh.instance_count)
  if last_season!=sim.season:
   last_season=sim.season
   if is_instance_valid(season_material):season_material.set_shader_parameter("season_tint",{"Primavera":Color("e5ffd5"),"Estate":Color("fff2ca"),"Autunno":Color("f6ce96"),"Inverno":Color("c6dce3")}.get(last_season,Color.WHITE))
@@ -1443,6 +1462,8 @@ func _process(delta:float):
     var radius=float({"Incendio":3.0,"Terremoto":8.0,"Tornado":4.0,"Epidemia":6.0,"Meteorite":7.0,"Fulmine":2.4,"Tsunami":11.0,"Vulcano":9.0,"Montagna":5.0,"Lago":6.0}.get(power,6.0))
     hover_ring.scale=Vector3(radius/6.0,1,radius/6.0)
     hover_ring.visible=true
+ divine_presentation.pointer(hover_ring.position if is_instance_valid(hover_ring) else Vector3.ZERO,is_instance_valid(hover_ring) and hover_ring.visible and distance<45)
+ divine_presentation.update(delta)
  update_effects(delta)
  if speed>0:update_hazards(delta*minf(speed,12.0))
 
@@ -1817,6 +1838,7 @@ func divine(p:Vector3):
  if not test_mode:
   legend.miracle(power,clan,near,p)
   legacy.preserve("Miracolo",clan,-1,power+" · "+str(near.size())+" testimoni",p)
+  divine_presentation.cast(p,power)
  spark(p,color,1.5)
  if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
@@ -2656,6 +2678,7 @@ func self_test():
  if not test_frontier_origins():failed=true
  if not test_world_depth():failed=true
  if not test_living_legacy():failed=true
+ if not test_artisan_anatomy():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2898,16 +2921,7 @@ func rebuild_farms():
    var p=land_near(centers[i].x+(5.0 if i==0 else -5.0)+j*(2.5 if i==0 else -2.5),centers[i].z+5.8)
    if blocked_site(p):continue
    farm_points[i].append(p)
-   var n=asset(farms_root,"farm",j,p,.65,0)
-   if n==null:
-    n=Node3D.new()
-    farms_root.add_child(n)
-    n.position=p
-    for row in range(3):
-     for col in range(5):
-      var q=Vector3((col-2)*.42,.04,(row-1)*.43)
-      block(n,Color("795b41"),q,Vector3(.36,.08,.36))
-      sphere(n,Color("b8bb59"),q+Vector3.UP*.22,Vector3(.18,.42,.18))
+   Artisan.field_plot(self,farms_root,p,i,j)
 
 func spawn_caravan(id:int):
  if not is_instance_valid(villages_root):return
@@ -3422,9 +3436,10 @@ func rebuild_meadow():
  var transforms:Array[Transform3D]=[]
  var local=RandomNumberGenerator.new()
  local.seed=sim.seed_value+734
- for i in range(12500):
-  if transforms.size()>=4200:break
-  var p=ground(local.randf_range(-49,49),local.randf_range(-49,49))
+ var extent=94.0 if vast_world else 49.0
+ for i in range(26000 if vast_world else 18000):
+  if transforms.size()>=10500:break
+  var p=ground(local.randf_range(-extent,extent),local.randf_range(-extent,extent))
   if p.y<SEA+.7 or p.y>7.3 or not far_village(p,4.0) or not away_from_route(p,.8) or scarred(p):continue
   var scale_value=local.randf_range(.55,1.35)
   var basis=Basis(Vector3.UP,local.randf()*TAU).scaled(Vector3.ONE*scale_value)
@@ -3803,7 +3818,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   var destination:Vector3=r.route[int(r.route_index)]
   var diff=destination-n.position
   diff.y=0
-  var budget=dt*2.7*lerpf(.8,1.2,float(a.genes[3]))
+  var budget=dt*2.7*lerpf(.8,1.2,float(a.genes[3]))*(1.08 if Sim.anatomy(a)==2 else 1.0)
   while int(r.route_index)<r.route.size():
    destination=r.route[int(r.route_index)]
    diff=destination-n.position
@@ -4970,7 +4985,7 @@ func test_ocean_systems()->bool:
  new_world(47,0,true,true)
  var a=sim.people[0]
  var rig:Dictionary=actors[a.id].skeletal
- if rig.skeleton.get_bone_count()!=22:return false
+ if rig.skeleton.get_bone_count()!=[22,28,30][int(rig.get("kind",0))]:return false
  CreatureRig.drive(actors[a.id],a,true,true,.1)
  var arm_index=int(rig.arm_ids[0][1])
  if absf(rig.skeleton.get_bone_pose_rotation(arm_index).x)<.01:return false
@@ -5335,6 +5350,7 @@ func _exit_tree():
  if cave!=null:cave.world=null
  if rivers!=null:rivers.world=null
  if legacy!=null:legacy.world=null
+ if divine_presentation!=null:divine_presentation.world=null
 
 
 func show_legend():
@@ -5681,3 +5697,61 @@ func architecture_material(tint:Color,masonry:float,roofing:float)->ShaderMateri
  return architecture_materials[key]
 func architectural_wall(node:MeshInstance3D,tint:Color,era:int):
  node.material_override=architecture_material(tint,.6 if era>=2 else .12,0.0)
+
+
+func test_artisan_anatomy()->bool:
+ new_world(47,0)
+ var signatures=[]
+ for kind in range(3):
+  var dummy=sim.people[0].duplicate(true)
+  dummy.genes=[.5,.45,.5,.45] if kind==0 else [.5,.8,.5,.45] if kind==1 else [.5,.45,.5,.8]
+  if Sim.anatomy(dummy)!=kind:return false
+  var n=Node3D.new()
+  add_child(n)
+  var r=original_creature(n,dummy)
+  r["phase"]=1.0
+  var rig:Dictionary=r.skeletal
+  var skeleton:Skeleton3D=rig.skeleton
+  var mesh:MeshInstance3D=rig.skins[0]
+  var arrays=mesh.mesh.surface_get_arrays(0)
+  var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
+  var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX]
+  var bones:PackedInt32Array=arrays[Mesh.ARRAY_BONES]
+  var weights:PackedFloat32Array=arrays[Mesh.ARRAY_WEIGHTS]
+  if skeleton.get_bone_count()!=[22,28,30][kind] or vertices.size()<500:return false
+  var extra_weight=0.0
+  var used={}
+  for i in range(bones.size()):
+   if bones[i]>=skeleton.get_bone_count():return false
+   if bones[i]>=22:extra_weight+=weights[i];used[bones[i]]=true
+  if kind>0 and (extra_weight<5 or used.size()<4):return false
+  var adjacency={}
+  for i in range(0,indices.size(),3):
+   for j in range(3):
+    var u=indices[i+j]
+    var v=indices[i+(j+1)%3]
+    if not adjacency.has(u):adjacency[u]=[]
+    if not adjacency.has(v):adjacency[v]=[]
+    adjacency[u].append(v)
+    adjacency[v].append(u)
+  var seen={}
+  var todo=[indices[0]]
+  seen[indices[0]]=true
+  while not todo.is_empty():
+   var id=int(todo.pop_back())
+   for other in adjacency.get(id,[]):
+    if not seen.has(other):seen[other]=true;todo.append(other)
+  if seen.size()!=vertices.size():return false
+  CreatureRig.drive(r,dummy,true,true,.25)
+  skeleton.force_update_all_bone_transforms()
+  if kind>0 and absf(skeleton.get_bone_pose_rotation(22).x)<.001:return false
+  signatures.append(vertices.size())
+  remove_child(n)
+  n.queue_free()
+ if signatures[0]==signatures[1] or signatures[1]==signatures[2]:return false
+ divine_presentation.cast(centers[0],"Guarigione")
+ if divine_presentation.active.size()!=1:return false
+ divine_presentation.update(3.0)
+ if not divine_presentation.active.is_empty():return false
+ print("ARTISAN_TEST distinct_meshes=",signatures," bones=[22,28,30] connected=true extra_weights=true articulation=true effect_cleanup=true")
+ return true
