@@ -43,6 +43,13 @@ jobs:
           timeout 180s godot --headless --path . -- --self-test 2>&1 | tee smoke.log
           grep -q 'SELF_TEST PASS' smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' smoke.log; then exit 1; fi
+      - name: Extended quality assurance and long simulation
+        run: |
+          set -o pipefail
+          timeout 480s godot --headless --path . -- --qa-test 2>&1 | tee qa.log
+          grep -q 'QA_SUITE PASS' qa.log
+          test -s qa-report.json
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' qa.log; then exit 1; fi
       - name: Capture real rendered screenshot
         run: |
           set -o pipefail
@@ -50,6 +57,7 @@ jobs:
           test -s preview.png
           test -s preview-gameplay.png
           test -s preview-creature.png
+          for pose in walk farm craft eat sleep social; do test -s "preview-pose-$pose.png"; done
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
       - name: Benchmark graphical integration
         run: |
@@ -62,7 +70,7 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
-          cp README.md ASSET-CREDITS.md build/
+          cp README.md ASSET-CREDITS.md qa-report.json build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
           cp tools/BENCHMARK.bat build/
@@ -79,6 +87,7 @@ jobs:
           name: test-logs
           path: |
             *.log
+            qa-report.json
             preview*.png
             assets/generated/catalog.json
           retention-days: 7
