@@ -137,7 +137,7 @@ func step(dt:float):
     if front==i and v.z<0 or back==i and v.z>0:v.z=0
     next[k]=(v*.996).limit_length(5.0)
  eta=flux
- velocity=next
+ velocity=project(next,dt)
  clock+=dt
 
 func current(p:Vector3)->Vector3:
@@ -168,3 +168,70 @@ func tick(dt:float):
   elapsed-=DT
   count+=1
  if count>0:render()
+
+
+# Approximate nonhydrostatic pressure correction on every wet 3D column.
+# Cell-centred finite differences and fixed Jacobi sweeps are deliberately
+# bounded; this is not a fully converged incompressible CFD solver.
+func project(values:PackedVector3Array,dt:float)->PackedVector3Array:
+ var p=PackedFloat32Array()
+ var rhs=PackedFloat32Array()
+ p.resize(values.size())
+ rhs.resize(values.size())
+ for z in range(N):
+  for x in range(N):
+   var i=idx(x,z)
+   if not wet[i]:continue
+   var dxm=neighbor(x-1,z,i)
+   var dxp=neighbor(x+1,z,i)
+   var dzm=neighbor(x,z-1,i)
+   var dzp=neighbor(x,z+1,i)
+   var dy=maxf(.15,(bed[i]+eta[i])/L)
+   for y in range(L):
+    var k=voxel(i,y)
+    var below=values[voxel(i,maxi(0,y-1))]
+    var above=values[voxel(i,mini(L-1,y+1))]
+    rhs[k]=((values[voxel(dxp,y)].x-values[voxel(dxm,y)].x+values[voxel(dzp,y)].z-values[voxel(dzm,y)].z)/(2*CELL)+(above.y-below.y)/(2*dy))/maxf(dt,.001)
+ for iteration in range(4):
+  var updated=p.duplicate()
+  for z in range(N):
+   for x in range(N):
+    var i=idx(x,z)
+    if not wet[i]:continue
+    var left=neighbor(x-1,z,i)
+    var right=neighbor(x+1,z,i)
+    var front=neighbor(x,z-1,i)
+    var back=neighbor(x,z+1,i)
+    var dy=maxf(.15,(bed[i]+eta[i])/L)
+    var horizontal=1.0/(CELL*CELL)
+    var vertical=1.0/(dy*dy)
+    for y in range(L-1):
+     var k=voxel(i,y)
+     var sum=(p[voxel(left,y)]+p[voxel(right,y)]+p[voxel(front,y)]+p[voxel(back,y)])*horizontal
+     sum+=(p[voxel(i,maxi(0,y-1))]+p[voxel(i,y+1)])*vertical
+     updated[k]=(sum-rhs[k])/(4*horizontal+2*vertical)
+  p=updated
+ var result=values.duplicate()
+ for z in range(N):
+  for x in range(N):
+   var i=idx(x,z)
+   if not wet[i]:continue
+   var left=neighbor(x-1,z,i)
+   var right=neighbor(x+1,z,i)
+   var front=neighbor(x,z-1,i)
+   var back=neighbor(x,z+1,i)
+   var dy=maxf(.15,(bed[i]+eta[i])/L)
+   for y in range(L):
+    var k=voxel(i,y)
+    var grad=Vector3((p[voxel(right,y)]-p[voxel(left,y)])/(2*CELL),(p[voxel(i,mini(L-1,y+1))]-p[voxel(i,maxi(0,y-1))])/(2*dy),(p[voxel(back,y)]-p[voxel(front,y)])/(2*CELL))
+    var v=(values[k]-grad*dt*.6).limit_length(5)
+    if y==0:v.y=0
+    if y==L-1:v.y=values[k].y
+    if left==i and v.x<0 or right==i and v.x>0:v.x=0
+    if front==i and v.z<0 or back==i and v.z>0:v.z=0
+    result[k]=v
+ return result
+
+func absorb(p:Vector3,amount:float):
+ var i=sample_index(p)
+ if wet.size()==N*N and wet[i]:eta[i]+=amount
