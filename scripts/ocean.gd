@@ -3,11 +3,13 @@ const ColonyLife=preload("res://scripts/colony_life.gd")
 const Finance=preload("res://scripts/finance.gd")
 var life=ColonyLife.new()
 var finance=Finance.new()
+const Industry=preload("res://scripts/industry.gd")
+var industry=Industry.new()
 # Independent colonies, sea transport and double-entry trade. Simulation is daily;
 # graphical ships interpolate between departure and arrival.
-const GOODS=["food","wood","stone","tools"]
-const LABELS={"food":"Cibo","wood":"Legna","stone":"Pietra","tools":"Utensili"}
-const BASE={"food":2.0,"wood":3.0,"stone":4.0,"tools":8.0}
+const GOODS=["food","wood","stone","tools","ore","flour","bread","planks","bricks","metal","machines"]
+const LABELS={"food":"Cibo","wood":"Legna","stone":"Pietra","tools":"Utensili","ore":"Minerale","flour":"Farina","bread":"Pane","planks":"Tavole","bricks":"Mattoni","metal":"Metallo","machines":"Macchinari"}
+const BASE={"food":2.0,"wood":3.0,"stone":4.0,"tools":8.0,"ore":3.0,"flour":4.0,"bread":4.0,"planks":6.0,"bricks":8.0,"metal":9.0,"machines":30.0}
 var world
 var enabled=false
 var colonies:Array=[]
@@ -42,9 +44,10 @@ func reset(w,on:bool):
  world.sim.market_mode=enabled
  life.setup(self)
  finance.setup(self)
+ industry.setup(self)
 
 func export_state()->Dictionary:
- return {"enabled":enabled,"colonies":colonies,"voyages":voyages,"accounts":accounts,"history":history,"next_id":next_id,"completed":completed,"delayed":delayed,"failed":failed,"turnover":turnover,"finance":finance.export_state()}
+ return {"enabled":enabled,"colonies":colonies,"voyages":voyages,"accounts":accounts,"history":history,"next_id":next_id,"completed":completed,"delayed":delayed,"failed":failed,"turnover":turnover,"finance":finance.export_state(),"industry":industry.export_state()}
 
 func restore(w,data):
  reset(w,false)
@@ -65,6 +68,7 @@ func restore(w,data):
  failed=int(data.get("failed",0))
  turnover=float(data.get("turnover",0))
  finance.restore(data.get("finance",{}))
+ industry.restore(data.get("industry",{}))
  for c in colonies:life.migrate(c)
 
 func colony(id:int)->Dictionary:
@@ -106,6 +110,9 @@ func target(id:int,good:String)->float:
   "wood":return maxf(10,n*1.5)
   "stone":return maxf(6,n*.75)
   "tools":return maxf(3,n*.25)
+  "ore","flour","planks","bricks","metal":return maxf(4,n*.35)
+  "bread":return maxf(4,n*.8)
+  "machines":return maxf(2,n*.10)
  return 1.0
 
 func price(id:int,good:String)->float:
@@ -126,7 +133,9 @@ func work_completed(a:Dictionary,kind:String,coins_before:float):
   var contribution=minf(.25,wage)
   a.coins=coins_before+wage-contribution
   world.sim.villages[clan].culture.treasury+=contribution
- if kind=="gather":change(clan,"stone",.55)
+ if kind=="gather":
+  change(clan,"stone",.55)
+  change(clan,"ore",.35)
  if kind=="craft":change(clan,"tools",1.0)
  if kind=="eat":change(clan,"cash",maxf(0,coins_before-float(a.coins)))
  if kind in ["farm","gather","build","house"] and float(a.tool)<15 and balance(clan,"tools")>=1:
@@ -136,6 +145,28 @@ func work_completed(a:Dictionary,kind:String,coins_before:float):
    change(clan,"cash",cost)
    change(clan,"tools",-1)
    a.tool=100.0
+ industry.on_work(clan,a,kind)
+ if kind=="eat":consume_bread(clan,a)
+ if kind in ["build","house"]:use_materials(clan,a)
+
+func consume_bread(port:int,a:Dictionary):
+ if balance(port,"bread")<1:return
+ var cost=price(port,"bread")
+ if float(a.coins)<cost:return
+ change(port,"bread",-1)
+ a.coins-=cost
+ change(port,"cash",cost)
+ a.hunger=maxf(0,float(a.hunger)-12)
+ a.mood=minf(100,float(a.mood)+3)
+
+func use_materials(port:int,a:Dictionary):
+ if balance(port,"planks")>=1 and balance(port,"bricks")>=1:
+  change(port,"planks",-1)
+  change(port,"bricks",-1)
+  a.skill=minf(100,float(a.skill)+.5)
+ if balance(port,"machines")>=1 and float(a.tool)<85:
+  change(port,"machines",-.1)
+  a.tool=minf(100,float(a.tool)+15)
 
 func recruit(clan:int,region:int)->bool:
  if not enabled or region not in [1,2] or world.sim.villages[clan].tech<2:return false
@@ -230,6 +261,7 @@ func daily():
   settle(v)
  for c in colonies:life.daily(c)
  finance.daily()
+ industry.daily()
  if world.sim.day%10==0:
   for i in range(2):recruit(i,i+1)
  if world.sim.day%3==0:match_market()
@@ -346,6 +378,7 @@ func rebuild_visuals(parent:Node3D):
  fleet.clear()
  colony_nodes.clear()
  life.rebuild(parent)
+ industry.rebuild(parent)
  routes.clear()
  sea_revision=-1
  if not enabled:return
@@ -413,6 +446,7 @@ func report()->String:
  lines.append("")
  for entry in history.slice(0,8):lines.append(entry)
  lines.append(finance.report())
+ lines.append(industry.report())
  for c in colonies:lines.append(life.report(c))
  return "\n".join(lines)
 
