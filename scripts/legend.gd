@@ -43,7 +43,7 @@ func export_state()->Dictionary:
 
 func log_event(kind:String,clan:int,person:int,caption:String,location=Vector3.ZERO):
  entries.push_front({"day":world.sim.day,"kind":kind,"clan":clan,"person":person,"caption":caption,"x":location.x,"z":location.z})
- if entries.size()>240:entries.pop_back()
+ if entries.size()>1200:entries.pop_back()
 
 func advance_goal(index:int):
  if journey!=index:return
@@ -102,7 +102,7 @@ func death(id:int,p:Vector3):
  var clan=int(deceased.clan)
  log_event("Addio",clan,id,str(deceased.name)+" è morto: "+str(deceased.reason)+".",p)
  monuments.append({"id":id,"name":str(deceased.name),"clan":clan,"day":world.sim.day,"x":p.x,"z":p.z})
- if monuments.size()>64:monuments.pop_front()
+ if monuments.size()>240:monuments.pop_front()
  visual_dirty=true
  # Family and close friends already have grief; show it at their real positions.
  if not world.test_mode:
@@ -139,6 +139,15 @@ func daily():
     if int(event.day)!=world.sim.day or str(event.kind) not in ["Unione","Amicizia","Vocazione"]:continue
     var position:Vector3=world.actors[a.id].node.position if world.actors.has(a.id) else world.centers[clan]
     log_event(str(event.kind),clan,int(a.id),str(a.name)+" · "+str(event.text),position)
+  var identity="Pacifista" if clan==0 else "Esploratrice"
+  if float(row.fear)>65:identity="Militarista"
+  elif float(row.love)>75:identity="Religiosa"
+  elif float(v.knowledge)>120 and int(v.tech)>=4:identity="Scientifica"
+  elif world.ocean.enabled and world.ocean.industry.companies.any(func(f):return int(f.port)==clan and f.active):identity="Mercantile"
+  elif float(v.food)<n*.8:identity="Nomade"
+  if str(v.get("identity",""))!=identity:
+   v["identity"]=identity
+   log_event("Cultura",clan,-1,world.sim.CLANs_name(clan)+" sviluppa una cultura "+identity.to_lower()+".",world.centers[clan])
   var kind="Custodi della vita" if clan==0 else "Figli dell'orizzonte"
   if float(row.fear)>65:kind="Culto del timore"
   elif float(row.love)<25:kind="Liberi dal Creatore"
@@ -157,6 +166,10 @@ func daily():
     if int(a.clan)==clan and float(a.genes[0])>.65:
      a.faith=maxf(0,float(a.faith)-5)
      world.sim.adjust_trust(a,-3)
+     if float(a.faith)<30 and not bool(a.get("dissident",false)):
+      a["dissident"]=true
+      world.sim.milestone(a,"Dissenso","Non seguirò più il Creatore per paura.")
+      log_event("Dissenso",clan,int(a.id),str(a.name)+" rifiuta il culto imposto.",world.centers[clan])
  for key in pilgrims.keys():
   if world.sim.find(int(key)).is_empty():pilgrims.erase(key)
  if visual_dirty:rebuild_visuals(root)
@@ -208,7 +221,7 @@ func report()->String:
  if journey<GOALS.size():lines.append(HELP[journey])
  for i in range(2):
   var row:Dictionary=worship[i]
-  lines.append("\n"+world.sim.CLANs_name(i)+" · "+str(traditions[i].kind))
+  lines.append("\n"+world.sim.CLANs_name(i)+" · "+str(traditions[i].kind)+" · "+str(world.sim.villages[i].get("identity","In formazione")))
   lines.append("Amore %d%% · Timore %d%% · Testimonianze %d"%[int(row.love),int(row.fear),int(traditions[i].memory)])
   lines.append("Santuario: "+("costruito · %d presenze"%int(row.visits) if row.temple else "non costruito"))
  lines.append("\nSTORIA DEL MONDO")
@@ -221,7 +234,7 @@ func report()->String:
 func ritual_advance(a:Dictionary,node:Node3D,dt:float)->int:
  var key=str(int(a.id))
  var clan=int(a.clan)
- if not worship[clan].temple or float(a.faith)<45 or float(a.age)<14 or float(a.hunger)>60 or float(a.fatigue)>60 or float(a.health)<60:
+ if not worship[clan].temple or bool(a.get("dissident",false)) or float(a.faith)<45 or float(a.age)<14 or float(a.hunger)>60 or float(a.fatigue)>60 or float(a.health)<60:
   pilgrims.erase(key)
   return -1
  if not pilgrims.has(key):
@@ -270,3 +283,25 @@ func ritual_advance(a:Dictionary,node:Node3D,dt:float)->int:
  if not world.test_mode:world.life_bubble(node.position,"PREGHIERA",Color("eed5a1"))
  pilgrims.erase(key)
  return 0
+
+
+func genealogy(id:int)->String:
+ var lines=[]
+ var queue=[[id,0]]
+ var seen={}
+ while not queue.is_empty() and lines.size()<48:
+  var row=queue.pop_front()
+  var key=int(row[0])
+  var depth=int(row[1])
+  if key<0 or seen.has(key):continue
+  seen[key]=true
+  var person=world.sim.find(key)
+  var alive=not person.is_empty()
+  if not alive:
+   for dead in world.sim.dead:
+    if int(dead.id)==key:person=dead;break
+  if person.is_empty():continue
+  lines.append("  ".repeat(depth)+str(person.name)+" · G"+str(person.get("gen",1))+(" · in vita" if alive else " · memoria"))
+  if depth<5:
+   for parent in person.get("parents",[]):queue.append([int(parent),depth+1])
+ return "\n".join(lines)
