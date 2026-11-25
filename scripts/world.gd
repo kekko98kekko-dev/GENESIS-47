@@ -22,6 +22,7 @@ const Legacy=preload("res://scripts/legacy_society.gd")
 const LivingArt=preload("res://scripts/living_art.gd")
 const Artisan=preload("res://scripts/artisan_kit.gd")
 const DivinePresentation=preload("res://scripts/divine_presentation.gd")
+const Colossus=preload("res://scripts/colossus.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -41,6 +42,10 @@ var districts=Districts.new()
 var origins=Origins.new()
 var legacy=Legacy.new()
 var divine_presentation=DivinePresentation.new()
+var colossus=Colossus.new()
+var colossus_root:Node3D
+var colossus_saved:Dictionary={}
+var follow_colossus=false
 var legacy_root:Node3D
 var legacy_view:RichTextLabel
 var citizen_portrait
@@ -615,6 +620,8 @@ func make_terrain():
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
  if cave.active:cave.leave()
  vast_world=wide
+ colossus_saved={}
+ follow_colossus=false
  ash_time=0
  river_saved={}
  cave_saved={}
@@ -669,7 +676,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root,cave_root,river_root,legacy_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root,cave_root,river_root,legacy_root,colossus_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -827,6 +834,10 @@ func reset_visuals():
  legacy_root=Node3D.new()
  add_child(legacy_root)
  legacy.build(legacy_root)
+ colossus_root=Node3D.new()
+ add_child(colossus_root)
+ colossus.reset(self,colossus_saved)
+ colossus.build(colossus_root)
  rebuild_roads()
  rebuild_services()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
@@ -1300,6 +1311,7 @@ func _process(delta:float):
  var keyboard_ok=not (focused is LineEdit or focused is TextEdit) and not welcome_open and not (is_instance_valid(title_intro) and title_intro.visible)
  var mov=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  if keyboard_ok and mov.length()>0:
+  follow_colossus=false
   set_tour(false)
   following=false
   var right=Vector3(cos(azimuth),0,-sin(azimuth))
@@ -1362,6 +1374,7 @@ func _process(delta:float):
    var detailed=distance<35 and quality_mode>0 and flat_dist(n.position,focus)<28
    if detailed or rig_elapsed>=.10:
     CreatureRig.drive(r,a,moving,detailed,rig_elapsed)
+    if detailed:CreatureRig.contact(self,r,a,moving)
     if detailed:Art.portrait(self,r,a)
     LivingArt.animate_morph(r,a,moving)
     rig_elapsed=0.0
@@ -1375,6 +1388,7 @@ func _process(delta:float):
    society_tick=0.0
    spatial_society()
   update_worksites()
+  colossus.update(delta*minf(speed,4.0))
   ocean.life.tick(delta*minf(speed,20.0))
   wildlife.tick(delta*minf(speed,20.0))
   ocean.industry.animate(delta*minf(speed,4.0))
@@ -1418,6 +1432,9 @@ func _process(delta:float):
   env.fog_light_color=Color("74665d")
   sun.light_energy*=1-.55*haze
  else:env.fog_density=.0013
+ if follow_colossus and bool(colossus.state.active) and is_instance_valid(colossus.root):
+  focus=focus.lerp(colossus.root.position,clampf(delta*3,0,1))
+  update_camera()
  if actors.has(selected):
   var n:Node3D=actors[selected].node
   cursor.show()
@@ -1473,6 +1490,8 @@ func _unhandled_input(event:InputEvent):
   if event is InputEventKey and event.pressed and event.keycode in [KEY_C,KEY_ESCAPE]:cave.leave()
   return
  if event is InputEventKey and event.pressed and not event.echo:
+  if event.keycode==KEY_G:toggle_colossus()
+  if event.keycode==KEY_H:show_colossus()
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
   if event.keycode==KEY_F2:start_onboarding()
@@ -1489,6 +1508,7 @@ func _unhandled_input(event:InputEvent):
   if event.keycode==KEY_P:left_panel.visible=not left_panel.visible;refresh()
   if event.keycode==KEY_F6:set_tour(not tour)
   if event.keycode==KEY_HOME:
+   follow_colossus=false
    following=false
    focus=centers[0]
    distance=27
@@ -1502,7 +1522,7 @@ func _unhandled_input(event:InputEvent):
     speed=0
    else:speed=previous_speed
    update_time_buttons()
-  if event.keycode==KEY_ESCAPE:power="Osserva";following=false;refresh();populate_powers(power_category.selected)
+  if event.keycode==KEY_ESCAPE:power="Osserva";following=false;follow_colossus=false;refresh();populate_powers(power_category.selected)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
   set_tour(false)
   following=false
@@ -1527,6 +1547,7 @@ func _unhandled_input(event:InputEvent):
    update_camera()
   elif event.button_index==MOUSE_BUTTON_LEFT:
    set_tour(false)
+   follow_colossus=false
    if power=="Osserva":
     select_at(event.position)
     if selected>=0 and onboarding_step==1 and onboarding.visible:advance_onboarding()
@@ -1921,6 +1942,7 @@ func setup_ui():
  button(row,"Poteri [P]",func():left_panel.visible=not left_panel.visible;refresh())
  button(row,"Vite",func():right_panel.visible=not right_panel.visible;inspector_tabs.current_tab=0)
  button(row,"Cronaca",show_legend)
+ button(row,"Orion",show_colossus)
  button(row,"Guida",show_help)
  button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
@@ -2403,6 +2425,7 @@ func save_path(path:String,show_hint:bool)->bool:
  d["districts"]=districts.export_state()
  d["origins"]=origins.export_state()
  d["legacy"]=legacy.export_state()
+ d["colossus"]=colossus.export_state()
  d["ash_time"]=ash_time
  d["cave"]=cave.export_state()
  d["rivers"]=rivers.export_state()
@@ -2480,6 +2503,8 @@ func load_path(p:String)->bool:
  origins.reset(self,data.get("origins",{}))
  legend.reset(self,data.get("legend",{}))
  legacy.reset(self,data.get("legacy",{}))
+ colossus_saved=data.get("colossus",{})
+ follow_colossus=false
  wildlife.reset(self,data.get("wildlife",{}))
  ocean.restore(self,data.get("ocean",{}))
  hydro_saved=data.get("hydrology",{})
@@ -2679,6 +2704,7 @@ func self_test():
  if not test_world_depth():failed=true
  if not test_living_legacy():failed=true
  if not test_artisan_anatomy():failed=true
+ if not test_colossus():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2828,7 +2854,7 @@ func populate_powers(i:int):
   b.tooltip_text=POWER_TIPS.get(name_value,"")
   power_buttons.append(b)
 func show_help():
- open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nC = grotta (Grande frontiera) | P = poteri | L = leggenda\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
+ open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nC = grotta (Grande frontiera) | P = poteri | L = leggenda | G = evoca/congeda Orion | H = custode\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
 func show_achievements():
  var entries=["Un mondo vivo","La via del commercio","Il secolo delle scoperte","La mano del Creatore","Eredità"]
  var lines=["TRAGUARDI  %d / %d"%[sim.achievements.size(),entries.size()]]
@@ -5360,6 +5386,7 @@ func _exit_tree():
  if rivers!=null:rivers.world=null
  if legacy!=null:legacy.world=null
  if divine_presentation!=null:divine_presentation.world=null
+ if colossus!=null:colossus.world=null
 
 
 func show_legend():
@@ -5773,68 +5800,161 @@ func capture_artisan_gallery()->int:
  new_world(47,0,true,true,true)
  speed=0
  hud.hide()
+ sim.spatial_autonomy=false
+ var growth=[]
  for stage in [0,2,4]:
-  for clan in range(2):
-   sim.villages[clan].era=stage
-   sim.villages[clan].houses=[4,9,16][int(stage/2)]
-   sim.villages[clan].wood=120
-   sync_houses(clan)
+  # No direct writes to technology, housing, population, wood or era.
+  while int(sim.villages[0].era)<stage and sim.day<240:
+   sim.daily()
+   apply_changes()
+   if sim.day%7==0:districts.sync()
+  if int(sim.villages[0].era)<stage:return ERR_CANT_CREATE
   districts.sync()
   rebuild_farms()
   rebuild_settlement_details()
   rebuild_roads()
   rebuild_meadow()
+  growth.append({"day":sim.day,"era":sim.villages[0].era,"houses":houses[0].size(),"population":sim.count(0),"wood":sim.villages[0].wood})
   focus=centers[0]
-  distance=19 if stage<4 else 25
-  pitch=.61
+  distance=21 if stage<4 else 30
+  pitch=.67
   azimuth=.54
   update_camera()
   await get_tree().create_timer(.35).timeout
   await RenderingServer.frame_post_draw
   var result=get_viewport().get_texture().get_image().save_png("res://preview-art-era-"+str(stage)+".png")
   if result!=OK:return result
+ var evidence=FileAccess.open("res://growth-evidence.json",FileAccess.WRITE)
+ if evidence==null:return ERR_CANT_CREATE
+ evidence.store_string(JSON.stringify({"seed":47,"mode":"aggregate daily simulation, no imposed era or houses","milestones":growth},"  "))
+ evidence.close()
+ print("GROWTH_CAPTURE ",JSON.stringify(growth))
  for kind in range(3):
   var chosen={}
   for a in sim.people:
    if Sim.anatomy(a)==kind:chosen=a;break
   if chosen.is_empty():return ERR_DOES_NOT_EXIST
   var r:Dictionary=actors[chosen.id]
+  var previous:Vector3=r.node.position
+  # A specimen portrait is deliberately staged on a clear temporary platform;
+  # restore the actual citizen after the picture.
+  var stage_node=Node3D.new()
+  add_child(stage_node)
+  stage_node.position=Vector3(0,22,0)
+  block(stage_node,Color("566d66"),Vector3(0,-.12,0),Vector3(4,.24,4))
+  r.node.position=stage_node.position
   r.node.rotation.y=0
   QualityAssurance.apply_pose(r,chosen,"walk",PI*.5)
-  focus=r.node.position
-  distance=3.4
-  pitch=.22
-  azimuth=.65
-  update_camera()
+  var center=r.node.position+Vector3.UP*.55
+  camera.position=center+Vector3(1.48,.46,2.05)
+  camera.look_at(center,Vector3.UP)
   await get_tree().create_timer(.22).timeout
   await RenderingServer.frame_post_draw
   var result=get_viewport().get_texture().get_image().save_png("res://preview-art-anatomy-"+str(kind)+".png")
+  r.node.position=previous
+  remove_child(stage_node)
+  stage_node.queue_free()
   if result!=OK:return result
  focus=centers[0]
- distance=17
- pitch=.51
+ distance=22
+ pitch=.54
  azimuth=.56
  update_camera()
  selected=-1
  unlimited=true
+ if not colossus.summon(0):return ERR_CANT_CREATE
+ focus=colossus.root.position
+ distance=17
+ pitch=.35
+ update_camera()
+ await get_tree().create_timer(.25).timeout
+ await RenderingServer.frame_post_draw
+ var giant=get_viewport().get_texture().get_image().save_png("res://preview-colossus.png")
+ if giant!=OK:return giant
+ var target:Vector3=houses[0][0].node.position if not houses[0].is_empty() else centers[0]
+ focus=target
+ distance=25
+ pitch=.62
+ update_camera()
  power="Guarigione"
  await RenderingServer.frame_post_draw
  var before=get_viewport().get_texture().get_image().save_png("res://preview-art-before.png")
  if before!=OK:return before
- divine(centers[0])
+ divine(target)
+ divine_presentation.update(.40)
  await RenderingServer.frame_post_draw
  var heal=get_viewport().get_texture().get_image().save_png("res://preview-art-heal.png")
  if heal!=OK:return heal
  power="Meteorite"
- divine(centers[0])
+ divine(target)
+ update_effects(.65)
  await RenderingServer.frame_post_draw
  var flight=get_viewport().get_texture().get_image().save_png("res://preview-art-meteor.png")
  if flight!=OK:return flight
- # Wait until the actual meteor effect has applied its destructive event.
- for i in range(12):
-  if not effects.any(func(e):return e.kind=="meteor"):break
-  await get_tree().create_timer(.25).timeout
+ update_effects(1.2)
+ await get_tree().create_timer(.25).timeout
  await RenderingServer.frame_post_draw
  var after=get_viewport().get_texture().get_image().save_png("res://preview-art-aftermath.png")
  power="Osserva"
  return after
+
+
+func toggle_colossus():
+ if colossus.summon(0):
+  follow_colossus=bool(colossus.state.active)
+  if follow_colossus:
+   set_tour(false)
+   following=false
+   selected=-1
+   focus=colossus.root.position
+   distance=17
+   pitch=.38
+   update_camera()
+  hint.text=colossus.report().replace("\n"," · ")
+ else:hint.text="Orion richiede 25 energia e una civiltà già nata."
+func show_colossus():
+ var dialog=AcceptDialog.new()
+ hud.add_child(dialog)
+ dialog.title="ORION — IL CUSTODE"
+ var panel=VBoxContainer.new()
+ dialog.add_child(panel)
+ text_label(panel,colossus.report(),16)
+ button(panel,"Evoca / congeda (25 energia alla chiamata)",func():toggle_colossus();dialog.hide();dialog.queue_free())
+ button(panel,"Incoraggia la misericordia",func():colossus.train(1);dialog.hide();dialog.queue_free())
+ button(panel,"Incoraggia la severità",func():colossus.train(-1);dialog.hide();dialog.queue_free())
+ button(panel,"Segui Orion",func():
+  if colossus.state.active:
+   set_tour(false)
+   selected=-1
+   following=false
+   follow_colossus=true
+   distance=17
+   pitch=.38
+  dialog.hide()
+  dialog.queue_free())
+ dialog.confirmed.connect(dialog.queue_free)
+ dialog.canceled.connect(dialog.queue_free)
+ dialog.popup_centered(Vector2i(460,280))
+func test_colossus()->bool:
+ new_world(47,0)
+ sim.energy=100
+ if not colossus.summon(0) or absf(sim.energy-75)>.01:return false
+ var a=sim.people[0]
+ a.health=30
+ a.hunger=0
+ actors[a.id].node.position=colossus.root.position
+ colossus.choose()
+ if colossus.action!="Guarigione":return false
+ if not colossus.act() or a.health!=55 or absf(sim.energy-67)>.01:return false
+ if colossus.act():return false
+ colossus.train(-1)
+ if absf(float(colossus.state.temperament)-.53)>.01:return false
+ var file="user://genesis47_colossus_test.json"
+ if not save_path(file,false):return false
+ new_world(47,0)
+ var ok=load_path(file)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
+ if not ok or not colossus.state.active or int(colossus.state.aid)<1 or absf(float(colossus.state.temperament)-.53)>.01:return false
+ print("COLOSSUS_TEST autonomous_decision=true energy=true healing=true cooldown=true learning=true persistence=true")
+ return true
