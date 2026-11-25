@@ -7,7 +7,7 @@ var cached_extent=0.0
 func extent()->float:return 96.0 if world.vast_world else 52.0
 func _ready():
  mouse_filter=Control.MOUSE_FILTER_STOP
- tooltip_text="Clicca per spostare la telecamera"
+ tooltip_text="Clicca o trascina con il tasto sinistro per spostare la telecamera"
 func _process(_delta):
  if world!=null:queue_redraw()
 func _draw():
@@ -52,10 +52,22 @@ func _draw():
  draw_rect(Rect2(Vector2.ZERO,size),Color("8dbca8"),false,1)
 func to_map(p:Vector3)->Vector2:
  return Vector2((p.x+extent())/(extent()*2)*size.x,(p.z+extent())/(extent()*2)*size.y)
+func move_camera(pos:Vector2):
+ if world==null or size.x<=0 or size.y<=0:return
+ var ratio=(pos/size).clamp(Vector2.ZERO,Vector2.ONE)
+ var p=ratio*extent()*2-Vector2.ONE*extent()
+ var limit=94.0 if world.vast_world else 50.0
+ world.set_tour(false)
+ world.focus=Vector3(clampf(p.x,-limit,limit),0,clampf(p.y,-limit,limit))
+ world.following=false
+ world.follow_colossus=false
+ world.update_camera()
+
 func _gui_input(event):
- if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and world!=null:
-  var p=event.position/size*extent()*2-Vector2.ONE*extent()
-  world.focus=Vector3(p.x,0,p.y)
-  world.following=false
-  world.update_camera()
+ if world==null:return
+ if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
+  if event.pressed:move_camera(event.position)
+  accept_event()
+ elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT)!=0:
+  move_camera(event.position)
   accept_event()

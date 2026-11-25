@@ -155,3 +155,5 @@ Questa versione privilegia ciò che il giocatore può vedere e vivere, mantenend
 - Aggiornamenti scheletrici a frequenza limitata (dettaglio 20 Hz, lontano 10 Hz, profilo Prestazioni lontano 5 Hz), senza rimuovere creature, animazioni o fisica.
 - Schermata di caricamento a fasi prima di generare il mondo; non è generazione completamente asincrona. F8 esporta performance-genesis47.json nella cartella utente, con FPS, costi medi per sezione del thread principale e statistiche worker. Benchmark include dati del worker.
 - QA_ASYNC_OCEAN confronta il risultato sincrono e quello del worker, conserva volume e verifica che un risultato obsoleto non sovrascriva un nuovo tsunami. Aggiunto test di avvio grafico normale su Linux; Windows resta smoke test headless. CI e benchmark reale da verificare; nessun FPS garantito.
+
+- Telecamera: tieni premuto il tasto sinistro sul terreno e trascina; un clic breve mantiene selezione/potere, il doppio clic segue la creatura. Il trascinamento non attiva poteri. Anche la minimappa si può trascinare con il sinistro; rotella, destro e WASD restano invariati.

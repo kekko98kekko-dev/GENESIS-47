@@ -248,6 +248,13 @@ var autonomy_clock=0.0
 var timber_points:Array=[]
 var precipitation:CPUParticles3D
 var map_view:Control
+const MAP_DRAG_THRESHOLD=6.0
+var map_press_active=false
+var map_dragging=false
+var map_press_position=Vector2.ZERO
+var map_last_position=Vector2.ZERO
+var map_double_click=false
+var map_pressed_power="Osserva"
 var activity_labels={}
 var show_labels=false
 var power_buttons:Array=[]
@@ -653,6 +660,7 @@ func make_terrain():
  sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
+ cancel_map_press()
  if cave.active:cave.leave()
  vast_world=wide
  colossus_saved={}
@@ -1560,6 +1568,76 @@ func export_performance():
  OS.shell_open(ProjectSettings.globalize_path("user://"))
 
 
+# A short click selects/uses a power; a drag never activates either.
+func begin_map_press(pos:Vector2,double_click:bool=false):
+ map_press_active=true
+ map_dragging=false
+ map_press_position=pos
+ map_last_position=pos
+ map_double_click=double_click
+ map_pressed_power=power
+
+func pan_map(relative:Vector2):
+ set_tour(false)
+ following=false
+ follow_colossus=false
+ var right=Vector3(cos(azimuth),0,-sin(azimuth))
+ var back=Vector3(sin(azimuth),0,cos(azimuth))
+ focus-=right*relative.x*distance*.0018
+ focus-=back*relative.y*distance*.0018
+ var limit=94.0 if vast_world else 50.0
+ focus.x=clampf(focus.x,-limit,limit)
+ focus.z=clampf(focus.z,-limit,limit)
+ update_camera()
+
+func move_map_press(pos:Vector2):
+ if not map_press_active:return
+ if not map_dragging and pos.distance_to(map_press_position)>=MAP_DRAG_THRESHOLD:
+  map_dragging=true
+ if map_dragging:
+  pan_map(pos-map_last_position)
+  map_last_position=pos
+
+func cancel_map_press():
+ map_press_active=false
+ map_dragging=false
+ map_double_click=false
+
+func finish_map_press(pos:Vector2,allow_click:bool=true):
+ if not map_press_active:return
+ move_map_press(pos)
+ var click=allow_click and not map_dragging and power==map_pressed_power
+ var double_click=map_double_click
+ cancel_map_press()
+ if not click:return
+ set_tour(false)
+ follow_colossus=false
+ if power=="Osserva":
+  select_at(pos)
+  if selected>=0 and onboarding_step==1 and onboarding.visible:advance_onboarding()
+  if double_click and actors.has(selected):follow_person(selected)
+ else:
+  var p=ground_at(pos)
+  if p.y>SEA-.5 and absf(p.x)<(94 if vast_world else 51) and absf(p.z)<(94 if vast_world else 51):divine(p)
+
+# Capture motion/release only after a press that started outside the HUD.
+# This also prevents a dragged power from firing on release over a panel.
+func _input(event:InputEvent):
+ if not map_press_active:return
+ if cave.active or welcome_open or (is_instance_valid(title_intro) and title_intro.visible):
+  cancel_map_press()
+  return
+ if event is InputEventMouseMotion:
+  if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+   cancel_map_press()
+   return
+  move_map_press(event.position)
+  get_viewport().set_input_as_handled()
+ elif event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT and not event.pressed:
+  var hovered=get_viewport().gui_get_hovered_control()
+  finish_map_press(event.position,hovered==null or hovered==hud)
+  get_viewport().set_input_as_handled()
+
 func _unhandled_input(event:InputEvent):
  if is_instance_valid(title_intro) and title_intro.visible:return
  if cave.active:
@@ -1601,15 +1679,7 @@ func _unhandled_input(event:InputEvent):
    update_time_buttons()
   if event.keycode==KEY_ESCAPE:power="Osserva";following=false;follow_colossus=false;refresh();populate_powers(power_category.selected)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
-  set_tour(false)
-  following=false
-  var right=Vector3(cos(azimuth),0,-sin(azimuth))
-  var back=Vector3(sin(azimuth),0,cos(azimuth))
-  focus-=right*event.relative.x*distance*.0018
-  focus-=back*event.relative.y*distance*.0018
-  focus.x=clampf(focus.x,-94 if vast_world else -50,94 if vast_world else 50)
-  focus.z=clampf(focus.z,-94 if vast_world else -50,94 if vast_world else 50)
-  update_camera()
+  pan_map(event.relative)
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
   set_tour(false)
   azimuth-=event.relative.x*.006
@@ -1622,16 +1692,8 @@ func _unhandled_input(event:InputEvent):
   elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN:
    distance=minf(220 if vast_world else 125,distance*1.16)
    update_camera()
-  elif event.button_index==MOUSE_BUTTON_LEFT:
-   set_tour(false)
-   follow_colossus=false
-   if power=="Osserva":
-    select_at(event.position)
-    if selected>=0 and onboarding_step==1 and onboarding.visible:advance_onboarding()
-    if event.double_click and actors.has(selected):follow_person(selected)
-   else:
-    var p=ground_at(event.position)
-    if p.y>SEA-.5 and absf(p.x)<(94 if vast_world else 51) and absf(p.z)<(94 if vast_world else 51):divine(p)
+  elif event.button_index==MOUSE_BUTTON_LEFT and not welcome_open:
+   begin_map_press(event.position,event.double_click)
 
 func ground_at(mouse:Vector2)->Vector3:
  var origin=camera.project_ray_origin(mouse)
@@ -3277,6 +3339,7 @@ func choose_motion(ap:AnimationPlayer,moving:bool):
  ap.speed_scale=1.0 if moving else 0.0
 
 func _notification(what:int):
+ if what==NOTIFICATION_WM_WINDOW_FOCUS_OUT:cancel_map_press()
  if what==NOTIFICATION_WM_CLOSE_REQUEST and not test_mode:
   if world_started and autosave_enabled and sim.villages.size()==2:
    save_path("user://genesis47_auto.json",false)

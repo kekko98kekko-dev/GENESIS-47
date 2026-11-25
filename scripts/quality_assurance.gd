@@ -27,11 +27,12 @@ func run(w)->bool:
  var water=ocean_audit()
  var async_water=async_ocean_audit()
  var politics=legacy_soak()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics}
+ var controls=map_drag_audit()
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics,"map_drag":controls}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and bool(controls.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -275,6 +276,27 @@ func async_ocean_audit()->Dictionary:
  var ok=accepted and not stale and error<.00001 and mass_error<.003 and stale_error<.00001
  print("QA_ASYNC_OCEAN equivalence=",error," mass_error=",mass_error," stale_error=",stale_error," ok=",ok)
  return {"ok":ok,"numeric_error":error,"mass_error":mass_error,"stale_error":stale_error,"worker":ocean.performance_report()}
+
+func map_drag_audit()->Dictionary:
+ world.focus=Vector3.ZERO
+ world.update_camera()
+ world.power="Meteorite"
+ var initial=world.focus
+ var energy=float(world.sim.energy)
+ world.begin_map_press(Vector2(500,400))
+ world.move_map_press(Vector2(503,402))
+ var short_ok=not world.map_dragging and world.focus.is_equal_approx(initial)
+ world.move_map_press(Vector2(560,430))
+ var moved=world.map_dragging and Vector2(world.focus.x,world.focus.z).length()>.1
+ world.finish_map_press(Vector2(560,430))
+ var safe=not world.map_press_active and is_equal_approx(float(world.sim.energy),energy) and world.power=="Meteorite"
+ world.power="Osserva"
+ world.pan_map(Vector2(100000,100000))
+ var limit=94.0 if world.vast_world else 50.0
+ var bounded=absf(world.focus.x)<=limit and absf(world.focus.z)<=limit
+ var ok=short_ok and moved and safe and bounded
+ print("QA_MAP_DRAG threshold=",short_ok," movement=",moved," no_power=",safe," bounds=",bounded," ok=",ok)
+ return {"ok":ok,"threshold":short_ok,"movement":moved,"no_power":safe,"bounds":bounded}
 
 func legacy_soak()->Dictionary:
  world.new_world(81,0)
