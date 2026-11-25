@@ -1,5 +1,6 @@
 extends RefCounted
 const Rig=preload("res://scripts/creature_rig.gd")
+const Art=preload("res://scripts/art_direction.gd")
 # Persistent citizens, local jobs, kinship, route-dependent production.
 const JOBS=["farm","gather","mine","craft","build","eat","sleep","social","heal"]
 const LABELS={"farm":"Coltiva","gather":"Raccoglie legna","mine":"Estrae pietra","craft":"Fabbrica utensili","build":"Costruisce","eat":"Mangia","sleep":"Riposa","social":"Socializza","heal":"Si cura"}
@@ -93,6 +94,7 @@ func sync():
     rig["tag"]=tag
     actors[id]=rig
    var r:Dictionary=actors[id]
+   Art.portrait(world,r,a)
    r.node.position=world.ground(float(a.position[0]),float(a.position[1]))
    r.node.scale=Vector3.ONE*clampf(.5+float(a.age)/26,.5,1)
    r.tag.text=str(a.name)+" · "+str(LABELS.get(a.task,"Decide"))
