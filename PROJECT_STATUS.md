@@ -18,11 +18,12 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 10.0.0 — Eredità del Creatore.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: 3fc7b329a32b96c62d455dd20279686ce48a991f.
-- Ultima versione interamente collaudata: 8.1, commit b1b8d293ebc6744a1c143f37e0a14f3c410a0bfe, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45586224131 (build e Windows riusciti, QA_SUITE PASS: 30 pose, 90 giorni filiera 157 unità/156 consegne, 90 giorni mondo autonomo 232 unità/207 consegne, errore onda 3,7357% dell'ampiezza iniziale).
+- Versione del codice: 10.1.0 — Profondità del mondo.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: f73203cb22dd46ec9a1ce34c4b036cf340b56f77.
+- Ultima versione interamente collaudata: 10.0, commit 3fc7b329a32b96c62d455dd20279686ce48a991f, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
-- 10.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588598696 fallita durante importazione Godot: parametro riservato trait in living_score.gd:135. Corretto in voice_trait nel commit 3fc7b329a32b96c62d455dd20279686ce48a991f. Nuovo run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853; stato queued, esito in attesa. Verificare prima di dichiarare stabile.
+- 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
+- 10.1: codice nel ramo qa-10-1-world-depth; nuovo collaudo da verificare.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -87,9 +88,19 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Cultura con identità che pesa sulle scelte delle attività; dissenso religioso e dialoghi, aiuto prioritario ai familiari, conforto durante il lutto, cicatrici. Genealogie consultabili, cronaca ampliata e obiettivi registrati anche fuori ordine. Mercati con tende, suoni originali di natura/città e vocalizzazioni sintetiche durante interazioni reali. Non certificati artisticamente o mediante playtest umano.
 - FRONTIER_TEST per percorso ampliato, quartieri, transizione evolutiva e genealogia; nuove catture preview-frontier.png e preview-city.png. I test standard e QA estesa restano attivi. Nessun modello AI esterno. Compatibilità dei vecchi salvataggi non è più un vincolo richiesto dal proprietario; nessuna cancellazione fisica di file personali, i nuovi mondi mantengono salvataggio/caricamento.
 
+
+## 10.1 — Profondità del mondo
+- Base 10.0 corretta (commit 3fc7b329a32b96c62d455dd20279686ce48a991f): run 45588892853 completata con successo, incluso avvio eseguibile Windows. SELF_TEST PASS, EXPERIENCE_TEST e FRONTIER_TEST superati, QA_SUITE PASS (30 pose; 90 giorni filiera, 157 unità/156 consegne; 90 giorni mondo autonomo, 228 unità/211 consegne; errore onda 3,74% dell'ampiezza iniziale). Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282. Benchmark software llvmpipe non rappresentativo di una GPU reale.
+- Screenshot 10.0 realmente esaminati: personaggi riconoscibili, HUD meno invasivo; palette troppo chiara, panoramica sbiadita, continenti circolari, architettura ancora semplificata. 10.1 corregge esposizione, nebbia, palette, silhouette, materiali, rive, dettagli delle case e pelle. Qualità artistica comparabile a produzioni commerciali non dimostrata.
+- Grande frontiera: C avvicina alla grotta, C entra; WASD nel livello sotterraneo separato, C/Esc esce. Collisioni, labirinto, cristallo unico persistente, ricompensa in energia/conoscenza e cronaca. Due corsi d'acqua con canali nel terreno, sezioni a volume conservativo, portata da sorgenti e meteo, trasferimenti da gradiente, deflusso contabilizzato e superfici 3D. Modello idraulico 1D lungo i canali, non CFD completo; deflusso periferico contabilizzato separatamente dal bacino centrale, non accoppiamento globale.
+- Distretti con posti di servizio reali per pasti, ricerca, svago, artigianato e cure; collegati a prenotazioni A*, bisogni e azioni già presenti. Limite di capacità nella Grande frontiera aumentato da 160 a 640 cittadini individuali sulla terraferma, abitazioni da 25 a 100 per popolo. Questi sono limiti teorici, non prova di una metropoli pienamente popolata o di FPS sostenibili. Case e quartieri crescono in base ai sistemi reali.
+- Fauna: quattro morfotipi (brucatore, saltatore, corazzato, predatore), differenze anatomiche, predazione e difesa, tratto corazza ereditabile, mutazioni, divergenza e registro estinzioni, fino a 180 animali. Modello semplificato, non speciazione scientificamente completa.
+- WORLD_DEPTH_TEST: capacità, registrazione dei servizi, bilancio idrico, quattro specie iniziali, ricerca del percorso nella grotta e movimento con collisioni, scoperta, persistenza e serializzazione di 200 cittadini. Catture reali di grotta e fiumi richieste dalla CI. Esito 10.1 da verificare.
+- PLAYTEST.md: protocollo di cinque ore per valutare l'esperienza, senza voti inventati; non è un playtest umano eseguito. Nessun modello AI esterno.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 10.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
-- P0: prova umana di gioco con la 10.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
+- P0: verificare esito finale CI 10.1, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: prova umana di gioco con la 10.1; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
 - P1: verificare visivamente la mesh connessa 8.0 e le animazioni; retarget professionale, IK e motion capture originale per i gesti specifici non equivalenti a registrazioni umane analoghe.
@@ -127,4 +138,4 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 ## Frase per riprendere in una nuova chat
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
 
-- Priorità residua 10.0: verificare errori CI e screenshot reali; prova umana continuativa. Limiti: bacino idrico centrale, cave senza interno, evoluzione accelerata, quartieri scenografici oltre le case realmente simulate, popolazione ancora limitata, qualità artistica e coinvolgimento non dimostrati.
+- Priorità residua 10.1: verificare pipeline, nuove catture e stabilità con popolazioni elevate; eseguire PLAYTEST.md. Limiti: bacino oceanico centrale separato, fiumi 1D, una grotta esplorabile, metropoli non ancora dimostrata, quattro morfotipi semplificati e qualità artistica/coinvolgimento non certificati.
