@@ -18,10 +18,10 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 8.1.0 — Collaudo esteso.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: a43b83d3eada80b31e73c258d6dfb1d1a19364d2.
-- Ultima versione interamente collaudata: 8.0, commit 66912d7455ca79bddcaf49ee39688211cb84e057, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45585262895 (build, Windows e SELF_TEST PASS; CONTINUOUS_TEST 7634 vertici, filiere, persistenza e spostamento oceanico).
-- 8.1: pubblicata in main (commit b1b8d293ebc6744a1c143f37e0a14f3c410a0bfe). Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45586224131; stato queued, esito in attesa. Verificare rapporto QA e catture prima di dichiarare stabile.
+- Versione del codice: 9.0.0 — Mondo vivente.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: f73acf07bddf865f91b4192615449ab3f8488bb9.
+- Ultima versione interamente collaudata: 8.1, commit b1b8d293ebc6744a1c143f37e0a14f3c410a0bfe, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45586224131 (build e Windows riusciti, QA_SUITE PASS: 30 pose, 90 giorni filiera 157 unità/156 consegne, 90 giorni mondo autonomo 232 unità/207 consegne, errore onda 3,7357% dell'ampiezza iniziale).
+- 9.0: codice sviluppato sul ramo upgrade-9-0-player-experience; pipeline da verificare dopo pubblicazione.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -69,9 +69,17 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - scripts/quality_assurance.gd: 30 pose con verifica numerica; 90 giorni di filiera controllata (domanda simulata, capitale iniziale, interruzione e salvataggio); 90 giorni di mondo autonomo; oceano a riposo, volume relativo, drenaggio, modifica terreno e riferimento di onda stazionaria. Soglia onda 15% ampiezza iniziale. Risultati da leggere nel nuovo qa-report.json.
 - scripts/world.gd: modalità --qa-test, sei catture delle pose, migliore inquadratura arcipelago, rilascio dei riferimenti circolari. Workflow esporta rapporto e immagini. Nessuna AI esterna.
 
+## Modifiche 9.0 — Esperienza del giocatore
+- Decisione del proprietario: rispondere alle critiche da giocatore esterno; smettere di privilegiare complessità invisibile e rendere la simulazione leggibile, emotiva e riconoscibile.
+- scripts/art_direction.gd: sei biomi cromatici, specie arboree, architetture di sette ere e due culture, copricapi, abbigliamento, accessori e proporzioni genetiche/età/ruolo. scripts/world.gd: illuminazione, HUD con pannelli su richiesta, mappa indipendente, nuovi luoghi esplorabili, cronaca e selezione rapida.
+- scripts/legend.gd: sei capitoli facoltativi, eventi e coordinate, protagonisti, testimonianze, amore/timore, tradizioni, santuari con costo, percorsi di preghiera, lutto e memoriali, accesso a storie e luoghi. Salvataggio e caricamento.
+- scripts/wildlife.gd: fauna autonoma, risorse, clima, tratti ereditabili e mutazioni, nascite/morti, stato RNG persistente. Fino a 72 organismi; non è evoluzione completa da vita primordiale a cittadino.
+- scripts/living_score.gd: score originale procedurale, crisi e meteo. scripts/industry.gd: macchinari visibili in attività reale. Catastrofi con feedback camera. Nuove catture HUD e ispettore.
+- EXPERIENCE_TEST: capitoli, fede, testimonianze, santuario, pellegrinaggio, memoriali, fauna e persistenza. Esito CI da verificare. Non dichiarare la grafica o il coinvolgimento "professionali" senza prove umane.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 8.1, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
-- P0: test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
+- P0: verificare esito finale CI 9.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: prova umana di gioco con la 9.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
 - P1: verificare visivamente la mesh connessa 8.0 e le animazioni; retarget professionale, IK e motion capture originale per i gesti specifici non equivalenti a registrazioni umane analoghe.
@@ -82,6 +90,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Non introdurre LLM locale da centinaia di MB: rimosso in 4.1. Preferire intelligenza di gioco leggera e verificabile.
 
 ## Mappa del codice e collaudo
+- 9.0: art_direction.gd, legend.gd, wildlife.gd, living_score.gd. EXPERIENCE_TEST nel self-test. Limiti residui specifici: estensione fisica della mappa, origine primordiale delle civiltà, qualità artistica da validare, vere metropoli e culture/sistemi completi, playtest umano e audio. Non confondere nuovi biomi con estensione della griglia.
 - Collaudo esteso: godot --headless --path . -- --qa-test; qa-report.json, QA_SUITE PASS e sei immagini preview-pose-* nella pipeline. Non dichiarare superati questi controlli fino ai risultati reali.
 - project.godot / main.tscn: avvio, configurazione, versione.
 - scripts/sim.gd: modello di simulazione, bisogni, attività, evoluzione, relazioni, cultura, stato serializzato.
@@ -102,7 +111,8 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - 25/11/2026 — 6.0: cittadini individuali nelle colonie, banche, mocap camminata reale e skinning, idrologia e danni strutturali. CI completa riuscita.
 - 25/11/2026 — 7.0: imprese e filiere, credito aziendale, clip CMU multiple, rig esteso e particelle fluidi 3D. CI completa riuscita.
 - 25/11/2026 — 8.0: mesh continua, clip per tutti i compiti, filiere a unità, oceano multistrato. CI completa e Windows riusciti; immagini reali esaminate.
-- 25/11/2026 — 8.1: correzioni mirate e collaudo esteso con rapporto. Test da verificare.
+- 25/11/2026 — 8.1: collaudo esteso completato con successo, incluso Windows.
+- 25/11/2026 — 9.0: direzione artistica, HUD, leggenda, religioni, memoriali, fauna evolutiva, musica e fabbriche visibili; test da verificare.
 
 ## Frase per riprendere in una nuova chat
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
