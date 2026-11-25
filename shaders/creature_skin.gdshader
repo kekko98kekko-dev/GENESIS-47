@@ -9,7 +9,9 @@ void fragment(){
  float spots=smoothstep(.73,.97,m);
  float gradient=smoothstep(-.5,.48,p.y);
  ALBEDO=skin_color.rgb*(.88+.17*gradient);
- ALBEDO=mix(ALBEDO,skin_color.rgb*.69,spots*.25);
+ ALBEDO=mix(ALBEDO,skin_color.rgb*.57,spots*.42);
+ float stripes=smoothstep(.74,.96,sin(p.y*17.+p.z*9.+sin(p.x*12.)));
+ ALBEDO*=mix(1.,.76,stripes*.42);
  ROUGHNESS=.64+spots*.12;
  SPECULAR=.28;
 }
