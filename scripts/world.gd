@@ -4874,13 +4874,16 @@ func test_continuous_systems()->bool:
    if not adj.has(v):adj[v]=[]
    adj[u].append(v)
    adj[v].append(u)
- var seen={indices[0]:true}
+ var seen={}
+ seen[indices[0]]=true
  var todo=[indices[0]]
  while not todo.is_empty():
   var id=int(todo.pop_back())
   for other in adj.get(id,[]):
    if not seen.has(other):seen[other]=true;todo.append(other)
  if seen.size()!=vertices.size():return false
+ for task in Sim.TASK_LABELS:
+  if not MotionLibrary.TASKS.has(task) or not MotionLibrary.CLIPS.has(MotionLibrary.TASKS[task]):return false
  var market=ocean.industry
  sim.villages[0].food=100.0
  sim.villages[0].wood=100.0
@@ -4899,6 +4902,13 @@ func test_continuous_systems()->bool:
  if market.produced_units<1 or market.delivered_units<1:return false
  if absf(float(ocean.balance(0,"food"))-food_before+1.5)>.001:return false
  if absf(float(ocean.balance(0,"cash"))+market.cash_total()+float(worker.coins)-cash_before)>.001:return false
+ if not market.create_company(0,"bakery",24.0):return false
+ var buyer:Dictionary=market.companies[1]
+ var before_delivery=float(market.delivered_units)
+ for i in range(400):
+  market.advance(0,worker,node,.25)
+  if market.delivered_units>before_delivery:break
+ if float(buyer.stock.get("flour",0))<1:return false
  var wet_cell=-1
  for i in range(ocean_dynamics.wet.size()):
   if ocean_dynamics.wet[i] and ocean_dynamics.bed[i]>2:
