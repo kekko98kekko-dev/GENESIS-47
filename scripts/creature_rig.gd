@@ -57,7 +57,7 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var blend=clampf(dt*14,0,1)
  var task=str(a.get("industry_action",a.get("task","")))
  var clip="idle"
- if moving:clip="run" if float(a.get("stress",0))>75 else ("carry" if bool(a.get("delivery",false)) or task in ["trade","deliver"] else "walk")
+ if moving:clip="run" if float(a.get("stress",0))>75 else ("deliver" if task=="deliver" else ("trade" if task=="trade" else ("carry" if bool(a.get("delivery",false)) else "walk")))
  elif str(a.get("task_stage",""))=="In corso" or task=="industry":clip=str(Library.TASKS.get(task,"idle"))
  var phase=float(r.phase)
  var axial:Array=rig.axial
