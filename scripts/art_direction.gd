@@ -3,6 +3,9 @@ extends RefCounted
 const BIOMES=["Prateria di giada","Bosco cremisi","Brughiera di pietra","Dune dell'alba","Selva della nebbia","Vetta delle nevi"]
 const PALETTES=[["456e52","a8c47b"],["655448","bd9666"],["566b69","91aaa1"],["ad8050","e5c691"],["294f4a","659d86"],["808d91","e4ebeb"]]
 static func biome(w,p:Vector3)->int:
+ if w.vast_world:
+  var frontier=preload("res://scripts/frontier.gd").biome(p)
+  if frontier>=0:return frontier
  if p.y>9.5:return 5
  if w.ocean.enabled:
   if Vector2(p.x,p.z).distance_to(w.REGION_POINTS[1])<13:return 4
@@ -87,7 +90,7 @@ static func portrait(w,r:Dictionary,a:Dictionary):
  var age=float(a.age)
  var role=str(a.get("role","Esploratore"))
  var leader=int(w.sim.villages[clan].culture.leader)==int(a.id)
- var key=role+str(int(age/12))+str(leader)+str(int(w.sim.villages[clan].era))+str(int(a.get("sick",0)>0))
+ var key=role+str(int(age/12))+str(leader)+str(int(w.sim.villages[clan].era))+str(int(a.get("sick",0)>0))+str(int(a.get("scars",0)))
  if r.get("identity_key","")==key:return
  r["identity_key"]=key
  if is_instance_valid(r.get("identity_head")):r.identity_head.hide();r.identity_head.queue_free()
@@ -124,6 +127,9 @@ static func portrait(w,r:Dictionary,a:Dictionary):
  else:
   w.block(b,cloth,Vector3(.18,-.21,-.29),Vector3(.30,.42,.20))
   w.block(b,accent,Vector3(.18,-.08,-.40),Vector3(.26,.12,.035))
+ if int(a.get("scars",0))>0:
+  var scar=w.block(h,Color("89665a"),Vector3(.22,-.02,.29),Vector3(.035,.15,.025))
+  scar.rotation.z=.48
  if int(a.get("sick",0))>0:w.sphere(h,Color("bf9b73"),Vector3(.22,-.09,.32),Vector3(.13,.085,.045))
  # Individual inherited crest/face proportions remain visible beneath clothing.
  var body:Node3D=r.body
