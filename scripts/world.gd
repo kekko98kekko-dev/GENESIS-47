@@ -3,7 +3,7 @@ const Sim=preload("res://scripts/sim.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
-const POWERS=["Osserva","Vita","Foresta","Provviste","Guarigione","Meteorite","Conoscenza","Pace","Mutazione","Pioggia","Conflitto","Fede","Fulmine","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Profeta","Nuova specie","Carestia"]
+const POWERS=["Osserva","Vita","Foresta","Provviste","Guarigione","Meteorite","Conoscenza","Pace","Mutazione","Pioggia","Conflitto","Fede","Fulmine","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Profeta","Nuova specie","Carestia","Incendio","Terremoto","Tornado","Epidemia"]
 const SAVE_PREFIX="user://genesis47_slot"
 var sim=Sim.new()
 var rng=RandomNumberGenerator.new()
@@ -31,6 +31,15 @@ var life_overlay:Label
 var show_world_labels=false
 var discovery_sites:Array=[]
 var discovery_root:Node3D
+var hazard_root:Node3D
+var hazards:Array=[]
+var hazard_nodes:Dictionary={}
+var next_hazard=1
+var hazard_tick=0.0
+var society_tick=0.0
+var battle_count=0
+var outposts:Array=[]
+var outpost_root:Node3D
 var ruins:Array=[]
 var scars:Array=[]
 var ruin_root:Node3D
@@ -174,7 +183,7 @@ var power_category:OptionButton
 var power_grid:VBoxContainer
 var help_dialog:AcceptDialog
 var selected_status:Label
-const GROUPS=[["Osserva","Vita","Foresta","Provviste","Guarigione","Pioggia","Resurrezione"],["Conoscenza","Pace","Fede","Profeta","Mutazione","Nuova specie"],["Meteorite","Conflitto","Fulmine","Tsunami","Vulcano","Carestia"],["Montagna","Lago"]]
+const GROUPS=[["Osserva","Vita","Foresta","Provviste","Guarigione","Pioggia","Resurrezione"],["Conoscenza","Pace","Fede","Profeta","Mutazione","Nuova specie"],["Meteorite","Conflitto","Fulmine","Tsunami","Vulcano","Carestia","Incendio","Terremoto","Tornado","Epidemia"],["Montagna","Lago"]]
 const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"Crea un abitante nel popolo più vicino.","Foresta":"Pianta alberi e aggiunge legna.","Provviste":"Aggiunge 100 unità di cibo.","Guarigione":"Ripristina salute e cura malattie in un raggio di 6 m.","Pioggia":"Aumenta le risorse alimentari.","Resurrezione":"Riporta in vita un abitante defunto.","Conoscenza":"Accelera la ricerca del popolo.","Pace":"Migliora le relazioni fra le civiltà.","Fede":"Aumenta la fiducia nel Creatore.","Profeta":"Ispira un profeta persistente.","Mutazione":"Cambia i tratti genetici degli abitanti vicini.","Nuova specie":"Genera un individuo con tratti casuali.","Meteorite":"Danneggia la zona e scava un cratere.","Conflitto":"Riduce la pace fra i popoli.","Fulmine":"Colpisce gli abitanti nelle vicinanze.","Tsunami":"Danneggia abitanti e scorte.","Vulcano":"Solleva il terreno e scatena un'eruzione.","Carestia":"Riduce le scorte alimentari.","Montagna":"Solleva il terreno.","Lago":"Abbassa il terreno."}
 
 func _ready():
@@ -518,6 +527,12 @@ func new_world(seed_value:int,which:int):
  planted.clear()
  deformation.clear()
  discovery_sites.clear()
+ hazards.clear()
+ outposts.clear()
+ next_hazard=1
+ hazard_tick=0.0
+ society_tick=0.0
+ battle_count=0
  completed_visible=0
  house_sites=[[],[]]
  ruins.clear()
@@ -542,7 +557,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -585,7 +600,10 @@ func reset_visuals():
  ruin_root=Node3D.new()
  service_root=Node3D.new()
  discovery_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root]:add_child(n)
+ hazard_root=Node3D.new()
+ outpost_root=Node3D.new()
+ hazard_nodes.clear()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -632,6 +650,8 @@ func reset_visuals():
  rebuild_navigation()
  rebuild_services()
  rebuild_discoveries()
+ rebuild_outposts()
+ rebuild_hazards()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -1087,6 +1107,11 @@ func _process(delta:float):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
     r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
   if not sim.changes.is_empty():apply_changes()
+  society_tick+=delta*minf(speed,20.0)
+  if society_tick>=1.0:
+   society_tick=0.0
+   spatial_society()
+  update_worksites()
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1155,10 +1180,11 @@ func _process(delta:float):
    var hp=ground_at(get_viewport().get_mouse_position())
    if hp.y>SEA-.5:
     hover_ring.position=hp+Vector3.UP*.12
-    var radius=float({"Meteorite":7.0,"Fulmine":2.4,"Tsunami":11.0,"Vulcano":9.0,"Montagna":5.0,"Lago":6.0}.get(power,6.0))
+    var radius=float({"Incendio":3.0,"Terremoto":8.0,"Tornado":4.0,"Epidemia":6.0,"Meteorite":7.0,"Fulmine":2.4,"Tsunami":11.0,"Vulcano":9.0,"Montagna":5.0,"Lago":6.0}.get(power,6.0))
     hover_ring.scale=Vector3(radius/6.0,1,radius/6.0)
     hover_ring.visible=true
  update_effects(delta)
+ if speed>0:update_hazards(delta*minf(speed,12.0))
 
 func _unhandled_input(event:InputEvent):
  if event is InputEventKey and event.pressed and not event.echo:
@@ -1354,7 +1380,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
 
 func divine(p:Vector3):
  if power=="Osserva":return
- var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago"] else 9.0
+ var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Incendio","Terremoto","Tornado","Epidemia"] else 9.0
  if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=Sim.LIMIT:
   hint.text="Limite della popolazione raggiunto."
   return
@@ -1389,6 +1415,7 @@ func divine(p:Vector3):
     make_tree(place,h,i)
     planted.append({"x":place.x,"z":place.z,"h":h,"i":i})
    v.wood+=24
+   services_dirty=true
   "Provviste":v.food=minf(850,v.food+100)
   "Guarigione":
    for a in near:
@@ -1399,6 +1426,7 @@ func divine(p:Vector3):
     sim.remember(a,"Il Creatore mi ha guarito.")
   "Meteorite":
    color=Color("eb713b")
+   if not test_mode:warn_near(p,8.0)
    meteor(p,true)
   "Conoscenza":v.knowledge+=65
   "Pace":sim.peace=minf(100,sim.peace+22)
@@ -1431,11 +1459,12 @@ func divine(p:Vector3):
   "Tsunami":
    wave(p)
    color=Color("7fc9dd")
-   disaster(p,"Tsunami",11.0,90.0,0.0,0.0)
+   start_hazard("flood",p,6.0)
   "Vulcano":
    impact_cloud(p)
    color=Color("e67f43")
    disaster(p,"Vulcano",9.0,110.0,5.0,7.0)
+   start_hazard("fire",p,10.0)
   "Resurrezione":
    if not sim.dead.is_empty():
     var old=sim.dead.pop_back()
@@ -1463,6 +1492,21 @@ func divine(p:Vector3):
     create_actor(a)
     actors[a.id].node.position=p
   "Carestia":v.food*=.22
+  "Incendio":
+   color=Color("ef8542")
+   start_hazard("fire",p,12.0)
+  "Terremoto":
+   color=Color("c4a17d")
+   disaster(p,"Terremoto",8.0,70.0,-.45,7.0)
+  "Tornado":
+   color=Color("c1d3d2")
+   start_hazard("tornado",p,10.0)
+  "Epidemia":
+   color=Color("a3b76d")
+   for a in near:
+    a.sick=maxi(a.sick,9)
+    a.stress=minf(100,a.stress+20)
+   life_bubble(p,"CONTAGIO",color)
  for a in near:
   if sim.find(int(a.id)).is_empty():continue
   if power in ["Guarigione","Provviste","Pace","Pioggia"]:sim.adjust_trust(a,5)
@@ -1539,7 +1583,7 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47  /  VITA",22)
+ title=text_label(row,"GENESIS 47  /  EVOLUZIONE",22)
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
@@ -1779,6 +1823,7 @@ func refresh():
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
   details.text="AZIONE: "+str(a.get("activity","Decide"))+"\n"+str(a.get("task_stage",""))+" · "+str(a.get("task_reason",""))+"\nStanchezza "+str(int(a.get("fatigue",0)))+"% · Noia "+str(int(a.get("boredom",0)))+"%\nAttività concluse: "+str(a.get("tasks_done",0))+"\n\n"+details.text
   details.text="UMORE: "+str(a.emotion)+" · "+str(a.routine)+"\n"+(str(a.special_memory)+"\n" if int(a.special_until)>sim.day else "")+details.text
+  details.text+="\nRisparmi: "+str(int(a.coins))+" · Utensile: "+str(int(a.tool))+"%\n"+ "Carattere: "+str(a.social_style)
   details.text+="\nDimora: "+("assegnata" if not str(a.get("home_key","")).is_empty() else "senza casa")+" · Carico: "+(str(a.get("cargo","")) if not str(a.get("cargo","")).is_empty() else "—")
   details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
   details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
@@ -2034,6 +2079,10 @@ func save_path(path:String,show_hint:bool)->bool:
  d["destroyed_total"]=destroyed_total
  d["discovery_sites"]=discovery_sites
  d["completed_visible"]=completed_visible
+ d["hazards"]=hazards
+ d["next_hazard"]=next_hazard
+ d["battle_count"]=battle_count
+ d["outposts"]=outposts
  d["pending_meteors"]=[]
  for e in effects:
   if e.kind=="meteor" and e.get("destructive",false):d.pending_meteors.append([e.dest.x,e.dest.z])
@@ -2097,6 +2146,10 @@ func load_path(p:String)->bool:
  destroyed_total=int(data.get("destroyed_total",0))
  discovery_sites=data.get("discovery_sites",[])
  completed_visible=int(data.get("completed_visible",0))
+ hazards=data.get("hazards",[])
+ next_hazard=int(data.get("next_hazard",1))
+ battle_count=int(data.get("battle_count",0))
+ outposts=data.get("outposts",[])
  reset_visuals()
  for pending in data.get("pending_meteors",[]):
   if pending is Array and pending.size()==2:meteor(ground(float(pending[0]),float(pending[1])),true)
@@ -2256,6 +2309,8 @@ func self_test():
  if not test_destruction():failed=true
  if not test_services():failed=true
  if not test_life_upgrade():failed=true
+ if not test_integrated_upgrade():failed=true
+ if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
@@ -3110,7 +3165,7 @@ func run_benchmark():
  for i in range(125):sim.daily()
  apply_changes()
  for i in range(2):sync_houses(i)
- var info={"version":"2.0.0","cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"seed":47,"day":sim.day,"profiles":[]}
+ var info={"version":str(ProjectSettings.get_setting("application/config/version")),"cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"seed":47,"day":sim.day,"profiles":[]}
  var names=["Prestazioni","Bilanciata","Qualita"]
  for profile in range(3):
   apply_quality(profile)
@@ -3171,7 +3226,7 @@ func show_playtest():
  button(box,"Salva rapporto locale",func():
   var results={}
   for i in range(tasks.size()):results[tasks[i]]=checks[i].button_pressed
-  var record={"version":"2.0.0","date":Time.get_datetime_string_from_system(),"tasks_completed_without_help":results,"notes":notes.text}
+  var record={"version":str(ProjectSettings.get_setting("application/config/version")),"date":Time.get_datetime_string_from_system(),"tasks_completed_without_help":results,"notes":notes.text}
   var path="user://playtest-"+str(Time.get_unix_time_from_system()).replace(".","-")+".json"
   var f=FileAccess.open(path,FileAccess.WRITE)
   if f!=null:
@@ -3248,7 +3303,7 @@ func task_destination(a:Dictionary)->Vector3:
    return nearest
   "research":return c+Vector3(-2,0,-2)+offset
   "build":return c+Vector3(2,0,-3)+offset
-  "social","aid":
+  "social","aid","teach":
    if actors.has(int(a.task_target)):return actors[int(a.task_target)].node.position+offset*.7
    return c+offset*2
   "play":return c+Vector3(-3,0,3)+offset
@@ -3267,7 +3322,7 @@ func route_actor(a:Dictionary,r:Dictionary)->bool:
  var n:Node3D=r.node
  var start=near_cell(n.position)
  var goal:Vector3=task_destination(a)
- if sim.spatial_autonomy and a.task not in ["social","aid","explore"]:
+ if sim.spatial_autonomy and a.task not in ["social","aid","teach","explore"]:
   if not claim_service(a,r):return false
   goal=services[str(a.station_id)].pos
  var finish=near_cell(goal)
@@ -3323,22 +3378,23 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  if float(r.get("retry",0))>0:
   r.retry=maxf(0,float(r.retry)-dt)
   return false
- if a.task!="" and a.task not in ["eat","sleep","heal"] and (a.hunger>=91 and sim.villages[a.clan].food>=1 or a.fatigue>=94 or a.health<35):
+ if a.task!="" and not a.delivery and a.task not in ["eat","sleep","heal"] and (a.hunger>=91 and sim.villages[a.clan].food>=1 or a.fatigue>=94 or a.health<35):
   cancel_task(a,r)
   return false
  if a.task=="":
   leave_interior(r)
   sim.begin_task(a,sim.choose_task(a,available_actions(a,r) if sim.spatial_autonomy else {}))
- if sim.spatial_autonomy and a.task not in ["social","aid","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
+ if sim.spatial_autonomy and a.task not in ["social","aid","teach","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
   cancel_task(a,r)
   return false
  if sim.spatial_autonomy and claims.has(int(a.id)) and not service_open(str(claims[int(a.id)]),a):
   cancel_task(a,r)
   return false
- if a.task in ["social","aid"] and not actors.has(int(a.task_target)):
+ if a.task in ["social","aid","teach"] and not actors.has(int(a.task_target)):
   cancel_task(a,r)
   return false
  if str(r.get("planned_task",""))!=a.task or int(r.get("nav_version",-1))!=nav_version:
+  leave_interior(r)
   if not route_actor(a,r):
    cancel_task(a,r)
    return false
@@ -3363,7 +3419,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
    budget-=diff.length()
    r.route_index+=1
   if int(r.route_index)<r.route.size():return true
- if a.task in ["social","aid"]:
+ if a.task in ["social","aid","teach"]:
   var partner:Node3D=actors[int(a.task_target)].node
   if Vector2(n.position.x-partner.position.x,n.position.z-partner.position.z).length()>2.0:
    r["social_retry"]=float(r.get("social_retry",0))+dt
@@ -3573,6 +3629,9 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
   else:
    sim.adjust_trust(a,-10)
    sim.remember(a,"Sono sopravvissuto a "+kind+".")
+ for post in outposts.duplicate():
+  if flat_dist(p,Vector3(float(post.x),0,float(post.z)))<=radius:outposts.erase(post)
+ rebuild_outposts()
  scars.append({"x":p.x,"z":p.z,"r":radius,"until":sim.day+28})
  if scars.size()>256:scars.pop_front()
  for child in scenery.get_children():
@@ -3659,6 +3718,12 @@ func register_service(kind:String,clan:int,p:Vector3,capacity:int,caption:String
    "research":
     block(node,Color("795c45"),Vector3(-.6,.4,0),Vector3(.8,.13,.7))
     block(node,Color("decba4"),Vector3(-.6,.5,0),Vector3(.40,.09,.32))
+   "craft":
+    block(node,Color("61584d"),Vector3(-.6,.32,0),Vector3(.8,.62,.65))
+    block(node,Color("a6b0b4"),Vector3(-.6,.70,0),Vector3(.48,.15,.26))
+    block(node,Color("9e734a"),Vector3(-.6,.80,.1),Vector3(.45,.06,.06))
+   "guard":
+    cone(node,tint,Vector3(-.55,.8,0),.10,1.6,.04,6)
    "build","house":
     block(node,Color("9c7953"),Vector3(-.65,.07,0),Vector3(.85,.14,.85))
     for j in range(3):
@@ -3675,6 +3740,17 @@ func register_service(kind:String,clan:int,p:Vector3,capacity:int,caption:String
   label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
   label.modulate=Color("f4e7c5")
   services[key]["label"]=label
+  services[key]["node"]=node
+  services[key]["caption"]=caption
+  if kind=="house":
+   var frame=Node3D.new()
+   node.add_child(frame)
+   for xx in [-.9,.9]:
+    for zz in [-.9,.9]:block(frame,Color("b08c62"),Vector3(xx,.6,zz),Vector3(.10,1.2,.10))
+   block(frame,Color("c8ae80"),Vector3(0,1.2,-.9),Vector3(1.9,.13,.13))
+   block(frame,Color("c8ae80"),Vector3(0,1.2,.9),Vector3(1.9,.13,.13))
+   frame.hide()
+   services[key]["frame"]=frame
  return key
 
 func rebuild_services():
@@ -3683,6 +3759,8 @@ func rebuild_services():
   service_root.remove_child(child)
   child.queue_free()
  var old_claims=claims.duplicate()
+ for a in sim.people:
+  if actors.has(a.id) and actors[a.id].has("door_position") and a.task!="sleep":leave_interior(actors[a.id])
  services.clear()
  claims.clear()
  for i in range(2):
@@ -3696,14 +3774,18 @@ func rebuild_services():
   register_service("research",i,c+Vector3(-3.0,0,-3.0),3,"RICERCA")
   register_service("play",i,c+Vector3(-3.0,0,3.0),4,"PIAZZA")
   register_service("build",i,c+Vector3(3.0,0,-3.0),3,"OPERA CIVILE")
+  if sim.villages[i].tech>=2:register_service("craft",i,c+Vector3(-4.5,0,0),2,"OFFICINA")
+  register_service("guard",i,c.lerp(centers[1-i],.34),4,"CONFINE")
   for home in houses[i]:
    var q:Vector3=home.node.position
    var door=q+(c-q).normalized()*2.0
-   var key=register_service("sleep",i,door,4,"DIMORA")
+   var key=register_service("sleep",i,door,4,"DIMORA",false)
    if key!="":
     services[key]["home"]=site_key("home",i,q)
     services[key]["building"]=home.node
   for q in farm_points[i]:register_service("farm",i,q,3,"CAMPO")
+  for post in outposts:
+   if int(post.clan)==i:register_service("farm",i,ground(float(post.x),float(post.z)),2,"AVAMPOSTO",false)
   if sim.villages[i].era<2:
    for j in range(3):
     var q=c+Vector3(4.0+j*2.2,0,4.5 if i==0 else -4.5)
@@ -3720,7 +3802,7 @@ func rebuild_services():
   var key=str(old_claims[id])
   if not citizen.is_empty() and citizen.station_id==key and service_open(key,citizen):claims[int(id)]=key
  for a in sim.people:
-  if actors.has(a.id) and not claims.has(int(a.id)) and a.task not in ["social","aid","explore"]:actors[a.id]["planned_task"]=""
+  if actors.has(a.id) and not claims.has(int(a.id)) and a.task not in ["social","aid","teach","explore"]:actors[a.id]["planned_task"]=""
  services_dirty=false
  update_service_labels()
 
@@ -3760,6 +3842,7 @@ func service_open(key:String,a:Dictionary)->bool:
  if used>=int(row.capacity):return false
  if row.kind=="eat" and sim.villages[a.clan].food<meals+1:return false
  if row.kind=="house" and sim.villages[a.clan].wood<22:return false
+ if row.kind=="craft" and sim.villages[a.clan].wood<4:return false
  if row.kind=="sleep" and a.home_key!=key and not (a.home_key=="" and row.get("temporary",false)):return false
  if row.kind=="house" and sim.villages[a.clan].houses>=mini(25,3+int(sim.count(a.clan)/4)+sim.villages[a.clan].era):return false
  return true
@@ -3775,13 +3858,16 @@ func nearest_service(a:Dictionary,kind:String,origin:Vector3)->String:
  return best
 
 func available_actions(a:Dictionary,r:Dictionary)->Dictionary:
- var result={"explore":8.0,"social":4.0,"aid":4.0}
+ var result={"explore":8.0,"social":4.0,"aid":4.0,"teach":4.0}
  var origin:Vector3=r.node.position
- for kind in ["eat","sleep","heal","farm","gather","research","build","house","play"]:
+ for kind in ["eat","sleep","heal","farm","gather","research","build","house","play","craft","guard"]:
   var key=nearest_service(a,kind,origin)
   if key!="":result[kind]=flat_dist(origin,services[key].pos)
  # Emergency rest on safe ground, even when every dwelling is gone.
  if not result.has("sleep") and a.home_key=="":result.sleep=0.0
+ if nearest_service(a,"store",origin)=="":
+  result.erase("farm")
+  result.erase("gather")
  return result
 
 func claim_service(a:Dictionary,r:Dictionary)->bool:
@@ -3803,7 +3889,7 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
  var prop:Node3D=r.action_prop
  var shown=active!="" and (a.task_stage in ["In corso","Consegna"] or a.delivery)
  marker.visible=(shown or a.task_stage=="Fugge") and distance<20 and not photo_mode and (show_labels or selected==a.id or a.task_stage=="Fugge")
- var marks={"eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
+ var marks={"craft":"OFFICINA","teach":"FAMIGLIA","guard":"GUARDIA","eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
  marker.text="FUGA!" if a.task_stage=="Fugge" else "TRASPORTO" if a.delivery else str(marks.get(active,""))
  marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
  var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else ""
@@ -3816,8 +3902,15 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
    "eat","cargo_Cibo":
     block(prop,Color("96714b"),Vector3.ZERO,Vector3(.34,.15,.27))
     for j in range(3):sphere(prop,Color("e4b65e"),Vector3((j-1)*.11,.12,0),Vector3(.13,.13,.13))
-   "gather","build","house","cargo_Legna":
+   "cargo_Legna":
     for j in range(3):block(prop,Color("9f774e"),Vector3(0,j*.09,0),Vector3(.48,.075,.11))
+   "gather","build","house","craft":
+    block(prop,Color("98704c"),Vector3(0,.08,0),Vector3(.075,.54,.075))
+    block(prop,Color("a6b5b7"),Vector3(.09,.32,0),Vector3(.25,.13,.08))
+   "guard":
+    block(prop,Color("a7b4b7"),Vector3(0,.22,0),Vector3(.055,.55,.045))
+    block(prop,Color("b1956c"),Vector3(0,-.06,0),Vector3(.21,.06,.08))
+   "teach":block(prop,Color("efe0b7"),Vector3.ZERO,Vector3(.32,.07,.25))
    "research":block(prop,Color("e1d2a9"),Vector3.ZERO,Vector3(.38,.07,.30))
    "heal","aid":
     block(prop,Color("e6e3cf"),Vector3.ZERO,Vector3(.25,.24,.21))
@@ -3834,13 +3927,13 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
    "eat":
     r.arms[0].rotation.x=-1.0+sin(r.phase*4)*.4
     r.arms[1].rotation.x=-.7
-   "gather","house","build":
+   "gather","house","build","craft","guard":
     r.arms[0].rotation.x=-1.15+sin(r.phase*5)*.8
     r.arms[1].rotation.x=-.55+sin(r.phase*5)*.4
    "farm":
     r.body.rotation.x=.42+sin(r.phase*3)*.12
     r.arms[0].rotation.x=-.8+sin(r.phase*4)*.5
-   "social","aid":
+   "social","aid","teach":
     r.arms[0].rotation.z=-.35+sin(r.phase*3)*.3
     r.arms[1].rotation.x=-.6+sin(r.phase*2)*.35
    "play":r.body.position.y=.09+absf(sin(r.phase*4))*.13
@@ -3980,6 +4073,15 @@ func discover_near(a:Dictionary,p:Vector3):
   if row.found or flat_dist(p,Vector3(float(row.x),0,float(row.z)))>2.1:continue
   row.found=true
   sim.villages[a.clan].knowledge+=8
+  if sim.villages[a.clan].era>=2 and outposts.size()<8 and not scarred(p):
+   var exists=false
+   for post in outposts:
+    if flat_dist(p,Vector3(float(post.x),0,float(post.z)))<6:exists=true
+   if not exists:
+    outposts.append({"x":p.x,"z":p.z,"clan":a.clan})
+    rebuild_outposts()
+    services_dirty=true
+    sim.log_event(a.name+" fonda un avamposto.")
   a.special_memory="Ho scoperto "+str(row.name)
   a.special_until=sim.day+6
   sim.milestone(a,"Esplorazione",a.special_memory)
@@ -4011,3 +4113,189 @@ func test_life_upgrade()->bool:
  print("LIFE_UPGRADE_TEST grief=true interior=true discovery=true")
  sim.spatial_autonomy=false
  return true
+
+func rebuild_outposts():
+ if not is_instance_valid(outpost_root):return
+ for child in outpost_root.get_children():
+  outpost_root.remove_child(child)
+  child.queue_free()
+ for post in outposts:
+  var q=ground(float(post.x),float(post.z))
+  if q.y<SEA+.2:continue
+  var n=Node3D.new()
+  outpost_root.add_child(n)
+  n.position=q
+  var tint=Color("79b9a7") if int(post.clan)==0 else Color("d9ac75")
+  cone(n,Color("8b6c4d"),Vector3(0,.7,0),.08,1.4,.04,6)
+  block(n,tint,Vector3(.36,1.15,0),Vector3(.72,.40,.05))
+  block(n,Color("8b765a"),Vector3(-.45,.15,.25),Vector3(.75,.30,.7))
+  for j in range(5):sphere(n,Color("b6cc75"),Vector3((j-2)*.25,.20,-.55),Vector3(.18,.32,.18))
+  var tag=Label3D.new()
+  n.add_child(tag)
+  tag.text="AVAMPOSTO"
+  tag.font_size=24
+  tag.pixel_size=.007
+  tag.position.y=1.7
+  tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+
+func update_worksites():
+ for key in services:
+  var row=services[key]
+  if not is_instance_valid(row.get("frame")):continue
+  var progress=0.0
+  for id in claims:
+   if claims[id]!=key:continue
+   var a=sim.find(int(id))
+   if not a.is_empty() and a.task_stage=="In corso":progress=clampf(1.0-float(a.task_left)/6.0,0,1)
+  row.frame.visible=progress>0
+  row.frame.scale.y=maxf(.12,progress)
+
+func warn_near(p:Vector3,radius:float):
+ for a in sim.people:
+  if not actors.has(a.id):continue
+  var r=actors[a.id]
+  var q:Vector3=r.node.position
+  if flat_dist(q,p)>radius:continue
+  cancel_task(a,r)
+  var away=q-p
+  away.y=0
+  if away.length()<.05:away=Vector3.RIGHT
+  r["escape"]=land_near(p.x+away.normalized().x*(radius+3),p.z+away.normalized().z*(radius+3))
+  r["panic"]=2.5
+  a.stress=minf(100,a.stress+25)
+
+func start_hazard(kind:String,p:Vector3,duration:float):
+ if hazards.size()>=12:return
+ var id=next_hazard
+ next_hazard+=1
+ hazards.append({"id":id,"kind":kind,"x":p.x,"z":p.z,"life":duration,"age":0.0,"pulse":0.0,"hit":[]})
+ rebuild_hazards()
+
+func rebuild_hazards():
+ if not is_instance_valid(hazard_root):return
+ for child in hazard_root.get_children():
+  hazard_root.remove_child(child)
+  child.queue_free()
+ hazard_nodes.clear()
+ for h in hazards:
+  var n=Node3D.new()
+  hazard_root.add_child(n)
+  n.position=ground(float(h.x),float(h.z))
+  hazard_nodes[int(h.id)]=n
+  match str(h.kind):
+   "fire":
+    for j in range(5):
+     var q=Vector3(cos(j*2.4)*.75,.35,sin(j*2.4)*.75)
+     cone(n,Color("f0803c"),q,.36,1.0,.035,8,1.0)
+     cone(n,Color("ffdb7a"),q*.8,.20,.65,.02,8,1.2)
+   "tornado":
+    for j in range(12):
+     var rad=.25+float(j)*.13
+     sphere(n,Color("a7b5b5").lerp(Color("d6dcd6"),float(j)/12),Vector3(cos(j*1.6)*rad,float(j)*.31,sin(j*1.6)*rad),Vector3(1.2, .58, 1.2))
+   "flood":
+    for j in range(16):
+     var angle=j*TAU/16
+     sphere(n,Color("63b4cc"),Vector3(cos(angle),.3,sin(angle)),Vector3(1.0,.6,1.0),.1)
+
+func update_hazards(dt:float):
+ if hazards.is_empty():return
+ var changed=false
+ for h in hazards.duplicate():
+  h.life=float(h.life)-dt
+  h.age=float(h.age)+dt
+  h.pulse=float(h.pulse)+dt
+  if h.life<=0:
+   hazards.erase(h)
+   changed=true
+   continue
+  var pos=ground(float(h.x),float(h.z))
+  if h.kind=="tornado":
+   h.x=clampf(float(h.x)+dt*.7,-45,45)
+   h.z=clampf(float(h.z)+sin(float(h.age))*dt*.7,-45,45)
+   pos=ground(float(h.x),float(h.z))
+  var n=hazard_nodes.get(int(h.id))
+  if is_instance_valid(n):
+   n.position=pos
+   n.rotation.y+=dt*3.0
+   if h.kind=="fire":n.scale=Vector3.ONE*(1.0+float(h.age)*.09)
+   elif h.kind=="flood":n.scale=Vector3(1.0+float(h.age)*1.8,1,1.0+float(h.age)*1.8)
+  if h.pulse>=2.0:
+   h.pulse=0.0
+   var radius=3.0+float(h.age)*.22 if h.kind=="fire" else 3.5 if h.kind=="tornado" else minf(11.0,2.0+float(h.age)*1.8)
+   var cell=site_key(str(h.kind),0,pos)
+   if not h.hit.has(cell) or h.kind=="flood":
+    h.hit.append(cell)
+    disaster(pos,"Incendio" if h.kind=="fire" else "Tornado" if h.kind=="tornado" else "Tsunami",radius,28.0,0.0,0.0)
+ if changed:rebuild_hazards()
+
+func spatial_society():
+ if not sim.spatial_autonomy:return
+ var living=sim.people.duplicate()
+ for a in living:
+  if not actors.has(a.id):continue
+  if a.sick>0:
+   for b in living:
+    if b.id==a.id or b.sick>0 or not actors.has(b.id):continue
+    if flat_dist(actors[a.id].node.position,actors[b.id].node.position)<1.6 and rng.randf()<.025:
+     b.sick=5
+     b.stress=minf(100,b.stress+12)
+     if not test_mode:life_bubble(actors[b.id].node.position,"MALATTIA",Color("adc277"))
+  if sim.peace>=25 or a.task!="guard" or a.health<40:continue
+  for b in living:
+   if b.clan==a.clan or not actors.has(b.id) or b.health<=0:continue
+   if flat_dist(actors[a.id].node.position,actors[b.id].node.position)<1.8:
+    b.health=maxf(0,b.health-7.0)
+    a.stress=minf(100,a.stress+4)
+    b.stress=minf(100,b.stress+12)
+    battle_count+=1
+    if not test_mode:
+     spark(actors[b.id].node.position+Vector3.UP*.6,Color("e9ab79"),.42)
+     life_bubble(actors[b.id].node.position,"SCONTRO",Color("edaa84"))
+    if b.health<=0:sim.die(b,"scontro")
+    break
+ if not sim.changes.is_empty():apply_changes()
+
+func test_integrated_upgrade()->bool:
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ var a=sim.people[0]
+ var v=sim.villages[a.clan]
+ v.tech=2
+ var wood=float(v.wood)
+ sim.begin_task(a,{"kind":"craft","target":-1,"duration":4.0,"reason":"test"})
+ if not sim.complete_task(a) or a.tool!=100 or absf(float(v.wood)-wood+4)>.01:return false
+ var amount=float(v.food)
+ sim.begin_task(a,{"kind":"farm","target":-1,"duration":4.0,"reason":"test"})
+ if not sim.complete_task(a) or v.food<=amount or a.tool>=100:return false
+ start_hazard("fire",houses[0][0].node.position,12.0)
+ if hazards.size()!=1 or hazard_nodes.is_empty():return false
+ var before=destroyed_total
+ update_hazards(2.1)
+ if destroyed_total<=before:return false
+ print("INTEGRATED_TEST craft=true tool_wear=true fire=true")
+ sim.spatial_autonomy=false
+ return true
+
+func test_live_world()->bool:
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ var initial=sim.people.size()
+ var days=0
+ for frame in range(1200):
+  if nav_dirty:
+   rebuild_navigation()
+   services_dirty=true
+  if services_dirty:rebuild_services()
+  for a in sim.people.duplicate():
+   if actors.has(a.id):advance_actor_task(a,actors[a.id],.25)
+  if not sim.changes.is_empty():apply_changes()
+  if frame%34==33:
+   step_day()
+   days+=1
+   spatial_society()
+  if sim.people.is_empty():break
+ var work=completed_visible
+ var living=sim.people.size()
+ print("LIVE_WORLD_TEST days=",days," initial=",initial," living=",living," tasks=",work," houses=",houses[0].size()+houses[1].size()," food=",sim.villages[0].food+sim.villages[1].food)
+ sim.spatial_autonomy=false
+ return days>=30 and living>0 and work>100
