@@ -43,16 +43,16 @@ func score(danger:bool)->AudioStreamWAV:
   var chord:Array=(dark if danger else chords)[bar]
   var phase=fposmod(t,6.0)
   var envelope=sin(PI*phase/6.0)
-  var signal=0.0
+  var sample_value=0.0
   for j in range(3):
    var f=float(chord[j])
-   signal+=(sin(TAU*f*t)*.038+sin(TAU*f*2*t)*.007)*envelope
+   sample_value+=(sin(TAU*f*t)*.038+sin(TAU*f*2*t)*.007)*envelope
   var beat=fposmod(t,1.5)
   var note=float(chord[int(t/1.5)%3])*2
-  signal+=sin(TAU*note*beat)*exp(-beat*3.2)*minf(1.0,beat*30)*.055
-  if danger:signal+=sin(TAU*49*beat)*exp(-beat*5)*minf(1.0,beat*40)*.08
+  sample_value+=sin(TAU*note*beat)*exp(-beat*3.2)*minf(1.0,beat*30)*.055
+  if danger:sample_value+=sin(TAU*49*beat)*exp(-beat*5)*minf(1.0,beat*40)*.08
   var edge=minf(1.0,minf(t,duration-t)*5.0)
-  data.encode_s16(i*2,clampi(int(signal*edge*30000),-32767,32767))
+  data.encode_s16(i*2,clampi(int(sample_value*edge*30000),-32767,32767))
  return wav(data,rate,frames)
 
 func rain()->AudioStreamWAV:
