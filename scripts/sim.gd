@@ -736,7 +736,7 @@ func init_tasks(a:Dictionary):
  a["last_speech"]=str(a.get("last_speech",""))
 
 func tick_needs(a:Dictionary,dt:float):
- a.hunger=minf(100,float(a.hunger)+dt*1.65)
+ a.hunger=minf(100,float(a.hunger)+dt*1.65*(1.08 if anatomy(a)>0 else 1.0))
  a.fatigue=minf(100,float(a.fatigue)+dt*1.15)
  a.boredom=minf(100,float(a.boredom)+dt*.9)
  a.social_need=minf(100,float(a.social_need)+dt*(.8+float(a.genes[1])*.55))
@@ -790,6 +790,10 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
      reasons.teach="Educare "+child.name
      break
   reasons.gather="Servono materiali"
+  if spatial_autonomy and anatomy(a)==1:
+   scores.gather+=6
+   if scores.has("craft"):scores.craft+=8
+  if spatial_autonomy and anatomy(a)==2:scores.explore+=8
   scores.research=13+float(a.genes[0])*25+(18 if a.role=="Ricercatore" else 0)
   reasons.research="Desiderio di conoscenza"
   if int(v.project)>=0:
@@ -915,6 +919,7 @@ func complete_task(a:Dictionary)->bool:
   "farm":
    var yield_amount=5.0*(1.2 if a.tool>0 else 1.0)
    yield_amount*=1.0+minf(.25,float(v.bonuses[0])*.025)
+   if spatial_autonomy and anatomy(a)==1:yield_amount*=1.08
    if weather_name=="Siccità":yield_amount*=.65
    if season=="Inverno":yield_amount*=.85
    v.food=minf(850,v.food+yield_amount)
@@ -1204,3 +1209,12 @@ func culture_report()->String:
   for event in c.archive.slice(0,5):lines.append("G%d · %s"%[int(event.day),str(event.text)])
   lines.append("")
  return "\n".join(lines)
+
+
+# Anatomical phenotype is a direct expression of inherited genes. No random
+# outfit or separate appearance flag can determine the extra limbs.
+static func anatomy(a:Dictionary)->int:
+ var genes:Array=a.genes
+ if float(genes[3])>.69:return 2
+ if float(genes[1])>.65:return 1
+ return 0
