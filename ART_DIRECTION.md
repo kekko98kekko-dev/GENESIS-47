@@ -28,3 +28,6 @@ Riferimenti indicati dal proprietario il 25 novembre 2026: quattro schermate di 
 
 ## Criterio di avanzamento
 Non considerare l'aumento del numero di moduli/versioni come miglioramento grafico. Dare priorità a un'area verticale piccola e realmente giocabile con qualità omogenea, poi estendere il kit al resto del mondo senza rimuovere simulazione o sistemi preesistenti. Usare asset originali o con licenza verificata, materiali coerenti, profili grafici e verifiche dei costi di rendering. Non attribuire voti commerciali o dichiarare parità con i riferimenti senza nuove catture reali, video e playtest umano. La 11.0 ha superato la CI; la qualità visiva non raggiunge ancora i riferimenti.
+
+## Implementazione 12.0
+Il kit artigianale, le chiome stratificate, le colture, i distretti e le tre anatomie con mesh e rig distinti sono implementati nel codice. I nuovi effetti visivi sono collegati a poteri effettivi. La CI richiede dieci immagini aggiuntive. Le tre ere sono fixture controllate, non dimostrazione di crescita naturale; le catture delle creature e dei poteri sono scene del gioco. Prima di dichiarare accettati i quattro standard controllare le nuove immagini e il rapporto QA; serve un playtest umano. La 11.0 è l'ultima versione sicuramente collaudata.
