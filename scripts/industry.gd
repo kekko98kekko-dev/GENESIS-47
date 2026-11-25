@@ -199,7 +199,10 @@ func close(f:Dictionary):
  for key in jobs.keys():
   if int(jobs[key].company)==int(f.id):cancel_job(key)
  for row in contracts.duplicate():
-  if int(row.seller)==int(f.id) or int(row.buyer)==int(f.id):settle_contract(row)
+  if int(row.seller)!=int(f.id) and int(row.buyer)!=int(f.id):continue
+  for key in jobs.keys():
+   if int(jobs[key].get("contract",-1))==int(row.id):cancel_job(key)
+  if contracts.has(row):settle_contract(row)
  for good in f.stock:ocean.change(int(f.port),good,float(f.stock[good]))
  f.stock={}
  var owner=ocean.finance.customer(int(f.port),int(f.get("owner",-1)))
