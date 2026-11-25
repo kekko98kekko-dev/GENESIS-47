@@ -873,8 +873,9 @@ func make_house(i:int,j:int,era:int):
   block(cover,Color("f5ca7d"),Vector3(side*.76,h*.66,1.12),Vector3(.30,.35,.045),.32)
  block(cover,wall,Vector3(0,h-.16,1.01),Vector3(1.12,.32,.18))
  if era<4:
-  var roof=piece(cover,PrismMesh.new(),tint,Vector3(0,h+.39,0),Vector3(2.44,.85,2.45))
-  roof.rotation.y=PI*.5
+  if i==0 or era>=2:
+   var roof=piece(cover,PrismMesh.new(),tint,Vector3(0,h+.39,0),Vector3(2.44,.85,2.45))
+   roof.rotation.y=PI*.5
  else:
   block(cover,tint,Vector3(0,h+.10,0),Vector3(2.42,.23,2.42))
   for k in range(3):block(cover,Color("375e68"),Vector3(-.56+k*.56,h+.25,0),Vector3(.48,.06,.85),.25 if era>=5 else 0.0)
@@ -949,7 +950,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   body.add_child(eye)
   eye.position=Vector3(side*.18,1.30,.29)
   sphere(eye,Color("f2e6c9"),Vector3.ZERO,Vector3(.25,.28,.15))
-  sphere(eye,Color("8b673d"),Vector3(0,0,.07),Vector3(.16,.19,.07))
+  sphere(eye,Color("527876").lerp(Color("ab7b3d"),float(a.genes[2])),Vector3(0,0,.07),Vector3(.16,.19,.07))
   sphere(eye,Color("263b3a"),Vector3(0,0,.107),Vector3(.107,.139,.045))
   sphere(eye,Color("fff9e2"),Vector3(-.035,.05,.13),Vector3(.047,.047,.024))
   eyes.append(eye)
@@ -1260,6 +1261,7 @@ func _process(delta:float):
   update_worksites()
   ocean.life.tick(delta*minf(speed,20.0))
   wildlife.tick(delta*minf(speed,20.0))
+  ocean.industry.animate(delta*minf(speed,4.0))
   hydro.tick(delta*minf(speed,12.0))
   fluid_volume.tick(delta*minf(speed,4.0))
   ocean_dynamics.tick(delta*minf(speed,4.0))
@@ -1932,6 +1934,7 @@ func setup_ui():
  legend_view=rich(story_tab,330)
  legend_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
  button(story_tab,"Segui una storia",follow_story)
+ button(story_tab,"Luoghi della memoria",show_story_locations)
  button(story_tab,"Esplora i biomi",show_biomes)
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
  var bottom=panel(hud,Rect2(14,746,1412,140),.87)
@@ -5135,6 +5138,28 @@ func follow_story():
   if not a.is_empty() and actors.has(a.id):person=a;break
  if person.is_empty() and not sim.people.is_empty():person=sim.people[0]
  if not person.is_empty():follow_person(int(person.id))
+
+func show_story_locations():
+ var dlg=AcceptDialog.new()
+ hud.add_child(dlg)
+ dlg.title="LUOGHI DELLA MEMORIA"
+ var box=VBoxContainer.new()
+ dlg.add_child(box)
+ for entry in legend.entries.slice(0,8):
+  var x=float(entry.x)
+  var z=float(entry.z)
+  button(box,"G%03d · %s · %s"%[int(entry.day),str(entry.kind),str(entry.caption).substr(0,42)],func():
+   following=false
+   set_tour(false)
+   focus=ground(x,z)
+   distance=14
+   pitch=.75
+   update_camera()
+   dlg.hide())
+ if legend.entries.is_empty():text_label(box,"La storia non è ancora stata scritta.",15)
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(540,320))
 
 func show_biomes():
  var lines=["BIOMI DEL MONDO","Sei regioni climatiche con flora e colori distinti nella mappa giocabile."]
