@@ -195,6 +195,12 @@ func ocean_audit()->Dictionary:
  var before=ocean.displacement()
  ocean.absorb(world.centers[0],.125)
  var runoff_error=absf(ocean.displacement()-before-.125*OceanDynamics.CELL*OceanDynamics.CELL)
+ var before_terrain=ocean.displacement()
+ world.deformation.append({"x":p.x,"z":p.z,"r":1.1,"h":float(ocean.bed[cell])+1.0})
+ world.terrain_revision+=1
+ ocean.terrain()
+ var terrain_error=absf(ocean.displacement()-before_terrain)
+ var terrain_ok=not bool(ocean.wet[cell]) and terrain_error<.003
  # Uniform-depth standing-wave reference, small perturbation, no wind.
  ocean.wet.fill(1)
  ocean.bed.fill(4.0)
@@ -215,6 +221,6 @@ func ocean_audit()->Dictionary:
  var analytic=amplitude*cos(sqrt(9.81*4.0)*k*t)
  var relative=absf(coefficient-analytic)/amplitude
  var wave_diag:Dictionary=ocean.diagnostics()
- var ok=rest_ok and dynamics.finite and dynamics.minimum_depth>=.079 and dynamics.dry_speed<.0001 and max_error<.003 and runoff_error<.003 and wave_diag.finite and relative<.45
+ var ok=rest_ok and dynamics.finite and dynamics.minimum_depth>=.079 and dynamics.dry_speed<.0001 and max_error<.003 and runoff_error<.003 and terrain_ok and wave_diag.finite and relative<.15
  print("QA_OCEAN rest=",rest_ok," volume_error=",max_error," runoff_error=",runoff_error," wave_relative_error=",relative," ok=",ok)
- return {"ok":ok,"rest":rest_ok,"volume_error":max_error,"runoff_error":runoff_error,"steps":steps,"real_terrain":dynamics,"wave_analytic":analytic,"wave_numeric":coefficient,"wave_error_over_initial_amplitude":relative,"wave_tolerance":.45,"scope":"Short standing-wave reference and mass checks, not full CFD validation"}
+ return {"ok":ok,"rest":rest_ok,"volume_error":max_error,"runoff_error":runoff_error,"terrain_displacement_error":terrain_error,"terrain_change":terrain_ok,"steps":steps,"real_terrain":dynamics,"wave_analytic":analytic,"wave_numeric":coefficient,"wave_error_over_initial_amplitude":relative,"wave_tolerance":.15,"scope":"Short standing-wave reference and mass checks, not full CFD validation"}
