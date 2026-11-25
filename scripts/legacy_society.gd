@@ -26,9 +26,11 @@ func reset(w,data={}):
  markers.clear()
 func export_state()->Dictionary:
  return {"societies":societies,"archive":archive,"sites":sites,"last_day":last_day}
-func record(kind:String,clan:int,person:int,message:String,p:Vector3):
+func preserve(kind:String,clan:int,person:int,message:String,p:Vector3):
  archive.append({"day":world.sim.day,"kind":kind,"clan":clan,"person":person,"text":message,"x":p.x,"z":p.z})
- # Deliberately keep important events across centuries, rather than daily chatter.
+
+func record(kind:String,clan:int,person:int,message:String,p:Vector3):
+ preserve(kind,clan,person,message,p)
  world.legend.log_event(kind,clan,person,message,p)
 func build(parent:Node3D):
  root=parent
@@ -158,6 +160,7 @@ func daily():
    if world.legend.worship[clan].temple:
     world.legend.worship[clan].temple=false
     world.legend.visual_dirty=true
+    world.legend.rebuild_visuals(world.legend_root)
    record("Ribellione",clan,int(row.leader),"Il culto del Creatore viene proibito; il santuario è smantellato.",world.centers[clan])
   elif row.ban and faith>65 and float(row.opposition)<35:
    row.ban=false
@@ -183,6 +186,8 @@ func daily():
     world.rebuild_outposts()
     world.services_dirty=true
     record("Secessione",clan,int(row.leader),"Un gruppo dissidente fonda un avamposto autonomista.",p)
+  if float(row.opposition)>70 and world.sim.day>=int(row.get("last_clash",-10))+7:
+   civil_clash(clan,adults)
   if world.sim.day%40==0 and world.sim.peace>80 and float(row.opposition)<35:
    row.alliances=int(row.alliances)+1
    record("Patto",clan,int(row.leader),"Il consiglio rinnova il patto di pace.",world.centers[clan])
@@ -191,7 +196,7 @@ func daily():
    v.government=row.system
    v.culture.leader=int(row.leader)
 func report()->String:
- var lines=["EREDITÀ DEL CREATORE"]
+ var lines=["EREDITÀ DEL CREATORE · anno "+str(1+int(world.sim.day/120))]
  for i in range(2):
   var row:Dictionary=societies[i]
   lines.append("%s · %s · legittimità %d%%"%( [world.sim.CLANs_name(i),row.system,int(row.legitimacy)] ))
@@ -203,3 +208,24 @@ func report()->String:
  lines.append("Reliquie %d/%d · eventi storici %d"%[sites.filter(func(q):return q.found).size(),sites.size(),archive.size()])
  for row in archive.slice(maxi(0,archive.size()-12)):lines.append("G%d · %s"%[int(row.day),row.text])
  return "\n".join(lines)
+
+
+func civil_clash(clan:int,adults:Array):
+ var row:Dictionary=societies[clan]
+ for a in adults:
+  if not bool(a.get("dissident",false)) or not world.actors.has(a.id):continue
+  for b in adults:
+   if bool(b.get("dissident",false)) or float(b.faith)<55 or not world.actors.has(b.id):continue
+   var p:Vector3=world.actors[a.id].node.position
+   if world.flat_dist(p,world.actors[b.id].node.position)>2.5:continue
+   row["last_clash"]=world.sim.day
+   a.health=maxf(1,float(a.health)-4)
+   b.health=maxf(1,float(b.health)-4)
+   a.stress=minf(100,float(a.stress)+15)
+   b.stress=minf(100,float(b.stress)+15)
+   world.battle_count+=1
+   record("Scontro civile",clan,int(a.id),str(a.name)+" si scontra con "+str(b.name)+".",p)
+   if not world.test_mode:
+    world.life_bubble(p,"SCONTRO CIVILE",Color("e7a28b"))
+    world.spark(p,Color("e4ad83"),.5)
+   return
