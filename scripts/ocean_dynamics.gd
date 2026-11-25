@@ -16,6 +16,8 @@ var revision=-1
 var clock=0.0
 var tex:ImageTexture
 var active=false
+var wind_enabled=true
+var dry_reserve=0.0
 
 func idx(x:int,z:int)->int:return z*N+x
 func voxel(i:int,y:int)->int:return i*L+y
@@ -33,8 +35,11 @@ func reset(w,data={}):
  elapsed=0
  clock=0
  active=true
+ wind_enabled=true
+ dry_reserve=0.0
  terrain()
  if data is Dictionary:
+  dry_reserve=float(data.get("dry_reserve",0))
   for row in data.get("surface",[]):
    if row.size()==2 and int(row[0])>=0 and int(row[0])<eta.size() and wet[int(row[0])]:eta[int(row[0])]=float(row[1])
   for row in data.get("velocity",[]):
@@ -44,27 +49,36 @@ func reset(w,data={}):
 func terrain():
  if revision==int(world.terrain_revision):return
  revision=int(world.terrain_revision)
+ var displaced=dry_reserve
+ var wet_count=0
+ dry_reserve=0.0
  for z in range(N):
   for x in range(N):
    var i=idx(x,z)
    bed[i]=maxf(0,float(world.SEA)-float(world.height_at((x-26)*CELL,(z-26)*CELL)))
    wet[i]=1 if bed[i]>.15 else 0
    if not wet[i]:
+    displaced+=eta[i]
     eta[i]=0
     for y in range(L):velocity[voxel(i,y)]=Vector3.ZERO
+   else:wet_count+=1
+ if wet_count>0:
+  for i in range(eta.size()):
+   if wet[i]:eta[i]+=displaced/wet_count
+ else:dry_reserve=displaced
 
 func export_state()->Dictionary:
  var surface=[]
  var flow=[]
  for i in range(eta.size()):
-  if absf(eta[i])>.00001:surface.append([i,eta[i]])
+  if eta[i]!=0:surface.append([i,eta[i]])
  for i in range(velocity.size()):
   var v=velocity[i]
   if v.length_squared()>.000001:flow.append([i,v.x,v.y,v.z])
- return {"surface":surface,"velocity":flow}
+ return {"surface":surface,"velocity":flow,"dry_reserve":dry_reserve}
 
 func displacement()->float:
- var sum=0.0
+ var sum=dry_reserve
  for i in range(eta.size()):
   if wet[i]:sum+=eta[i]
  return sum*CELL*CELL
@@ -130,8 +144,9 @@ func step(dt:float):
     v.y-=horizontal_div*dt*minf(4,bed[i])
     if y==0:v.y=0
     if y==L-1:
-     v.x+=sin(float(world.sim.day)*.15)*dt*.025
-     v.z+=cos(float(world.sim.day)*.15)*dt*.025
+     if wind_enabled:
+      v.x+=sin(float(world.sim.day)*.15)*dt*.025
+      v.z+=cos(float(world.sim.day)*.15)*dt*.025
      v.y=clampf((flux[i]-eta[i])/maxf(dt,.001),-2,2)
     if left==i and v.x<0 or right==i and v.x>0:v.x=0
     if front==i and v.z<0 or back==i and v.z>0:v.z=0
@@ -233,5 +248,34 @@ func project(values:PackedVector3Array,dt:float)->PackedVector3Array:
  return result
 
 func absorb(p:Vector3,amount:float):
+ if wet.size()!=N*N:return
  var i=sample_index(p)
- if wet.size()==N*N and wet[i]:eta[i]+=amount
+ if wet[i]:eta[i]+=amount;return
+ var best=INF
+ var selected=-1
+ for j in range(wet.size()):
+  if not wet[j]:continue
+  var q=Vector2((j%N-26)*CELL,(int(j/N)-26)*CELL)
+  var d=q.distance_squared_to(Vector2(p.x,p.z))
+  if d<best:best=d;selected=j
+ if selected>=0:eta[selected]+=amount
+ else:dry_reserve+=amount
+
+
+func diagnostics()->Dictionary:
+ var finite=true
+ var minimum=INF
+ var max_speed=0.0
+ var dry_speed=0.0
+ var count=0
+ for i in range(eta.size()):
+  if not is_finite(eta[i]):finite=false
+  if wet[i]:
+   count+=1
+   minimum=minf(minimum,bed[i]+eta[i])
+  for y in range(L):
+   var v=velocity[voxel(i,y)]
+   if not v.is_finite():finite=false
+   if wet[i]:max_speed=maxf(max_speed,v.length())
+   else:dry_speed=maxf(dry_speed,v.length())
+ return {"finite":finite,"wet_columns":count,"minimum_depth":minimum,"maximum_speed":max_speed,"dry_speed":dry_speed,"volume":displacement()}
