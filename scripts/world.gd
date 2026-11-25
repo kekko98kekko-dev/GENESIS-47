@@ -4,6 +4,8 @@ const Ocean=preload("res://scripts/ocean.gd")
 const CreatureRig=preload("res://scripts/creature_rig.gd")
 const DebrisPhysics=preload("res://scripts/debris_physics.gd")
 const Hydro=preload("res://scripts/hydrology.gd")
+const FluidVolume=preload("res://scripts/fluid_volume.gd")
+const MotionLibrary=preload("res://scripts/mocap_library.gd")
 const Structure=preload("res://scripts/structure.gd")
 const SEA=-0.40
 const GRID=116
@@ -14,6 +16,9 @@ var sim=Sim.new()
 var ocean=Ocean.new()
 var debris=DebrisPhysics.new()
 var hydro=Hydro.new()
+var fluid_volume=FluidVolume.new()
+var fluid_saved={}
+var fluid_root:Node3D
 var hydro_root:Node3D
 var hydro_saved={}
 var colony_selected=-1
@@ -547,6 +552,7 @@ func make_terrain():
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  expanded_world=expanded or ocean_mode
  hydro_saved={}
+ fluid_saved={}
  colony_selected=-1
  set_tour(false)
  unlimited=false
@@ -585,7 +591,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -641,6 +647,9 @@ func reset_visuals():
  hydro_root=Node3D.new()
  add_child(hydro_root)
  hydro.reset(self,hydro_root,hydro_saved)
+ fluid_root=Node3D.new()
+ add_child(fluid_root)
+ fluid_volume.reset(self,fluid_root,fluid_saved)
  rebuild_regional_bridges()
  hazard_nodes.clear()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
@@ -927,6 +936,18 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   for side in [-1,1]:sphere(body,cloth,Vector3(side*.34,.88,.03),Vector3(.22,.22,.28))
  if era>=3:block(body,accent,Vector3(0,.92,.29),Vector3(.18,.11,.055),.15 if era>=5 else 0.0)
  var skeletal=CreatureRig.build(self,body,skin,cloth)
+ torso.hide()
+ torso.queue_free()
+ head.hide()
+ head.queue_free()
+ for child in body.get_children():
+  if child==torso or child==head or child==skeletal.skeleton or arms.has(child) or legs.has(child):continue
+  if not child is Node3D:continue
+  var original:Vector3=child.position
+  var face_part=original.y>=1.07
+  var target:Node3D=skeletal.head_anchor if face_part else skeletal.chest_anchor
+  child.reparent(target,false)
+  child.position=original-(Vector3(0,1.24,.025) if face_part else Vector3(0,.97,0))
  return {"body":body,"arms":arms,"legs":legs,"eyes":eyes,"brows":brows,"mouth":mouth,"skeletal":skeletal}
 
 func create_actor(a:Dictionary):
@@ -1181,6 +1202,7 @@ func _process(delta:float):
   update_worksites()
   ocean.life.tick(delta*minf(speed,20.0))
   hydro.tick(delta*minf(speed,12.0))
+  fluid_volume.tick(delta*minf(speed,4.0))
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1542,7 +1564,10 @@ func divine(p:Vector3):
    color=Color("ceebff")
    disaster(p,"Fulmine",2.4,70.0,0.0,0.0)
   "Tsunami":
-   hydro.inject(p,18.0)
+   var heading=Vector3(-p.x,0,-p.z).normalized()
+   if heading.length_squared()<.01:heading=Vector3.FORWARD
+   var emitted=fluid_volume.emit(p,400,heading*4+Vector3.UP*2)
+   if emitted<400:hydro.inject(p,(400-emitted)*FluidVolume.PARTICLE_MASS)
    wave(p)
    color=Color("7fc9dd")
    start_hazard("flood",p,6.0)
@@ -2115,6 +2140,7 @@ func save_path(path:String,show_hint:bool)->bool:
  d["expanded_world"]=expanded_world
  d["ocean"]=ocean.export_state()
  d["hydrology"]=hydro.export_state()
+ d["fluid_volume"]=fluid_volume.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2176,6 +2202,7 @@ func load_path(p:String)->bool:
  sim=candidate
  ocean.restore(self,data.get("ocean",{}))
  hydro_saved=data.get("hydrology",{})
+ fluid_saved=data.get("fluid_volume",{})
  colony_selected=-1
  var advanced=0
  if absent_progress and not test_mode:
@@ -2363,6 +2390,7 @@ func self_test():
  if not test_culture_and_regions():failed=true
  if not test_ocean_systems():failed=true
  if not test_deep_simulation():failed=true
+ if not test_industry_and_volume():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -4574,7 +4602,7 @@ func test_ocean_systems()->bool:
  new_world(47,0,true,true)
  var a=sim.people[0]
  var rig:Dictionary=actors[a.id].skeletal
- if rig.skeleton.get_bone_count()!=13:return false
+ if rig.skeleton.get_bone_count()!=18:return false
  CreatureRig.drive(actors[a.id],a,true,true,.1)
  var arm_index=int(rig.arm_ids[0][1])
  if absf(rig.skeleton.get_bone_pose_rotation(arm_index).x)<.01:return false
@@ -4643,7 +4671,7 @@ func test_ocean_systems()->bool:
  if fragment.get_child_count()<2 or fragment.linear_velocity.length()<=0:return false
  debris.update(6.0,false)
  if debris.count_bodies()!=0:return false
- print("OCEAN_TEST skeleton=13 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
+ print("OCEAN_TEST skeleton=18 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
  return true
 
 
@@ -4690,7 +4718,7 @@ func test_deep_simulation()->bool:
  sim.villages[0].wood=100.0
  var first=sim.people[0]
  var rig:Dictionary=actors[first.id].skeletal
- if rig.skins.size()!=4:return false
+ if rig.skins.size()!=6:return false
  var mesh:MeshInstance3D=rig.skins[0]
  var arrays=mesh.mesh.surface_get_arrays(0)
  if mesh.skin==null or arrays[Mesh.ARRAY_WEIGHTS].size()<16:return false
@@ -4737,4 +4765,65 @@ func test_deep_simulation()->bool:
  if not loaded or ocean.colonies.size()!=1 or int(ocean.colonies[0].completed_tasks)!=tasks:return false
  if not ocean.life.actors.has(first_id) or hydro.mass()<=0 or ocean.finance.banks.is_empty():return false
  print("DEEP_TEST skin_weights=true colony_agents=true local_jobs=true bank_balance=true flood_mass=true structural_damage=true persistence=true")
+ return true
+
+
+func test_industry_and_volume()->bool:
+ new_world(47,0,true,true)
+ var market=ocean.industry
+ var port=0
+ var v=sim.villages[port]
+ v.tech=5
+ v.food=100.0
+ v.wood=100.0
+ var original_cash=float(ocean.balance(port,"cash"))
+ if not market.create_company(port,"mill",30):return false
+ if not market.create_company(port,"bakery",30):return false
+ var mill:Dictionary=market.companies[0]
+ var bakery:Dictionary=market.companies[1]
+ if absf(float(ocean.balance(port,"cash"))+market.cash_total()-original_cash)>.001:return false
+ var farmer=sim.find(int(mill.employees[0]))
+ var wallet=float(farmer.coins)
+ market.on_work(port,farmer,"farm")
+ if float(mill.labor)<1 or absf(float(farmer.coins)-wallet-.8)>.001:return false
+ var raw=float(ocean.balance(port,"food"))
+ if not market.produce(mill):return false
+ if absf(float(ocean.balance(port,"food"))-raw+3)>.001 or float(mill.stock.get("flour",0))!=2:return false
+ var total_cash=float(ocean.balance(port,"cash"))+market.cash_total()
+ if not market.make_contract(int(mill.id),int(bakery.id),"flour",2):return false
+ if absf(float(ocean.balance(port,"cash"))+market.cash_total()-total_cash)>.001:return false
+ market.settle_contract(market.contracts[0])
+ if float(bakery.stock.get("flour",0))!=2:return false
+ bakery.labor=1.0
+ if not market.produce(bakery) or float(bakery.stock.get("bread",0))!=3:return false
+ if not market.sell(bakery,"bread",2):return false
+ if absf(float(ocean.balance(port,"cash"))+market.cash_total()-total_cash)>.001:return false
+ if ocean.balance(port,"bread")!=2:return false
+ var p:Vector3=centers[0]+Vector3.UP
+ if fluid_volume.emit(p,48,Vector3(1,2,0))!=48:return false
+ var initial_mass=fluid_volume.mass()
+ var first_position:Vector3=fluid_volume.particles[0].p
+ for i in range(20):fluid_volume.step(.025)
+ if fluid_volume.particles.is_empty() or first_position.distance_to(fluid_volume.particles[0].p)<.1:return false
+ if absf(fluid_volume.mass()+fluid_volume.transferred-initial_mass)>.001:return false
+ var rig:Dictionary=actors[farmer.id].skeletal
+ if rig.axial.size()!=5 or MotionLibrary.CLIPS.size()<10:return false
+ for mesh in rig.skins:
+  var weights:PackedFloat32Array=mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_WEIGHTS]
+  if weights.is_empty():return false
+  for i in range(0,weights.size(),4):
+   if absf(weights[i]+weights[i+1]+weights[i+2]+weights[i+3]-1.0)>.001:return false
+ var path="user://genesis47_industry_test.json"
+ if not save_path(path,false):return false
+ new_world(47,0)
+ var ok=load_path(path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
+ if not ok or ocean.industry.companies.size()!=2 or ocean.industry.batches!=2:return false
+ if absf(fluid_volume.mass()+fluid_volume.transferred-initial_mass)>.001:return false
+ var before=float(hydro.mass())
+ for a in fluid_volume.particles:a.age=13.0
+ fluid_volume.step(.025)
+ if not fluid_volume.particles.is_empty() or absf(hydro.mass()-before-initial_mass)>.001:return false
+ print("INDUSTRY_VOLUME_TEST companies=true recipes=true wages=true contracts=true cash_conservation=true skin_weights=true mocap=true 3d_particles=true transfer=true persistence=true")
  return true
