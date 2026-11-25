@@ -937,18 +937,20 @@ func make_house(i:int,j:int,era:int):
  block(interior,Color("947759"),Vector3(0,.35,-.65),Vector3(.40,.12,.48))
  sphere(interior,Color("ffc779"),Vector3(0,.47,-.65),Vector3(.17,.18,.17),.7)
  var h=1.55 if era<2 else 1.9 if era<4 else 2.3
- block(cover,wall,Vector3(0,h*.5,-1.01),Vector3(2.15,h,.18))
+ architectural_wall(block(cover,wall,Vector3(0,h*.5,-1.01),Vector3(2.15,h,.18)),wall,era)
  for side in [-1,1]:
-  block(cover,wall,Vector3(side*1.01,h*.5,0),Vector3(.17,h,2.1))
-  block(cover,wall,Vector3(side*.77,h*.5,1.01),Vector3(.58,h,.18))
+  architectural_wall(block(cover,wall,Vector3(side*1.01,h*.5,0),Vector3(.17,h,2.1)),wall,era)
+  architectural_wall(block(cover,wall,Vector3(side*.77,h*.5,1.01),Vector3(.58,h,.18)),wall,era)
   block(cover,Color("f5ca7d"),Vector3(side*.76,h*.66,1.12),Vector3(.30,.35,.045),.32)
  block(cover,wall,Vector3(0,h-.16,1.01),Vector3(1.12,.32,.18))
  if era<4:
   if i==0 or era>=2:
    var roof=piece(cover,PrismMesh.new(),tint,Vector3(0,h+.39,0),Vector3(2.44,.85,2.45))
    roof.rotation.y=PI*.5
+   roof.material_override=architecture_material(tint,0.0,1.0)
  else:
-  block(cover,tint,Vector3(0,h+.10,0),Vector3(2.42,.23,2.42))
+  var roof_panel=block(cover,tint,Vector3(0,h+.10,0),Vector3(2.42,.23,2.42))
+  roof_panel.material_override=architecture_material(tint,0.0,.75)
   for k in range(3):block(cover,Color("375e68"),Vector3(-.56+k*.56,h+.25,0),Vector3(.48,.06,.85),.25 if era>=5 else 0.0)
   if era>=5:cone(cover,Color("b7e4db"),Vector3(0,h+.63,0),.25,.82,.03,8,.5)
  for side in [-1,1]:block(cover,Color("80664f"),Vector3(side*.49,.62,1.13),Vector3(.08,1.25,.10))
@@ -5664,3 +5666,18 @@ func show_title_screen():
  footer.modulate=Color("a4beb5")
  box.modulate.a=0
  create_tween().tween_property(box,"modulate:a",1.0,1.1)
+
+
+var architecture_materials:Dictionary={}
+func architecture_material(tint:Color,masonry:float,roofing:float)->ShaderMaterial:
+ var key=tint.to_html()+str(masonry)+str(roofing)
+ if not architecture_materials.has(key):
+  var mat=ShaderMaterial.new()
+  mat.shader=preload("res://shaders/architecture.gdshader")
+  mat.set_shader_parameter("base_color",tint)
+  mat.set_shader_parameter("masonry",masonry)
+  mat.set_shader_parameter("roofing",roofing)
+  architecture_materials[key]=mat
+ return architecture_materials[key]
+func architectural_wall(node:MeshInstance3D,tint:Color,era:int):
+ node.material_override=architecture_material(tint,.6 if era>=2 else .12,0.0)
