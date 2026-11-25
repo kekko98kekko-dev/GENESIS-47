@@ -1736,6 +1736,7 @@ func setup_ui():
  button(culture_tab,"Isola del vento",func():observe_region(1))
  button(culture_tab,"Isola dell’alba",func():observe_region(2))
  button(culture_tab,"Atlante delle regioni",show_regions)
+ inspector_tabs.tab_changed.connect(func(_tab):refresh())
  var bottom=panel(hud,Rect2(14,769,1412,117),.91)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
@@ -4133,7 +4134,9 @@ func update_hazards(dt:float):
  if hazards.is_empty():return
  var changed=false
  for h in hazards.duplicate():
-  h.life=float(h.life)-dt
+  var rain=sim.weather_name=="Pioggia" or sim.weather_name=="Neve"
+  var decay=2.8 if h.kind=="fire" and rain else 1.0
+  h.life=float(h.life)-dt*decay
   h.age=float(h.age)+dt
   h.pulse=float(h.pulse)+dt
   if h.life<=0:
@@ -4142,8 +4145,9 @@ func update_hazards(dt:float):
    continue
   var pos=ground(float(h.x),float(h.z))
   if h.kind=="tornado":
-   h.x=clampf(float(h.x)+dt*.7,-45,45)
-   h.z=clampf(float(h.z)+sin(float(h.age))*dt*.7,-45,45)
+   var wind=Vector2(cos(float(sim.day)*.17+float(sim.seed_value)*.01),sin(float(sim.day)*.17+float(sim.seed_value)*.01))
+   h.x=clampf(float(h.x)+dt*(wind.x*.8+.25),-48,48)
+   h.z=clampf(float(h.z)+dt*(wind.y*.8+sin(float(h.age))*.25),-48,48)
    pos=ground(float(h.x),float(h.z))
   var n=hazard_nodes.get(int(h.id))
   if is_instance_valid(n):
@@ -4153,11 +4157,11 @@ func update_hazards(dt:float):
    elif h.kind=="flood":n.scale=Vector3(1.0+float(h.age)*1.8,1,1.0+float(h.age)*1.8)
   if h.pulse>=2.0:
    h.pulse=0.0
-   var radius=3.0+float(h.age)*.22 if h.kind=="fire" else 3.5 if h.kind=="tornado" else minf(11.0,2.0+float(h.age)*1.8)
+   var radius=3.0+float(h.age)*(.08 if rain else .22) if h.kind=="fire" else 3.5 if h.kind=="tornado" else minf(11.0,2.0+float(h.age)*1.8)
    var cell=site_key(str(h.kind),0,pos)
    if not h.hit.has(cell) or h.kind in ["flood","fire"]:
     if not h.hit.has(cell):h.hit.append(cell)
-    disaster(pos,"Incendio" if h.kind=="fire" else "Tornado" if h.kind=="tornado" else "Tsunami",radius,28.0,0.0,0.0)
+    disaster(pos,"Incendio" if h.kind=="fire" else "Tornado" if h.kind=="tornado" else "Tsunami",radius,14.0 if h.kind=="fire" and rain else 28.0,0.0,0.0)
  if changed:rebuild_hazards()
 
 func spatial_society():
@@ -4347,7 +4351,7 @@ func test_culture_and_regions()->bool:
  t.start(47,0)
  t.spatial_autonomy=true
  var a=t.people[0]
- t.begin_task(a,{"kind":"research","duration":1.0,"reason":"test"})
+ t.begin_task(a,{"kind":"research","target":-1,"duration":1.0,"reason":"test"})
  if not t.complete_task(a) or absf(float(t.villages[0].culture.treasury)-.25)>.001:return false
  t.day=7
  t.villages[0].food=0
