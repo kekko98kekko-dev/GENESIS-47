@@ -25,7 +25,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
 - 11.0: pipeline interamente riuscita. LEGACY_TEST PASS; QA_LEGACY 120 giorni, 28→76 cittadini, 14 eventi, ok=true. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642/artifacts/15012212401.
-- 12.0: pubblicata in main (commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860, stato in_progress, esito in attesa. Verificare prima di dichiarare stabile.
+- 12.0: pubblicata in main (commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860. Importazione, test standard e QA estesa riusciti; rendering in corso. Windows non ancora confermato.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
