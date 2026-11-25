@@ -21,7 +21,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Versione del codice: 6.0.0 — Vita oltre il mare.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 5f544be37b9c7b151188fd2e0eb5da18e4934d38.
 - Ultima versione interamente collaudata: 5.0, commit 5522778536c141624a6e5d52294337339a7f4401, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45581769849 (successo build e Windows).
-- 6.0: codice scritto nel ramo upgrade-6-0-individuals; test integrato DEEP_TEST aggiunto, esito CI da verificare dopo pubblicazione.
+- 6.0: pubblicata in main (commit 4657fec4a9f9028231d669a0006022e1f9d83739). Test integrato DEEP_TEST aggiunto. Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45583090178; esito in attesa al momento della pubblicazione. Controllare prima di dichiarare stabile.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
