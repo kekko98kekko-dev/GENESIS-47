@@ -1,11 +1,19 @@
 extends Node3D
 const Sim=preload("res://scripts/sim.gd")
+const Ocean=preload("res://scripts/ocean.gd")
+const CreatureRig=preload("res://scripts/creature_rig.gd")
+const DebrisPhysics=preload("res://scripts/debris_physics.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
 const POWERS=["Osserva","Vita","Foresta","Provviste","Guarigione","Meteorite","Conoscenza","Pace","Mutazione","Pioggia","Conflitto","Fede","Fulmine","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Profeta","Nuova specie","Carestia","Incendio","Terremoto","Tornado","Epidemia"]
 const SAVE_PREFIX="user://genesis47_slot"
 var sim=Sim.new()
+var ocean=Ocean.new()
+var debris=DebrisPhysics.new()
+var ocean_root:Node3D
+var physics_root:Node3D
+var market_view:RichTextLabel
 var expanded_world=false
 var regional_root:Node3D
 var culture_view:RichTextLabel
@@ -419,7 +427,14 @@ func height_at(x:float,z:float)->float:
  var stream=x-4.2*sin(z*.105)
  if absf(z)<32:
   h-=2.3*exp(-stream*stream/7.0)*clampf((36-absf(z))/8,0,1)
- if expanded_world:
+ if ocean.enabled:
+  h=minf(h,10.5*(.82-d)-.35)
+  for i in range(1,REGION_POINTS.size()):
+   var island_distance=Vector2(x,z).distance_to(REGION_POINTS[i])/10.5
+   if island_distance<1.35:
+    var peak=5.0*(1.0-island_distance*island_distance)-.65+noise.get_noise_2d(x*1.5,z*1.5)*.4
+    h=maxf(h,peak)
+ elif expanded_world:
   for i in range(1,REGION_POINTS.size()):
    var d_island=Vector2(x,z).distance_to(REGION_POINTS[i])/7.4
    if d_island<1.5:h=maxf(h,3.6*(1.0-d_island*d_island)-.55+noise.get_noise_2d(x*2,z*2)*.4)
@@ -458,6 +473,9 @@ func terrain_color(p:Vector3)->Color:
  var grass=Color("315f49").lerp(Color("9db46a"),v)
  var broad=clampf(noise.get_noise_2d(p.x*.45+97,p.z*.45)*.8+.5,0,1)
  grass=grass.lerp(Color("7b9560"),broad*.24)
+ if ocean.enabled:
+  if Vector2(p.x,p.z).distance_to(REGION_POINTS[1])<12:grass=grass.lerp(Color("688e88"),.40)
+  elif Vector2(p.x,p.z).distance_to(REGION_POINTS[2])<12:grass=grass.lerp(Color("b4a768"),.36)
  for c in centers:
   if Vector2(p.x-c.x,p.z-c.z).length()<6:
    grass=grass.lerp(Color("b0a280"),.35)
@@ -512,8 +530,8 @@ func make_terrain():
    depth_image.set_pixel(dx,dz,Color(v,v,v))
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
 
-func new_world(seed_value:int,which:int,expanded=false):
- expanded_world=expanded
+func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
+ expanded_world=expanded or ocean_mode
  set_tour(false)
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
@@ -533,6 +551,7 @@ func new_world(seed_value:int,which:int,expanded=false):
  world_centers.clear()
  destroyed_total=0
  sim.start(seed_value,which)
+ ocean.reset(self,ocean_mode)
  sim.spatial_autonomy=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
  last_auto_day=-1
  reset_visuals()
@@ -550,7 +569,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -598,6 +617,11 @@ func reset_visuals():
  outpost_root=Node3D.new()
  regional_root=Node3D.new()
  add_child(regional_root)
+ ocean_root=Node3D.new()
+ add_child(ocean_root)
+ physics_root=Node3D.new()
+ add_child(physics_root)
+ debris.reset(self,physics_root)
  rebuild_regional_bridges()
  hazard_nodes.clear()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
@@ -649,6 +673,7 @@ func reset_visuals():
  rebuild_discoveries()
  rebuild_outposts()
  rebuild_hazards()
+ ocean.rebuild_visuals(ocean_root)
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -864,14 +889,10 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   var arm=Node3D.new()
   body.add_child(arm)
   arm.position=Vector3(side*.34,.98,.0)
-  sphere(arm,skin,Vector3(side*.04,-.22,0),Vector3(.22,.45,.24))
-  sphere(arm,skin.lightened(.08),Vector3(side*.04,-.42,.0),Vector3(.23,.19,.23))
   arms.append(arm)
   var leg=Node3D.new()
   body.add_child(leg)
   leg.position=Vector3(side*.18,.43,0)
-  sphere(leg,skin.darkened(.08),Vector3(0,-.17,0),Vector3(.24,.35,.27))
-  sphere(leg,skin,Vector3(0,-.32,.08),Vector3(.27,.16,.36))
   legs.append(leg)
  var mouth=sphere(body,skin.darkened(.26),Vector3(0,1.13,.345),Vector3(.12,.065,.04))
  for j in range(3):
@@ -884,7 +905,8 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  if a.genes[3]>.65:
   for side in [-1,1]:sphere(body,cloth,Vector3(side*.34,.88,.03),Vector3(.22,.22,.28))
  if era>=3:block(body,accent,Vector3(0,.92,.29),Vector3(.18,.11,.055),.15 if era>=5 else 0.0)
- return {"body":body,"arms":arms,"legs":legs,"eyes":eyes,"brows":brows,"mouth":mouth}
+ var skeletal=CreatureRig.build(self,body,skin,cloth)
+ return {"body":body,"arms":arms,"legs":legs,"eyes":eyes,"brows":brows,"mouth":mouth,"skeletal":skeletal}
 
 func create_actor(a:Dictionary):
  if actors.has(a.id):return
@@ -906,6 +928,7 @@ func create_actor(a:Dictionary):
  actors[a.id]["eyes"]=rig.get("eyes",[])
  actors[a.id]["brows"]=rig.get("brows",[])
  actors[a.id]["mouth"]=rig.get("mouth")
+ actors[a.id]["skeletal"]=rig.get("skeletal",{})
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -953,6 +976,14 @@ func apply_changes():
       if not a.parents.is_empty() and actors.has(int(a.parents[0])):actors[a.id].node.position=actors[int(a.parents[0])].node.position+Vector3(.5,0,0)
       life_bubble(actors[a.id].node.position,"NUOVA VITA",Color("f4d1a0"))
     services_dirty=true
+   "emigration":
+    claims.erase(int(e.id))
+    if actors.has(e.id):
+     actors[e.id].node.queue_free()
+     actors.erase(e.id)
+     activity_labels.erase(e.id)
+    services_dirty=true
+    if selected==e.id:selected=-1
    "death":
     claims.erase(int(e.id))
     if actors.has(e.id):
@@ -998,6 +1029,7 @@ func step_day():
  var previous_projects=sim.projects_completed
  var previous_crises=sim.crises_seen
  sim.daily()
+ ocean.daily()
  apply_changes()
  if sim.day%7==0:
   rebuild_farms()
@@ -1104,6 +1136,7 @@ func _process(delta:float):
     for eye in r.get("eyes",[]):eye.scale.y=blink
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
    update_action_visual(a,r,moving)
+   CreatureRig.drive(r,a,moving,distance<35 and quality_mode>0,delta)
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
     r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
@@ -1172,6 +1205,8 @@ func _process(delta:float):
    precipitation.lifetime=1.65
   precipitation.emitting=sim.weather_name in ["Pioggia","Neve"] and speed>0 and distance<65
  update_caravans(delta)
+ ocean.animate(float(sim.day)+tick/1.7,visual_time)
+ debris.update(delta,speed<=0)
  update_clouds(delta)
  for rotor in civic_spinners:
   if is_instance_valid(rotor):rotor.rotation.y+=delta*.38
@@ -1737,6 +1772,15 @@ func setup_ui():
  button(culture_tab,"Isola del vento",func():observe_region(1))
  button(culture_tab,"Isola dell’alba",func():observe_region(2))
  button(culture_tab,"Atlante delle regioni",show_regions)
+ var market_tab=VBoxContainer.new()
+ market_tab.name="Mercato"
+ inspector_tabs.add_child(market_tab)
+ text_label(market_tab,"PORTI E COMMERCI",15)
+ market_view=rich(market_tab,180)
+ market_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ button(market_tab,"Atlante colonie",show_regions)
+ button(market_tab,"Spedizione Auralis",func():request_expedition(0))
+ button(market_tab,"Spedizione Nerith",func():request_expedition(1))
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
  var bottom=panel(hud,Rect2(14,769,1412,117),.91)
  bottom_panel=bottom
@@ -1811,6 +1855,7 @@ func refresh():
   trust_bar.get_parent().visible=not a.is_empty()
  if dialogue_view!=null:refresh_dialogue(a)
  if is_instance_valid(culture_view) and inspector_tabs.current_tab==3:culture_view.text=sim.culture_report()
+ if is_instance_valid(market_view) and inspector_tabs.current_tab==4:market_view.text=ocean.report()
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
  if social_summary!=null:social_summary.text="Vita sociale: %d azioni · %d aiuti · %d incontri"%[sim.social_actions,sim.aid_actions,sim.meet_actions]
  if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate\nEdifici distrutti: %d · macerie: %d"%[sim.shipments.size(),sim.trades,destroyed_total,ruins.size()]
@@ -1863,9 +1908,9 @@ func open_welcome():
  seed_input.text=str(rng.randi_range(1,999999))
  box.add_child(seed_input)
  text_label(box,"Seme del mondo · cambia il numero per creare una nuova mappa",13)
- var world_choice=CheckButton.new()
- world_choice.text="Arcipelago: due nuove isole collegate da ponti"
- world_choice.button_pressed=true
+ var world_choice=OptionButton.new()
+ for label in ["Isola classica","Arcipelago con ponti","Continenti separati · oceano e colonie"]:world_choice.add_item(label)
+ world_choice.select(2)
  box.add_child(world_choice)
  button(box,"Seme casuale",func():seed_input.text=str(rng.randi_range(1,999999)))
  text_label(box,"Clicca per osservare · F6 tour · F1 guida · F10 cinema",13)
@@ -1878,7 +1923,7 @@ func open_welcome():
   welcome_open=false
   world_started=true
   deformation.clear()
-  new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.button_pressed)
+  new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.selected>0,world_choice.selected==2)
   dlg.queue_free()
   if onboarding_enabled:start_onboarding())
  dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free();maybe_onboard())
@@ -2013,6 +2058,7 @@ func save_game(show_hint:bool):
 func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["expanded_world"]=expanded_world
+ d["ocean"]=ocean.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2072,13 +2118,14 @@ func load_path(p:String)->bool:
    return false
  set_tour(false)
  sim=candidate
+ ocean.restore(self,data.get("ocean",{}))
  var advanced=0
  if absent_progress and not test_mode:
   advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
  sim.spatial_autonomy=not test_mode and not benchmark_mode
  if advanced>0:
   for person in sim.people:person.task="";person.task_stage="Decide"
- expanded_world=bool(data.get("expanded_world",false))
+ expanded_world=bool(data.get("expanded_world",false)) or ocean.enabled
  deformation=data.get("deformation",[])
  planted=data.get("planted",[])
  house_sites=data.get("house_sites",[[],[]])
@@ -2256,6 +2303,7 @@ func self_test():
  if not test_exchange_and_inventory():failed=true
  if not test_behavior_brain():failed=true
  if not test_culture_and_regions():failed=true
+ if not test_ocean_systems():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2309,7 +2357,7 @@ func capture_preview():
   await get_tree().create_timer(.4).timeout
   await RenderingServer.frame_post_draw
   get_viewport().get_texture().get_image().save_png("res://preview-creature.png")
- new_world(47,0,true)
+ new_world(47,0,true,true)
  speed=0
  hud.hide()
  focus=Vector3.ZERO
@@ -3074,14 +3122,18 @@ func run_benchmark():
   get_tree().quit(1)
   return
  var short_test="--benchmark-test" in OS.get_cmdline_user_args()
+ new_world(47,0,true,true)
  autosave_enabled=false
  Engine.max_fps=0
  DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
  speed=0
- for i in range(125):sim.daily()
+ for i in range(125):
+  sim.daily()
+  ocean.daily()
+  apply_changes()
  apply_changes()
  for i in range(2):sync_houses(i)
- var info={"version":str(ProjectSettings.get_setting("application/config/version")),"cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"seed":47,"day":sim.day,"profiles":[]}
+ var info={"version":str(ProjectSettings.get_setting("application/config/version")),"cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"colonies":ocean.colonies.size(),"ships":ocean.voyages.size(),"seed":47,"day":sim.day,"profiles":[]}
  var names=["Prestazioni","Bilanciata","Qualita"]
  for profile in range(3):
   apply_quality(profile)
@@ -3157,7 +3209,7 @@ func show_playtest():
 
 func walking_height(x:float,z:float)->float:
  var h=height_at(x,z)
- if expanded_world and h<SEA+.85:
+ if expanded_world and not ocean.enabled and h<SEA+.85:
   var q=Vector2(x,z)
   for link in REGION_BRIDGES:
    if q.distance_to(Geometry2D.get_closest_point_to_segment(q,link[0],link[1]))<1.35:return maxf(h,SEA+.85)
@@ -3231,7 +3283,7 @@ func task_destination(a:Dictionary)->Vector3:
    var best=INF
    var dest=c+Vector3(cos(angle+float(a.tasks_done)*1.7),0,sin(angle+float(a.tasks_done)*1.7))*8.0
    for landmark in discovery_sites:
-    if landmark.found:continue
+    if landmark.found or (ocean.enabled and str(landmark.name) in REGION_NAMES.slice(1)):continue
     var q=ground(float(landmark.x),float(landmark.z))
     var d=flat_dist(q,c)
     if d<best and d<(82.0 if expanded_world else 24.0):best=d;dest=q
@@ -3388,6 +3440,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
    var target_id=int(a.task_target)
    var delivering=bool(a.delivery)
    if sim.complete_task(a):
+    ocean.work_completed(int(a.clan),kind)
     if delivering:a.held_goods=""
     completed_visible+=1
     if kind=="explore":discover_near(a,n.position)
@@ -3572,6 +3625,7 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  for row in planted.duplicate():
   if Vector2(p.x-float(row.x),p.z-float(row.z)).length()<=radius:planted.erase(row)
  destroyed_total+=destroyed
+ if not test_mode:debris.spawn(p,clampf(damage/50.0,.6,2.0),kind)
  if terrain_radius>0:alter_ground(p,terrain_delta,terrain_radius)
  rebuild_ruins()
  rebuild_roads()
@@ -4015,7 +4069,7 @@ func rebuild_discoveries():
 
 func discover_near(a:Dictionary,p:Vector3):
  for row in discovery_sites:
-  if row.found or flat_dist(p,Vector3(float(row.x),0,float(row.z)))>2.1:continue
+  if row.found or (ocean.enabled and str(row.name) in REGION_NAMES.slice(1)) or flat_dist(p,Vector3(float(row.x),0,float(row.z)))>2.1:continue
   row.found=true
   sim.villages[a.clan].knowledge+=8
   if sim.villages[a.clan].era>=2 and outposts.size()<8 and not scarred(p):
@@ -4310,7 +4364,7 @@ func rebuild_regional_bridges():
   regional_root.remove_child(child)
   child.queue_free()
  if not expanded_world:return
- for link in REGION_BRIDGES:
+ for link in ([] if ocean.enabled else REGION_BRIDGES):
   var a=Vector3(link[0].x,SEA+.85,link[0].y)
   var b=Vector3(link[1].x,SEA+.85,link[1].y)
   var count=ceili(a.distance_to(b))
@@ -4354,7 +4408,10 @@ func show_regions():
   for i in range(1,REGION_POINTS.size()):
    var discovered=discovery_sites.any(func(row):return str(row.name)==REGION_NAMES[i] and bool(row.found))
    lines.append(REGION_NAMES[i]+" · "+("scoperta dagli abitanti" if discovered else "ancora da esplorare"))
-  lines.append("I ponti collegano le isole: gli esploratori possono raggiungerle senza teletrasporto.")
+  if ocean.enabled:
+   lines.append("Le terre sono separate: spedizioni e merci viaggiano via nave. Le colonie amministrano risorse e popolazione proprie.")
+   for colony in ocean.colonies:lines.append("%s: %d abitanti · %d case · prosperità %d%%"%[colony.name,int(colony.population),int(colony.houses),int(colony.prosperity)])
+  else:lines.append("I ponti collegano le isole: gli esploratori possono raggiungerle senza teletrasporto.")
  else:lines.append("Mappa classica. Le isole aggiuntive sono disponibili creando un nuovo arcipelago.")
  open_dialog("ATLANTE DELLE REGIONI","\n\n".join(lines))
 
@@ -4430,4 +4487,80 @@ func test_culture_and_regions()->bool:
  hazards.clear()
  rebuild_hazards()
  print("CULTURE_REGION_TEST treasury=true votes=true relief=true persistence=true legacy_save=true connected_islands=2 region_save=true weather=true")
+ return true
+
+
+func request_expedition(clan:int):
+ if ocean.recruit(clan,clan+1):
+  apply_changes()
+  ocean.sync_visuals()
+  refresh()
+  notify_event("SPEDIZIONE","Due abitanti partono per fondare una colonia.")
+ else:notify_event("SPEDIZIONE NON DISPONIBILE","Servono tecnologia Utensili, 10 abitanti, 35 cibo, 24 legna, 20 monete e due adulti liberi; la regione deve essere libera.")
+
+func test_ocean_systems()->bool:
+ new_world(47,0,true,true)
+ var a=sim.people[0]
+ var rig:Dictionary=actors[a.id].skeletal
+ if rig.skeleton.get_bone_count()!=13:return false
+ CreatureRig.drive(actors[a.id],a,true,true,.1)
+ var arm_index=int(rig.arm_ids[0][1])
+ if absf(rig.skeleton.get_bone_pose_rotation(arm_index).x)<.01:return false
+ var island:Vector2=REGION_POINTS[1]
+ var start=near_cell(centers[0])
+ var finish=near_cell(ground(island.x,island.y))
+ if not nav_grid.region.has_point(start) or not nav_grid.region.has_point(finish):return false
+ if not nav_grid.get_id_path(start,finish).is_empty():return false
+ var v=sim.villages[0]
+ v.tech=2
+ v.food=100.0
+ v.wood=100.0
+ var people_before=sim.people.size()
+ if not ocean.recruit(0,1) or sim.people.size()!=people_before-2:return false
+ apply_changes()
+ if actors.size()!=sim.people.size():return false
+ var ship:Dictionary=ocean.voyages[0]
+ var sea_route:Dictionary=ocean.route_for(ship)
+ if sea_route.points.size()<2:return false
+ for p in sea_route.points:
+  if height_at(p.x,p.z)>SEA-.10:return false
+ sim.day=int(ship.due)
+ sim.weather_name="Sereno"
+ ocean.daily()
+ if ocean.colonies.size()!=1 or int(ocean.colonies[0].population)!=2 or not ocean.voyages.is_empty():return false
+ var port_id=int(ocean.colonies[0].id)
+ ocean.change(0,"stone",20.0)
+ ocean.change(port_id,"cash",100.0)
+ var stock=float(ocean.balance(0,"stone"))
+ var funds=float(ocean.balance(port_id,"cash"))
+ var seller_cash=float(ocean.balance(0,"cash"))
+ if not ocean.place_order(0,port_id,"stone",4):return false
+ var order:Dictionary=ocean.voyages[0]
+ if absf(float(ocean.balance(0,"stone"))-(stock-float(order.amount)))>.001:return false
+ if absf(float(ocean.balance(port_id,"cash"))-(funds-float(order.cost)))>.001:return false
+ if float(ocean.balance(0,"cash"))!=seller_cash:return false
+ var path="user://genesis47_ocean_test.json"
+ if not save_path(path,false):return false
+ new_world(47,0,false)
+ var loaded=load_path(path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
+ if not loaded or not ocean.enabled or not sim.market_mode or ocean.colonies.size()!=1 or ocean.voyages.size()!=1:return false
+ var pending:Dictionary=ocean.voyages[0]
+ sim.day=int(pending.due)
+ sim.weather_name="Sereno"
+ var cargo_before=float(ocean.balance(port_id,"stone"))
+ ocean.settle(pending)
+ if absf(float(ocean.balance(port_id,"stone"))-cargo_before-float(pending.amount))>.001:return false
+ if absf(float(ocean.balance(0,"cash"))-seller_cash-float(pending.cost))>.001:return false
+ var old_quality=quality_mode
+ quality_mode=1
+ debris.spawn(centers[0],1.0,"test")
+ quality_mode=old_quality
+ if debris.count_bodies()!=8:return false
+ var fragment:RigidBody3D=debris.batches[0].bodies[0]
+ if fragment.get_child_count()<2 or fragment.linear_velocity.length()<=0:return false
+ debris.update(6.0,false)
+ if debris.count_bodies()!=0:return false
+ print("OCEAN_TEST skeleton=13 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true rigid_bodies=true")
  return true
