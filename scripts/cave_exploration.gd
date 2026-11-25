@@ -21,6 +21,11 @@ var camera:Camera3D
 var explorer:Node3D
 var active=false
 var found=false
+var secrets:Array=[]
+var secret_nodes:Dictionary={}
+var previous_sun=true
+const SECRETS=[Vector2(5,1),Vector2(9,5)]
+const SECRET_NAMES=["Tavoletta della prima lingua","Uovo fossile"]
 var position=Vector2(1,1)
 var previous_speed=1.0
 var relic:Node3D
@@ -30,8 +35,10 @@ func reset(w,data={}):
  world=w
  active=false
  found=bool(data.get("found",false))
+ secrets=data.get("secrets",[])
+ secret_nodes.clear()
  position=Vector2(1,1)
-func export_state()->Dictionary:return {"found":found}
+func export_state()->Dictionary:return {"found":found,"secrets":secrets}
 func entrance()->Vector3:return world.ground(-73,0)
 func tile(p:Vector2)->bool:
  var x=roundi(p.x)
@@ -41,12 +48,15 @@ func location(p:Vector2)->Vector3:return OFFSET+Vector3(p.x*CELL,0,p.y*CELL)
 func build(parent:Node3D):
  root=parent
  root.hide()
+ world.block(root,Color("17282d"),Vector3(7*CELL,-.32,5*CELL),Vector3(15*CELL,.45,11*CELL))
  for z in range(MAP.size()):
   for x in range(MAP[z].length()):
    var p=location(Vector2(x,z))-OFFSET
    if MAP[z][x]=="#":
-    world.block(root,Color("354c52"),p+Vector3.UP*.85,Vector3(CELL,1.7,CELL))
-    if (x+z)%3==0:world.cone(root,Color("5f7776"),p+Vector3.UP*1.85,.5,.5,.12,5)
+    world.block(root,Color("354c52").lerp(Color("26373c"),float((x*7+z*3)%5)/5),p+Vector3.UP*.85,Vector3(CELL,1.7,CELL))
+    for k in range(2):
+     var stone=world.cone(root,Color("496265"),p+Vector3((k-.5)*.62,1.68+float((x+z+k)%4)*.12,.12),.52,.9+float((x*z+k)%3)*.24,.09,5)
+     stone.rotation.y=float(x+z+k)*1.37
    else:
     world.block(root,Color("716d61").lerp(Color("525f5d"),float((x+z)%4)/4),p-Vector3.UP*.08,Vector3(CELL,.16,CELL))
     if (x+2*z)%7==0:
@@ -67,6 +77,19 @@ func build(parent:Node3D):
  for i in range(5):
   world.cone(relic,Color("7ce0cf"),Vector3(cos(i*TAU/5)*.25,.48,sin(i*TAU/5)*.25),.14,.96,.0,6,.8)
  relic.visible=not found
+ for i in range(SECRETS.size()):
+  var secret=Node3D.new()
+  root.add_child(secret)
+  secret.position=Vector3(SECRETS[i].x*CELL,0,SECRETS[i].y*CELL)
+  world.block(secret,Color("716856"),Vector3.UP*.15,Vector3(.78,.30,.72))
+  if i==0:
+   var tablet=world.block(secret,Color("b6a880"),Vector3.UP*.55,Vector3(.54,.62,.12),.15)
+   tablet.rotation.x=-.32
+   for j in range(3):world.block(secret,Color("5e7067"),Vector3(0,.36+j*.13,.12),Vector3(.31,.033,.05))
+  else:
+   world.sphere(secret,Color("c9b49b"),Vector3.UP*.54,Vector3(.46,.63,.43),.12)
+  secret.visible=not secrets.has(i)
+  secret_nodes[i]=secret
  message=Label3D.new()
  root.add_child(message)
  message.position=Vector3(7*CELL,2.0,-.6)
@@ -80,6 +103,13 @@ func build(parent:Node3D):
  camera.fov=48
  camera.far=70
  camera.current=false
+ var cave_env=Environment.new()
+ cave_env.background_mode=Environment.BG_COLOR
+ cave_env.background_color=Color("101b20")
+ cave_env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
+ cave_env.ambient_light_color=Color("7c9d9d")
+ cave_env.ambient_light_energy=.36
+ camera.environment=cave_env
  update_camera()
 func enter(force=false)->bool:
  if not world.vast_world or active or not is_instance_valid(root):return false
@@ -89,6 +119,8 @@ func enter(force=false)->bool:
  world.following=false
  world.set_tour(false)
  active=true
+ previous_sun=world.sun.visible
+ world.sun.hide()
  position=Vector2(1,1)
  root.show()
  world.hud.hide()
@@ -98,6 +130,7 @@ func enter(force=false)->bool:
 func leave():
  if not active:return
  active=false
+ world.sun.visible=previous_sun
  root.hide()
  world.camera.make_current()
  world.hud.show()
@@ -122,13 +155,21 @@ func move(direction:Vector2,dt:float):
   world.legend.log_event("Scoperta",-1,-1,"Il Creatore ha scoperto il cristallo delle origini.",entrance())
   world.legend.advance_goal(3)
   message.text="CRISTALLO SCOPERTO  ·  C per tornare in superficie"
+ for i in range(SECRETS.size()):
+  if not secrets.has(i) and position.distance_to(SECRETS[i])<.42:
+   secrets.append(i)
+   if secret_nodes.has(i):secret_nodes[i].hide()
+   for v in world.sim.villages:v.knowledge+=4
+   world.legend.log_event("Archeologia",-1,-1,"Scoperto: "+SECRET_NAMES[i],entrance())
+   world.legacy.record("Archeologia",-1,-1,SECRET_NAMES[i],entrance())
+   message.text=SECRET_NAMES[i]+" · scoperta registrata"
  update_camera()
 func update_camera():
  if not is_instance_valid(explorer):return
  explorer.position=Vector3(position.x*CELL,0,position.y*CELL)
- camera.position=explorer.position+Vector3(0,10,6.6)
+ camera.position=explorer.position+Vector3(0,7.8,5.6)
  camera.look_at(explorer.global_position,Vector3.UP)
 func tick(dt:float):
  var d=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  move(d,dt)
-func report()->String:return "Grotta delle origini · "+("cristallo scoperto" if found else "da esplorare")
+func report()->String:return "Grotta delle origini · "+("cristallo scoperto" if found else "da esplorare")+" · reperti "+str(secrets.size())+"/2"
