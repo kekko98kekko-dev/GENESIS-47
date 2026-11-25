@@ -1,0 +1,217 @@
+extends RefCounted
+# Player-facing stories use actual events and relationships; no fabricated NPCs.
+const GOALS=["Incontra una creatura","Segui una vita","Aiuta una comunità","Scopri un luogo","Guarda crescere una generazione","Osserva una nuova era"]
+const HELP=["Clicca su un abitante. Ogni nome appartiene a una vita reale.","Seleziona Segui nella scheda o fai doppio clic sulla creatura.","Usa Guarigione, Provviste o Pace. Il mondo ricorderà il tuo gesto.","Un esploratore deve raggiungere un luogo ancora sconosciuto.","Una famiglia deve avere un figlio. La sua storia continuerà.","Lascia che una civiltà raggiunga una nuova era tecnologica."]
+var world
+var entries:Array=[]
+var monuments:Array=[]
+var worship:Array=[]
+var traditions:Array=[]
+var journey=0
+var last_seen=-1
+var root:Node3D
+var visual_dirty=true
+var last_day=-1
+
+func reset(w,data={}):
+ world=w
+ entries=[]
+ monuments=[]
+ worship=[{"love":55.0,"fear":0.0,"temple":false,"visits":0,"last":-1},{"love":55.0,"fear":0.0,"temple":false,"visits":0,"last":-1}]
+ traditions=[{"kind":"Custodi della vita","memory":0,"era":0},{"kind":"Figli dell'orizzonte","memory":0,"era":0}]
+ journey=0
+ last_seen=-1
+ last_day=-1
+ visual_dirty=true
+ if data is Dictionary:
+  entries=data.get("entries",[])
+  monuments=data.get("monuments",[])
+  var saved=data.get("worship",[])
+  if saved is Array and saved.size()==2:worship=saved
+  saved=data.get("traditions",[])
+  if saved is Array and saved.size()==2:traditions=saved
+  journey=clampi(int(data.get("journey",0)),0,GOALS.size())
+  last_seen=int(data.get("last_seen",-1))
+  last_day=int(data.get("last_day",-1))
+
+func export_state()->Dictionary:
+ return {"entries":entries,"monuments":monuments,"worship":worship,"traditions":traditions,"journey":journey,"last_seen":last_seen,"last_day":last_day}
+
+func log_event(kind:String,clan:int,person:int,caption:String,location=Vector3.ZERO):
+ entries.push_front({"day":world.sim.day,"kind":kind,"clan":clan,"person":person,"caption":caption,"x":location.x,"z":location.z})
+ if entries.size()>240:entries.pop_back()
+
+func advance_goal(index:int):
+ if journey!=index:return
+ journey+=1
+ world.sim.energy=minf(100,float(world.sim.energy)+8)
+ log_event("Traguardo",-1,-1,"Il Creatore ha completato: "+GOALS[index])
+ if not world.test_mode:world.notify_event("UN NUOVO CAPITOLO",GOALS[index])
+
+func meet(id:int,followed:bool):
+ if id<0:return
+ var a=world.sim.find(id)
+ if a.is_empty():return
+ if last_seen!=id:
+  last_seen=id
+  if journey==0:
+   log_event("Incontro",int(a.clan),id,"Hai incontrato "+str(a.name)+".")
+   advance_goal(0)
+ if followed:advance_goal(1)
+
+func miracle(kind:String,clan:int,near:Array,p:Vector3):
+ var good=kind in ["Guarigione","Provviste","Pace","Pioggia","Vita","Resurrezione","Foresta"]
+ var harmful=kind in ["Meteorite","Tsunami","Vulcano","Carestia","Incendio","Fulmine","Terremoto","Tornado","Epidemia","Conflitto"]
+ var row:Dictionary=worship[clan]
+ if good:
+  row.love=minf(100,float(row.love)+7)
+  row.fear=maxf(0,float(row.fear)-3)
+  if kind in ["Guarigione","Provviste","Pace"]:advance_goal(2)
+ elif harmful:
+  row.fear=minf(100,float(row.fear)+13)
+  row.love=maxf(0,float(row.love)-8)
+ else:row.love=minf(100,float(row.love)+2)
+ traditions[clan].memory=int(traditions[clan].memory)+1
+ var names=[]
+ for a in near:
+  if world.sim.find(int(a.id)).is_empty():continue
+  names.append(str(a.name))
+  if good:world.sim.remember(a,"Ho assistito a "+kind+" del Creatore.")
+  elif harmful:world.sim.remember(a,"Temo il Creatore dopo "+kind+".")
+ log_event("Miracolo",clan,-1,kind+" · "+str(names.size())+" testimoni"+(" — "+", ".join(names.slice(0,3)) if not names.is_empty() else ""),p)
+
+func born(a:Dictionary,p:Vector3):
+ if a.parents.is_empty():return
+ var names=[]
+ for id in a.parents:
+  var parent=world.sim.find(int(id))
+  if not parent.is_empty():names.append(str(parent.name))
+ var description=str(a.name)+" nasce nella famiglia di "+(" e ".join(names) if not names.is_empty() else "una nuova generazione")+"."
+ log_event("Nascita",int(a.clan),int(a.id),description,p)
+ advance_goal(4)
+
+func death(id:int,p:Vector3):
+ var deceased={}
+ for row in world.sim.dead:
+  if int(row.id)==id:deceased=row;break
+ if deceased.is_empty():return
+ var clan=int(deceased.clan)
+ log_event("Addio",clan,id,str(deceased.name)+" è morto: "+str(deceased.reason)+".",p)
+ monuments.append({"id":id,"name":str(deceased.name),"clan":clan,"day":world.sim.day,"x":p.x,"z":p.z})
+ if monuments.size()>64:monuments.pop_front()
+ visual_dirty=true
+ # Family and close friends already have grief; show it at their real positions.
+ if not world.test_mode:
+  for a in world.sim.people:
+   if int(a.get("grief_until",0))>=world.sim.day+10 and str(a.get("special_memory","")).contains(str(deceased.name)) and world.actors.has(a.id):
+    world.life_bubble(world.actors[a.id].node.position,"Mi manchi",Color("d6c7b7"))
+
+func discovered(a:Dictionary,name:String,p:Vector3):
+ log_event("Scoperta",int(a.clan),int(a.id),str(a.name)+" ha trovato "+name+".",p)
+ advance_goal(3)
+
+func era(clan:int):
+ var v=world.sim.villages[clan]
+ traditions[clan].era=int(v.era)
+ log_event("Era",clan,-1,world.sim.CLANs_name(clan)+" entra in una nuova era.",world.centers[clan])
+ advance_goal(5)
+ visual_dirty=true
+
+func temple_position(clan:int)->Vector3:
+ var c:Vector3=world.centers[clan]
+ return world.land_near(c.x+(-3.1 if clan==0 else 3.1),c.z-3.4)
+
+func daily():
+ if last_day==world.sim.day:return
+ last_day=world.sim.day
+ for clan in range(2):
+  var v:Dictionary=world.sim.villages[clan]
+  var row:Dictionary=worship[clan]
+  var n=int(world.sim.count(clan))
+  if n<=0:continue
+  var kind="Custodi della vita" if clan==0 else "Figli dell'orizzonte"
+  if float(row.fear)>65:kind="Culto del timore"
+  elif float(row.love)<25:kind="Liberi dal Creatore"
+  elif float(row.love)>75:kind="Ordine della luce"
+  elif int(v.era)>=3 and float(v.knowledge)>100:kind="Accademia delle stelle" if clan==0 else "Lega dei mercanti"
+  if traditions[clan].kind!=kind:
+   traditions[clan].kind=kind
+   log_event("Fede",clan,-1,world.sim.CLANs_name(clan)+" diventa "+kind+".",world.centers[clan])
+  if not row.temple and int(v.era)>=1 and float(v.wood)>=18 and float(row.love)>60:
+   v.wood-=18
+   row.temple=true
+   visual_dirty=true
+   log_event("Tempio",clan,-1,world.sim.CLANs_name(clan)+" costruisce un santuario.",temple_position(clan))
+  if row.temple and world.sim.day%7==0:
+   var position=temple_position(clan)
+   var visitors=[]
+   for a in world.sim.people:
+    if int(a.clan)!=clan or not world.actors.has(a.id):continue
+    if world.flat_dist(world.actors[a.id].node.position,position)<4.0 and float(a.faith)>35:visitors.append(a)
+   if not visitors.is_empty():
+    row.visits=int(row.visits)+visitors.size()
+    for a in visitors:
+     a.mood=minf(100,float(a.mood)+3)
+     world.sim.remember(a,"Ho partecipato a una veglia al santuario.")
+    log_event("Rituale",clan,-1,str(visitors.size())+" fedeli si riuniscono presso il santuario.",position)
+    if not world.test_mode:world.life_bubble(position,"VEGLIA DELLA COMUNITÀ",Color("e7cf9c"))
+  if world.sim.day%12==0 and float(row.fear)>65:
+   for a in world.sim.people:
+    if int(a.clan)==clan and float(a.genes[0])>.65:
+     a.faith=maxf(0,float(a.faith)-5)
+     world.sim.adjust_trust(a,-3)
+ if visual_dirty:rebuild_visuals(root)
+
+func rebuild_visuals(parent:Node3D):
+ root=parent
+ if not is_instance_valid(root):return
+ for child in root.get_children():
+  root.remove_child(child)
+  child.queue_free()
+ visual_dirty=false
+ for clan in range(2):
+  if not worship[clan].temple:continue
+  var n=Node3D.new()
+  root.add_child(n)
+  n.position=temple_position(clan)
+  var tint=Color("79b8a6") if clan==0 else Color("d6a064")
+  world.cone(n,Color("9c9481"),Vector3.UP*.16,1.38,.32,1.25,12)
+  for i in range(6):
+   var angle=i*TAU/6
+   world.cone(n,Color("d3c6a8"),Vector3(cos(angle)*.83,1.04,sin(angle)*.83),.15,1.65,.12,7)
+  world.cone(n,tint,Vector3.UP*2.05,1.24,.77,.10,8)
+  world.sphere(n,Color("fff0b2"),Vector3.UP*2.56,Vector3(.25,.25,.25),.5)
+  label(n,"Santuario",2.9)
+ for row in monuments:
+  var p=world.ground(float(row.x),float(row.z))
+  if p.y<world.SEA+.1:continue
+  var n=Node3D.new()
+  root.add_child(n)
+  n.position=p
+  world.block(n,Color("8f9b94"),Vector3(0,.16,0),Vector3(.28,.32,.20))
+  world.sphere(n,Color("d2cba5"),Vector3(0,.34,0),Vector3(.18,.12,.18))
+
+func label(n:Node3D,value:String,height:float):
+ var tag=Label3D.new()
+ n.add_child(tag)
+ tag.position.y=height
+ tag.text=value
+ tag.font_size=28
+ tag.pixel_size=.008
+ tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ tag.modulate=Color("f4e8cd")
+
+func goal_text()->String:
+ return "CAPITOLO %d/%d · %s"%[journey+1,GOALS.size(),GOALS[journey]] if journey<GOALS.size() else "ETERNITÀ · La storia continua"
+
+func report()->String:
+ var lines=["LA TUA LEGGENDA",goal_text()]
+ if journey<GOALS.size():lines.append(HELP[journey])
+ for i in range(2):
+  var row:Dictionary=worship[i]
+  lines.append("\n"+world.sim.CLANs_name(i)+" · "+str(traditions[i].kind))
+  lines.append("Amore %d%% · Timore %d%% · Testimonianze %d"%[int(row.love),int(row.fear),int(traditions[i].memory)])
+  lines.append("Santuario: "+("costruito · %d presenze"%int(row.visits) if row.temple else "non costruito"))
+ lines.append("\nSTORIA DEL MONDO")
+ for row in entries.slice(0,24):lines.append("G%03d · %s\n%s"%[int(row.day),row.kind,row.caption])
+ return "\n".join(lines)
