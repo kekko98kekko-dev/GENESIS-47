@@ -3,6 +3,8 @@ var world
 var cache:ImageTexture
 var cached_seed=-1
 var cached_deformation=-1
+var cached_extent=0.0
+func extent()->float:return 96.0 if world.vast_world else 52.0
 func _ready():
  mouse_filter=Control.MOUSE_FILTER_STOP
  tooltip_text="Clicca per spostare la telecamera"
@@ -10,13 +12,14 @@ func _process(_delta):
  if world!=null:queue_redraw()
 func _draw():
  if world==null or world.centers.size()!=2:return
- if cache==null or cached_seed!=world.sim.seed_value or cached_deformation!=world.terrain_revision:
+ if cache==null or cached_seed!=world.sim.seed_value or cached_deformation!=world.terrain_revision or cached_extent!=extent():
+  cached_extent=extent()
   cached_seed=world.sim.seed_value
   cached_deformation=world.terrain_revision
   var image=Image.create(72,72,false,Image.FORMAT_RGB8)
   for y in range(72):
    for x in range(72):
-    var h=world.height_at(float(x)/71*104-52,float(y)/71*104-52)
+    var h=world.height_at(float(x)/71*extent()*2-extent(),float(y)/71*extent()*2-extent())
     var c=Color("25565b") if h<world.SEA else Color("7eac78").lerp(Color("c3bc95"),clampf(h/13.0,0,1))
     image.set_pixel(x,y,c)
   cache=ImageTexture.create_from_image(image)
@@ -48,10 +51,10 @@ func _draw():
  draw_arc(to_map(world.focus),8,0,TAU,24,Color("f4efb0"),1.8,true)
  draw_rect(Rect2(Vector2.ZERO,size),Color("8dbca8"),false,1)
 func to_map(p:Vector3)->Vector2:
- return Vector2((p.x+52)/104*size.x,(p.z+52)/104*size.y)
+ return Vector2((p.x+extent())/(extent()*2)*size.x,(p.z+extent())/(extent()*2)*size.y)
 func _gui_input(event):
  if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and world!=null:
-  var p=event.position/size*104-Vector2(52,52)
+  var p=event.position/size*extent()*2-Vector2.ONE*extent()
   world.focus=Vector3(p.x,0,p.y)
   world.following=false
   world.update_camera()
