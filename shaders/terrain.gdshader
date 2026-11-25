@@ -15,5 +15,7 @@ void fragment(){
  ALBEDO*=.92+fine*.16;
  float slope=1.0-abs(dot(normalize(NORMAL),normalize((VIEW_MATRIX*vec4(0.0,1.0,0.0,0.0)).xyz)));
  ALBEDO=mix(ALBEDO,vec3(.29,.30,.25),smoothstep(.26,.62,slope)*.40);
- ROUGHNESS=.97;
+ float strata=noise2(vec2(wp.y*4.0,wp.x*.23+wp.z*.18));
+ ALBEDO=mix(ALBEDO,ALBEDO*(.76+strata*.35),smoothstep(.28,.68,slope)*.55);
+ ROUGHNESS=mix(.97,.84,smoothstep(.25,.70,slope));
 }
