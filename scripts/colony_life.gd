@@ -1,4 +1,5 @@
 extends RefCounted
+const Rig=preload("res://scripts/creature_rig.gd")
 # Persistent citizens, local jobs, kinship, route-dependent production.
 const JOBS=["farm","gather","mine","craft","build","eat","sleep","social","heal"]
 const LABELS={"farm":"Coltiva","gather":"Raccoglie legna","mine":"Estrae pietra","craft":"Fabbrica utensili","build":"Costruisce","eat":"Mangia","sleep":"Riposa","social":"Socializza","heal":"Si cura"}
@@ -249,12 +250,13 @@ func tick(dt:float):
     for i in range(2):
      r.arms[i].rotation.x=sin(float(r.phase)+i*PI)*(.35 if moving else .08)
      r.legs[i].rotation.x=sin(float(r.phase)+i*PI+PI)*(.45 if moving else .04)
-    world.CreatureRig.drive(r,a,moving,true,minf(dt,.2))
+    Rig.drive(r,a,moving,true,minf(dt,.2))
     r.tag.text=str(a.name)+" · "+str(LABELS.get(a.task,"Decide"))
 
 func remove(c:Dictionary,a:Dictionary,reason:String):
  c.graveyard.push_front({"id":int(a.id),"name":str(a.name),"day":world.sim.day,"reason":reason})
  if c.graveyard.size()>300:c.graveyard.pop_back()
+ ocean.finance.settle_depositor(int(c.id),int(a.id))
  c.cash+=float(a.coins)
  for b in c.citizens:
   if int(b.partner)==int(a.id):b.partner=-1;b.mood=maxf(0,float(b.mood)-18)
