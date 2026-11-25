@@ -126,6 +126,10 @@ func die(a:Dictionary,why:String):
   var b=find(int(id))
   if not b.is_empty():
    b.mood=maxf(0,b.mood-18)
+   b.stress=minf(100,float(b.get("stress",0))+35)
+   b.grief_until=day+12
+   b.special_memory="Mi manca "+a.name
+   b.special_until=day+12
    remember(b,"Ho perso "+a.name+".")
    milestone(b,"Lutto","Ho perso "+a.name+".")
    if b.partner==a.id:b.partner=-1
@@ -696,12 +700,21 @@ func init_tasks(a:Dictionary):
  a["station_id"]=str(a.get("station_id",""))
  a["delivery"]=bool(a.get("delivery",false))
  a["cargo"]=str(a.get("cargo",""))
+ a["stress"]=clampf(float(a.get("stress",0)),0,100)
+ a["grief_until"]=int(a.get("grief_until",0))
+ a["emotion"]=str(a.get("emotion","Sereno"))
+ a["special_memory"]=str(a.get("special_memory",""))
+ a["routine"]=str(a.get("routine",["Mattiniero","Equilibrato","Notturno"][int(a.id)%3]))
+ a["special_until"]=int(a.get("special_until",0))
 
 func tick_needs(a:Dictionary,dt:float):
  a.hunger=minf(100,float(a.hunger)+dt*1.65)
  a.fatigue=minf(100,float(a.fatigue)+dt*1.15)
  a.boredom=minf(100,float(a.boredom)+dt*.9)
  a.social_need=minf(100,float(a.social_need)+dt*(.8+float(a.genes[1])*.55))
+ var pressure=maxf(float(a.hunger),maxf(float(a.fatigue),100-float(a.health)))
+ a.stress=clampf(float(a.stress)+dt*(.9 if pressure>80 else -.45),0,100)
+ a.emotion="In lutto" if int(a.grief_until)>day else "Spaventato" if a.stress>65 else "Affamato" if a.hunger>75 else "Stanco" if a.fatigue>75 else "Felice" if a.mood>78 else "Triste" if a.mood<38 else "Sereno"
 
 func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
  var v=villages[a.clan]
@@ -713,11 +726,15 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
   scores.eat=pow(float(a.hunger)/100,2)*140
   reasons.eat="Fame: "+str(int(a.hunger))+"%"
  scores.sleep=pow(float(a.fatigue)/100,2)*125+maxf(0,65-float(a.health))
+ if a.fatigue>40:
+  var night=(day%16>=9)
+  if night and a.routine!="Notturno":scores.sleep+=15
+  elif not night and a.routine=="Notturno":scores.sleep+=10
  reasons.sleep="Stanchezza: "+str(int(a.fatigue))+"%"
  if a.health<85 or a.sick>0:
   scores.heal=(100-float(a.health))*.8+float(a.sick)*9
   reasons.heal="Ha bisogno di cure"
- scores.play=8+pow(float(a.boredom)/100,2)*80
+ scores.play=8+pow(float(a.boredom)/100,2)*80+float(a.stress)*.25
  reasons.play="Ha bisogno di svago"
  scores.explore=10+float(a.genes[0])*15
  reasons.explore="Curiosità"
@@ -794,6 +811,7 @@ func complete_task(a:Dictionary)->bool:
     a.hunger=maxf(0,a.hunger-65)
   "sleep":
    a.fatigue=maxf(0,a.fatigue-82)
+   a.stress=maxf(0,a.stress-15)
    a.health=minf(100,a.health+3)
   "heal":
    a.health=minf(100,a.health+10)
@@ -826,7 +844,15 @@ func complete_task(a:Dictionary)->bool:
     a.social_need=maxf(0,a.social_need-65)
     friend_data.social_need=maxf(0,friend_data.social_need-25)
     a.mood=minf(100,a.mood+5)
-    if spatial_autonomy:build_relationship(a,friend_data)
+    if spatial_autonomy:
+     build_relationship(a,friend_data)
+     a.stress=maxf(0,a.stress-12)
+     friend_data.mood=minf(100,friend_data.mood+3)
+     var topic="Come stai?" if a.health<65 else "Il raccolto ci aiuterà." if v.food<30 else "Vorrei conoscere il mondo." if a.genes[0]>.65 else "Mi piace stare qui con te."
+     record_dialogue(a,a.name,topic)
+     record_dialogue(friend_data,a.name,topic)
+     a.special_memory=topic
+     a.special_until=day+2
     elif a.friend<0 and friend_data.friend<0:
      a.friend=friend_data.id
      friend_data.friend=a.id
@@ -851,6 +877,7 @@ func complete_task(a:Dictionary)->bool:
     log_event(a.name+" aiuta "+patient.name+".")
   "play","explore":
    a.boredom=maxf(0,a.boredom-(65 if a.task=="play" else 30))
+   a.stress=maxf(0,a.stress-10)
    a.mood=minf(100,a.mood+3)
  if ok:
   a.tasks_done+=1
@@ -885,6 +912,13 @@ func build_relationship(a:Dictionary,b:Dictionary):
   b.partner=a.id
   milestone(a,"Unione","Ho scelto "+b.name+".")
   milestone(b,"Unione","Ho scelto "+a.name+".")
+  a.special_memory="Insieme a "+b.name
+  b.special_memory="Insieme a "+a.name
+  a.special_until=day+5
+  b.special_until=day+5
+  a.mood=minf(100,a.mood+15)
+  b.mood=minf(100,b.mood+15)
+  log_event(a.name+" e "+b.name+" si uniscono.")
  if a.partner==b.id and b.partner==a.id and level>=75 and day-int(a.last_child_day)>=18 and day-int(b.last_child_day)>=18 and villages[a.clan].food>=count(a.clan)*2 and people.size()<LIMIT:
   a.last_child_day=day
   b.last_child_day=day

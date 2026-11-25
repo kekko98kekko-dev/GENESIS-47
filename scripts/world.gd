@@ -27,6 +27,10 @@ var services:Dictionary={}
 var claims:Dictionary={}
 var services_dirty=true
 var completed_visible=0
+var life_overlay:Label
+var show_world_labels=false
+var discovery_sites:Array=[]
+var discovery_root:Node3D
 var ruins:Array=[]
 var scars:Array=[]
 var ruin_root:Node3D
@@ -512,6 +516,9 @@ func new_world(seed_value:int,which:int):
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
  planted.clear()
+ deformation.clear()
+ discovery_sites.clear()
+ completed_visible=0
  house_sites=[[],[]]
  ruins.clear()
  scars.clear()
@@ -535,7 +542,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -577,7 +584,8 @@ func reset_visuals():
  landmark_root=Node3D.new()
  ruin_root=Node3D.new()
  service_root=Node3D.new()
- for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root]:add_child(n)
+ discovery_root=Node3D.new()
+ for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root]:add_child(n)
  rebuild_trade_route()
  create_clouds()
  for i in range(2):
@@ -623,6 +631,7 @@ func reset_visuals():
  for a in sim.people:create_actor(a)
  rebuild_navigation()
  rebuild_services()
+ rebuild_discoveries()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -729,55 +738,41 @@ func make_house(i:int,j:int,era:int):
  villages_root.add_child(n)
  n.position=p
  n.rotation.y=atan2(centers[i].x-p.x,centers[i].z-p.z)
- var roof=Color("a96847") if i==0 else Color("467b83")
- var kind="house" if era<4 else ("industrial" if era==4 else "future")
- var imported:Node3D=null
- if era>=2 and era<5:imported=asset(n,kind,j+i*3,Vector3.ZERO,3.0+float(era)*.48)
- elif era==1:imported=asset(n,"early",j+i*2,Vector3.ZERO,2.45)
- if imported==null:
-  if era<2:
-   cone(n,Color("d3b98a"),Vector3(0,.63,0),.91,1.26,.75,10)
-   cone(n,roof,Vector3(0,1.51,0),1.15,1.08,.025,10)
-   block(n,Color("5a4d39"),Vector3(0,.40,.86),Vector3(.39,.78,.10))
-   for j2 in range(6):
-    var a=j2*TAU/6
-    cone(n,Color("b79a6e"),Vector3(cos(a)*.88,.6,sin(a)*.88),.035,1.1,.03,6)
-  elif era<4:
-   block(n,Color("dbccad"),Vector3(0,.95,0),Vector3(1.95,1.9,1.65))
-   piece(n,PrismMesh.new(),roof,Vector3(0,2.28,0),Vector3(2.22,1.05,1.95))
-   for xx in [-.63,.63]:
-    block(n,Color("5b4e3d"),Vector3(xx,1.16,.86),Vector3(.40,.52,.07))
-    block(n,Color("ffcf85"),Vector3(xx,1.16,.908),Vector3(.28,.38,.03),.2)
-   block(n,Color("72533e"),Vector3(0,.48,.855),Vector3(.43,.96,.11))
-   for xx in [-.91,.91]:block(n,Color("967351"),Vector3(xx,.95,.86),Vector3(.10,1.9,.1))
-  else:
-   var h=2.2+float(era-3)*.9
-   block(n,Color("8eaaa9") if era>=5 else Color("aa9b87"),Vector3(0,h*.5,0),Vector3(1.8,h,1.55))
-   block(n,Color("587779"),Vector3(0,h+.08,0),Vector3(1.96,.19,1.7))
-   for k in range(1,era+1):
-    var yy=h*float(k)/float(era+1)
-    for xx in [-.56,0,.56]:block(n,Color("91e5d8") if era>=5 else Color("ffcd86"),Vector3(xx,yy,.79),Vector3(.34,.18,.04),.65)
-   if era>=5:
-    cone(n,Color("9ac5be"),Vector3(0,h+.48,0),.4,.85,.04,10)
-    sphere(n,Color("95f1e1"),Vector3(0,h+.92,0),Vector3(.22,.22,.22),1.4)
-    asset(n,"future",j,Vector3(1.3,0,0),1.9)
-   else:cone(n,Color("786a60"),Vector3(.65,h+.5,0),.16,1.0,.16,10)
- if j%3==1 and era>=2:
-  asset(n,"prop",j,Vector3(1.3,0,.55),.55)
- if j%4==0 and era>=2:
-  var lamp=Node3D.new()
-  n.add_child(lamp)
-  lamp.position=Vector3(1.1,0,1.6)
-  cone(lamp,Color("695d48"),Vector3.UP*.48,.045,.96,.035,6)
-  block(lamp,Color("584b3a"),Vector3.UP*1.02,Vector3(.23,.10,.23))
-  sphere(lamp,Color("ffcc83"),Vector3.UP*.94,Vector3(.17,.20,.17),.55)
- if j%3==0:
-  for row in range(3):
-   for col in range(4):
-    var q=Vector3(-1.7+col*.24,.04,1.25+row*.27)
-    block(n,Color("806847"),q,Vector3(.20,.06,.23))
-    sphere(n,Color("98ad5e"),q+Vector3(0,.14,0),Vector3(.14,.26,.14))
+ var tint=Color("729fa0") if i==0 else Color("b78458")
+ var wall=Color("d4c5a6") if era<4 else Color("abbfbc")
+ var cover=Node3D.new()
+ n.add_child(cover)
+ n.set_meta("cover",cover)
+ var interior=Node3D.new()
+ n.add_child(interior)
+ n.set_meta("interior",interior)
+ block(interior,Color("87725a"),Vector3(0,.06,0),Vector3(2.20,.12,2.20))
+ for k in range(4):
+  var x=-.69 if k%2==0 else .69
+  var z=-.60+float(int(k/2))*.98
+  block(interior,Color("5c4e40"),Vector3(x,.18,z),Vector3(.53,.22,.84))
+  block(interior,tint,Vector3(x,.32,z),Vector3(.48,.12,.76))
+  block(interior,Color("eee0c2"),Vector3(x,.41,z-.28),Vector3(.42,.09,.20))
+ block(interior,Color("947759"),Vector3(0,.35,-.65),Vector3(.40,.12,.48))
+ sphere(interior,Color("ffc779"),Vector3(0,.47,-.65),Vector3(.17,.18,.17),.7)
+ var h=1.55 if era<2 else 1.9 if era<4 else 2.3
+ block(cover,wall,Vector3(0,h*.5,-1.01),Vector3(2.15,h,.18))
+ for side in [-1,1]:
+  block(cover,wall,Vector3(side*1.01,h*.5,0),Vector3(.17,h,2.1))
+  block(cover,wall,Vector3(side*.77,h*.5,1.01),Vector3(.58,h,.18))
+  block(cover,Color("f5ca7d"),Vector3(side*.76,h*.66,1.12),Vector3(.30,.35,.045),.32)
+ block(cover,wall,Vector3(0,h-.16,1.01),Vector3(1.12,.32,.18))
+ if era<4:
+  var roof=piece(cover,PrismMesh.new(),tint,Vector3(0,h+.39,0),Vector3(2.44,.85,2.45))
+  roof.rotation.y=PI*.5
+ else:
+  block(cover,tint,Vector3(0,h+.10,0),Vector3(2.42,.23,2.42))
+  for k in range(3):block(cover,Color("375e68"),Vector3(-.56+k*.56,h+.25,0),Vector3(.48,.06,.85),.25 if era>=5 else 0.0)
+  if era>=5:cone(cover,Color("b7e4db"),Vector3(0,h+.63,0),.25,.82,.03,8,.5)
+ for side in [-1,1]:block(cover,Color("80664f"),Vector3(side*.49,.62,1.13),Vector3(.08,1.25,.10))
+ interior.visible=false
  return n
+
 
 func sync_houses(i:int):
  var v=sim.villages[i]
@@ -815,7 +810,9 @@ func sync_houses(i:int):
 
 func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  var skin=Color("399c98").lerp(Color("93d6b6"),float(a.genes[2])) if a.clan==0 else Color("a95c3f").lerp(Color("e8be78"),float(a.genes[2]))
- var cloth=Color("244b59") if a.clan==0 else Color("683e4c")
+ var cloth=(Color("244b59") if a.clan==0 else Color("683e4c")).lerp(Color("bba16e"),float(a.genes[1])*.55)
+ var era=int(sim.villages[a.clan].era)
+ if era>=4:cloth=cloth.lerp(Color("88a9be"),.45)
  var accent=Color("c5f2d7") if a.clan==0 else Color("ffe3a1")
  var body=Node3D.new()
  parent.add_child(body)
@@ -830,6 +827,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
  var arms=[]
  var legs=[]
  var eyes=[]
+ var brows=[]
  for side in [-1,1]:
   var ear=sphere(body,skin.darkened(.08),Vector3(side*.39,1.42,.0),Vector3(.24,.38,.18))
   ear.rotation.z=side*-.56
@@ -845,6 +843,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   eyes.append(eye)
   var brow=sphere(body,skin.darkened(.26),Vector3(side*.18,1.49,.28),Vector3(.19,.048,.045))
   brow.rotation.z=side*lerpf(-.10,.18,float(a.genes[0]))
+  brows.append(brow)
   var arm=Node3D.new()
   body.add_child(arm)
   arm.position=Vector3(side*.34,.98,.0)
@@ -857,14 +856,18 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   sphere(leg,skin.darkened(.08),Vector3(0,-.17,0),Vector3(.24,.35,.27))
   sphere(leg,skin,Vector3(0,-.32,.08),Vector3(.27,.16,.36))
   legs.append(leg)
- sphere(body,skin.darkened(.12),Vector3(0,1.13,.345),Vector3(.12,.065,.04))
+ var mouth=sphere(body,skin.darkened(.26),Vector3(0,1.13,.345),Vector3(.12,.065,.04))
  for j in range(3):
   sphere(body,accent,Vector3((j-1)*.10,1.55,.20),Vector3(.06,.08,.035),.5)
  var crest=cone(body,skin.lightened(.18),Vector3(0,1.68,-.08),.11,.18+float(a.genes[3])*.22,.015,7)
  crest.rotation.x=-.35
  if a.genes[1]>.55:
   for side in [-1,1]:sphere(body,accent,Vector3(side*.27,1.16,.28),Vector3(.09,.045,.027))
- return {"body":body,"arms":arms,"legs":legs,"eyes":eyes}
+ if a.genes[0]>.65:sphere(body,accent,Vector3(0,1.70,-.05),Vector3(.19,.12,.17),.2)
+ if a.genes[3]>.65:
+  for side in [-1,1]:sphere(body,cloth,Vector3(side*.34,.88,.03),Vector3(.22,.22,.28))
+ if era>=3:block(body,accent,Vector3(0,.92,.29),Vector3(.18,.11,.055),.15 if era>=5 else 0.0)
+ return {"body":body,"arms":arms,"legs":legs,"eyes":eyes,"brows":brows,"mouth":mouth}
 
 func create_actor(a:Dictionary):
  if actors.has(a.id):return
@@ -884,6 +887,8 @@ func create_actor(a:Dictionary):
  actors[a.id]["animation"]=animation_player(visual) if visual!=null else null
  actors[a.id]["moving"]=true
  actors[a.id]["eyes"]=rig.get("eyes",[])
+ actors[a.id]["brows"]=rig.get("brows",[])
+ actors[a.id]["mouth"]=rig.get("mouth")
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -925,13 +930,18 @@ func apply_changes():
   match e.kind:
    "birth":
     var a=sim.find(int(e.id))
-    if not a.is_empty():create_actor(a)
+    if not a.is_empty():
+     create_actor(a)
+     if sim.spatial_autonomy:
+      if not a.parents.is_empty() and actors.has(int(a.parents[0])):actors[a.id].node.position=actors[int(a.parents[0])].node.position+Vector3(.5,0,0)
+      life_bubble(actors[a.id].node.position,"NUOVA VITA",Color("f4d1a0"))
     services_dirty=true
    "death":
     claims.erase(int(e.id))
     if actors.has(e.id):
      var n=actors[e.id].node
      spark(n.position+Vector3(0,.6,0),Color("b8dad0"),.55)
+     if sim.spatial_autonomy:life_bubble(n.position,"ADDIO",Color("c0d2e3"))
      n.queue_free()
      actors.erase(e.id)
      activity_labels.erase(e.id)
@@ -1006,7 +1016,7 @@ func _process(delta:float):
   if is_instance_valid(fps_label):fps_label.text=str(Engine.get_frames_per_second())+" FPS"
  if tour:update_tour(delta)
  ai_cooldown=maxf(0,ai_cooldown-delta)
- if speed>0 and portable_ai and ai_autonomy and not ai_busy and sim.day>=12 and sim.day-last_ai_day>=12 and ai_cooldown<=0:
+ if speed>0 and portable_ai and ai_autonomy and not ai_busy and sim.day>=3 and sim.day-last_ai_day>=3 and ai_cooldown<=0:
   ask_autonomous()
  if toast_time>0:
   toast_time-=delta
@@ -1044,6 +1054,7 @@ func _process(delta:float):
    rebuild_navigation()
    services_dirty=true
   if services_dirty:rebuild_services()
+  update_house_views()
   for a in sim.people.duplicate():
    if not actors.has(a.id):continue
    var r=actors[a.id]
@@ -1091,7 +1102,8 @@ func _process(delta:float):
   autonomy_clock+=delta
   if autonomy_clock>=.5:
    autonomy_clock=0.0
-   if actors.has(selected):refresh()
+   refresh()
+   update_service_labels()
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
   sun.light_energy=.14+daylight*.83
@@ -1143,6 +1155,8 @@ func _process(delta:float):
    var hp=ground_at(get_viewport().get_mouse_position())
    if hp.y>SEA-.5:
     hover_ring.position=hp+Vector3.UP*.12
+    var radius=float({"Meteorite":7.0,"Fulmine":2.4,"Tsunami":11.0,"Vulcano":9.0,"Montagna":5.0,"Lago":6.0}.get(power,6.0))
+    hover_ring.scale=Vector3(radius/6.0,1,radius/6.0)
     hover_ring.visible=true
  update_effects(delta)
 
@@ -1303,6 +1317,9 @@ func update_effects(delta:float):
     if e.get("destructive",false):
      e.destructive=false
      disaster(e.dest,"Meteorite",7.0,125.0,-3.0,5.0)
+  elif e.kind=="bubble":
+   e.node.position.y+=delta*.23
+   e.node.modulate.a=1.0-frac
   elif e.kind=="wave":
    e.node.scale=Vector3(1+frac*10,1+sin(frac*PI)*2.2,1+frac*10)
   elif e.kind=="impact":
@@ -1522,12 +1539,12 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47   /   P R O J E C T   G O D",22)
+ title=text_label(row,"GENESIS 47  /  VITA",22)
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  button(row,"Guida",show_help)
- button(row,"Vista",toggle_compact)
+ button(row,"Pannelli [TAB]",toggle_compact)
  button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
  selected_slot=OptionButton.new()
@@ -1541,7 +1558,7 @@ func setup_ui():
  fps_label.modulate=Color("a7d9bc")
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
- var left=panel(hud,Rect2(14,104,190,650),.88)
+ var left=panel(hud,Rect2(14,104,180,650),.90)
  left_panel=left
  var lv=VBoxContainer.new()
  left.add_child(lv)
@@ -1571,7 +1588,7 @@ func setup_ui():
  unlimited_toggle.text="Energia infinita"
  unlimited_toggle.toggled.connect(func(on):unlimited=on)
  lv.add_child(unlimited_toggle)
- var right=panel(hud,Rect2(1107,104,319,650),.88)
+ var right=panel(hud,Rect2(1140,104,286,650),.90)
  right_panel=right
  var rv=VBoxContainer.new()
  right.add_child(rv)
@@ -1640,6 +1657,7 @@ func setup_ui():
  button(extra,"Traguardi",show_achievements)
  button(extra,"Statistiche",show_history)
  button(extra,"Nomi",func():show_labels=not show_labels)
+ button(archive,"Etichette dei luoghi",func():show_world_labels=not show_world_labels;update_service_labels())
  button(archive,"Cronaca completa",func():open_dialog("CRONACA","\n".join(sim.events)))
  button(archive,"Storia delle crisi",show_crisis_history)
  social_summary=text_label(archive,"",13)
@@ -1696,7 +1714,9 @@ func setup_ui():
  hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  objective=text_label(bv,"",14)
- chronicle=rich(bv,38)
+ chronicle=rich(bv,32)
+ life_overlay=text_label(bv,"",12)
+ life_overlay.modulate=Color("b9dbc8")
  chronicle.scroll_following=false
  toast_panel=panel(hud,Rect2(430,104,570,64),.94)
  toast_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -1722,7 +1742,8 @@ func toggle_photo():
 
 func refresh():
  if top==null or sim.villages.size()!=2:return
- top.text="GIORNO %03d    ·    %d VIVENTI    ·    ENERGIA %d/100    ·    PACE %d%%    ·    %d SCOPERTE    ·    %d SCAMBI"%[sim.day,sim.people.size(),int(sim.energy),int(sim.peace),sim.discoveries.size(),sim.trades]
+ top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,sim.people.size(),int(sim.energy),int(sim.peace)]
+ if life_overlay!=null:life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
  top.text+="    ·    "+sim.season+" / "+sim.weather_name
  power_label.text=power
  if map_view!=null:map_view.queue_redraw()
@@ -1757,6 +1778,7 @@ func refresh():
  else:
   details.text=("%s%s\n%s · %s\nEtà %d · Generazione %d\nSalute %d%% · Fame %d%%\nUmore %d%% · Fede %d%%\nIntelletto %d%% · Empatia %d%%\nGenitori: %s · Partner: %s\nObiettivo: %s\n\nRICORDI\n%s"%["★ " if a.favorite else "",a.name,Sim.CLANS[a.clan],a.role,int(a.age),a.gen,int(a.health),int(a.hunger),int(a.mood),int(a.faith),int(a.genes[0]*100),int(a.genes[1]*100),family_names(a.parents),family_names([a.partner]),a.goal,"\n".join(a.memories)])
   details.text="AZIONE: "+str(a.get("activity","Decide"))+"\n"+str(a.get("task_stage",""))+" · "+str(a.get("task_reason",""))+"\nStanchezza "+str(int(a.get("fatigue",0)))+"% · Noia "+str(int(a.get("boredom",0)))+"%\nAttività concluse: "+str(a.get("tasks_done",0))+"\n\n"+details.text
+  details.text="UMORE: "+str(a.emotion)+" · "+str(a.routine)+"\n"+(str(a.special_memory)+"\n" if int(a.special_until)>sim.day else "")+details.text
   details.text+="\nDimora: "+("assegnata" if not str(a.get("home_key","")).is_empty() else "senza casa")+" · Carico: "+(str(a.get("cargo","")) if not str(a.get("cargo","")).is_empty() else "—")
   details.text+="\n\nPERSONALITÀ\n"+sim.personality(a)+"\nAmicizia: "+family_names([a.friend])
   details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
@@ -1769,7 +1791,7 @@ func refresh():
  if sim.mode==0 and not sim.active_crisis.is_empty():
   objective.text=Sim.CRISIS_NAMES[int(sim.active_crisis.kind)]+" · "+Sim.CLANS[int(sim.active_crisis.clan)]+" · fino al giorno "+str(sim.active_crisis.until)
  if sim.ended!="":objective.text=sim.ended
- chronicle.text="\n".join(sim.events.slice(0,12))
+ chronicle.text="\n".join(sim.events.slice(0,2))
  if inspector_tabs!=null:
   var unread=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
   inspector_tabs.set_tab_title(1,"Mondo"+(" · "+str(unread) if unread>0 else ""))
@@ -1984,7 +2006,12 @@ func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
      hint.text="La creatura non ha formulato una decisione valida."
      return
     var thought=reply.split("|",true,1)[1].strip_edges() if reply.contains("|") else "Ho scelto una nuova priorità."
-    if sim.adopt_intention(a,intent,thought):notify_event("INIZIATIVA AUTONOMA",a.name+" · "+intent.to_lower())
+    if sim.adopt_intention(a,intent,thought):
+     a.special_memory=thought.left(90)
+     a.special_until=sim.day+3
+     sim.record_dialogue(a,a.name+" · AI",thought)
+     if actors.has(a.id):life_bubble(actors[a.id].node.position,"IDEA: "+thought.left(60),Color("b6dcf2"))
+     notify_event("INIZIATIVA AUTONOMA",a.name+" · "+intent.to_lower())
     refresh()
     return
    sim.remember(a,reply)
@@ -2005,12 +2032,14 @@ func save_path(path:String,show_hint:bool)->bool:
  d["scars"]=scars
  d["world_centers"]=world_centers
  d["destroyed_total"]=destroyed_total
+ d["discovery_sites"]=discovery_sites
+ d["completed_visible"]=completed_visible
  d["pending_meteors"]=[]
  for e in effects:
   if e.kind=="meteor" and e.get("destructive",false):d.pending_meteors.append([e.dest.x,e.dest.z])
  d["positions"]={}
  for id in actors:
-  var p:Vector3=actors[id].node.position
+  var p:Vector3=actors[id].get("door_position",actors[id].node.position)
   d.positions[str(id)]=[p.x,p.z]
  d["saved_at"]=Time.get_unix_time_from_system()
  d["camera"]=[focus.x,focus.z,azimuth,pitch,distance]
@@ -2066,6 +2095,8 @@ func load_path(p:String)->bool:
  scars=data.get("scars",[])
  world_centers=data.get("world_centers",[])
  destroyed_total=int(data.get("destroyed_total",0))
+ discovery_sites=data.get("discovery_sites",[])
+ completed_visible=int(data.get("completed_visible",0))
  reset_visuals()
  for pending in data.get("pending_meteors",[]):
   if pending is Array and pending.size()==2:meteor(ground(float(pending[0]),float(pending[1])),true)
@@ -2224,6 +2255,7 @@ func self_test():
  if not test_spatial_meal():failed=true
  if not test_destruction():failed=true
  if not test_services():failed=true
+ if not test_life_upgrade():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
  if not save_path(test_path,false):failed=true
@@ -2630,7 +2662,7 @@ func ask_autonomous():
  var prompt="Sei %s, creatura immaginaria autonoma del gioco. Salute %d, fame %d, umore %d, pace tra popoli %d, scorte %d, mestiere %s. Scegli una sola priorità tra RICERCA, CIBO, CURA, PACE, ESPLORA. Scrivi esattamente CODICE|una frase in italiano che spiega la tua scelta. Nessun altro testo."%[a.name,int(a.health),int(a.hunger),int(a.mood),int(sim.peace),int(v.food),a.role]
  var payload={"model":"genesis-local","messages":[{"role":"user","content":prompt}],"stream":false,"max_tokens":65,"temperature":.35}
  last_ai_day=sim.day
- ai_cooldown=22.0
+ ai_cooldown=12.0
  var err=request.request("http://127.0.0.1:17847/v1/chat/completions",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
  if err==OK:
   request_target=a.id
@@ -3220,7 +3252,15 @@ func task_destination(a:Dictionary)->Vector3:
    if actors.has(int(a.task_target)):return actors[int(a.task_target)].node.position+offset*.7
    return c+offset*2
   "play":return c+Vector3(-3,0,3)+offset
-  "explore":return c+Vector3(cos(angle+float(a.tasks_done)*1.7),0,sin(angle+float(a.tasks_done)*1.7))*8.0
+  "explore":
+   var best=INF
+   var dest=c+Vector3(cos(angle+float(a.tasks_done)*1.7),0,sin(angle+float(a.tasks_done)*1.7))*8.0
+   for landmark in discovery_sites:
+    if landmark.found:continue
+    var q=ground(float(landmark.x),float(landmark.z))
+    var d=flat_dist(q,c)
+    if d<best and d<24.0:best=d;dest=q
+   return dest
  return c+offset
 
 func route_actor(a:Dictionary,r:Dictionary)->bool:
@@ -3245,6 +3285,7 @@ func route_actor(a:Dictionary,r:Dictionary)->bool:
  return true
 
 func cancel_task(a:Dictionary,r:Dictionary):
+ leave_interior(r)
  claims.erase(int(a.id))
  a.station_id=""
  a.delivery=false
@@ -3263,6 +3304,22 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  var n:Node3D=r.node
  if dt<=0:return false
  if sim.spatial_autonomy:sim.tick_needs(a,dt)
+ if float(r.get("panic",0))>0:
+  r.panic=maxf(0,float(r.panic)-dt)
+  a.task_stage="Fugge"
+  var target:Vector3=r.get("escape",n.position)
+  var dir=target-n.position
+  dir.y=0
+  if dir.length()>.25:
+   var next=n.position+dir.normalized()*minf(dt*4.2,dir.length())
+   next.y=walking_height(next.x,next.z)
+   if next.y>SEA+.18:n.position=next;n.rotation.y=atan2(dir.x,dir.z)
+   return true
+  return false
+ if sim.spatial_autonomy and a.task not in ["eat","sleep","heal","social","aid"] and a.hunger<75 and a.fatigue<75 and a.health>45:
+  if float(r.get("meeting_wait",0))>0:
+   r.meeting_wait=maxf(0,float(r.meeting_wait)-dt)
+   return false
  if float(r.get("retry",0))>0:
   r.retry=maxf(0,float(r.retry)-dt)
   return false
@@ -3270,6 +3327,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   cancel_task(a,r)
   return false
  if a.task=="":
+  leave_interior(r)
   sim.begin_task(a,sim.choose_task(a,available_actions(a,r) if sim.spatial_autonomy else {}))
  if sim.spatial_autonomy and a.task not in ["social","aid","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
   cancel_task(a,r)
@@ -3320,7 +3378,13 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
    return false
   r.social_retry=0.0
   r["repath_wait"]=0.0
+  var other=actors[int(a.task_target)]
+  other["meeting_wait"]=.4
+  var face=partner.position-n.position
+  n.rotation.y=atan2(face.x,face.z)
+  partner.rotation.y=atan2(-face.x,-face.z)
  a.task_stage="Consegna" if a.delivery else "In corso"
+ if a.task=="sleep" and sim.spatial_autonomy:enter_interior(a,r,dt)
  a.task_left=maxf(0,float(a.task_left)-dt)
  if a.task_left<=0:
   if sim.spatial_autonomy and a.task in ["farm","gather"] and not a.delivery:
@@ -3338,9 +3402,16 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
    if kind=="house" and not site.is_empty() and sim.villages[a.clan].wood>=22:
     var q:Vector3=site.get("site",site.pos)
     house_sites[a.clan].append({"x":q.x,"z":q.z})
+   var target_id=int(a.task_target)
    if sim.complete_task(a):
     completed_visible+=1
+    if kind=="explore":discover_near(a,n.position)
+    if kind=="social" and not test_mode:
+     life_bubble(n.position,str(a.special_memory).left(42),Color("d6edd0"))
+     if actors.has(target_id):life_bubble(actors[target_id].node.position,"Ti ascolto.",Color("f2d4a4"))
+    if kind=="house" and not test_mode:life_bubble(n.position,"NUOVA CASA",Color("f2d4a4"))
     if not test_mode and distance<40:spark(n.position+Vector3.UP*.45,Color("9bdfb6"),.28)
+   leave_interior(r)
    claims.erase(int(a.id))
   else:a.task=""
   r.planned_task=""
@@ -3485,6 +3556,17 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
   var dist=flat_dist(actors[a.id].node.position,p)
   if dist>radius:continue
   a.health-=damage*(1.0-.65*dist/radius)
+  a.stress=minf(100,float(a.stress)+60)
+  a.special_memory="Sono sopravvissuto a "+kind
+  a.special_until=sim.day+5
+  if a.health>0 and sim.spatial_autonomy:
+   var rr=actors[a.id]
+   cancel_task(a,rr)
+   var away:Vector3=rr.node.position-p
+   away.y=0
+   if away.length()<.1:away=Vector3.RIGHT
+   rr["escape"]=land_near(p.x+away.normalized().x*(radius+2),p.z+away.normalized().z*(radius+2))
+   rr["panic"]=3.0
   if a.health<=0:
    sim.die(a,kind.to_lower())
    dead_count+=1
@@ -3600,6 +3682,7 @@ func rebuild_services():
  for child in service_root.get_children():
   service_root.remove_child(child)
   child.queue_free()
+ var old_claims=claims.duplicate()
  services.clear()
  claims.clear()
  for i in range(2):
@@ -3617,7 +3700,9 @@ func rebuild_services():
    var q:Vector3=home.node.position
    var door=q+(c-q).normalized()*2.0
    var key=register_service("sleep",i,door,4,"DIMORA")
-   if key!="":services[key]["home"]=site_key("home",i,q)
+   if key!="":
+    services[key]["home"]=site_key("home",i,q)
+    services[key]["building"]=home.node
   for q in farm_points[i]:register_service("farm",i,q,3,"CAMPO")
   if sim.villages[i].era<2:
    for j in range(3):
@@ -3630,9 +3715,14 @@ func rebuild_services():
   for q in timber_points:
    if flat_dist(q,c)<24:register_service("gather",i,q+(c-q).normalized()*.75,1,"LEGNA",false)
  assign_homes()
+ for id in old_claims:
+  var citizen=sim.find(int(id))
+  var key=str(old_claims[id])
+  if not citizen.is_empty() and citizen.station_id==key and service_open(key,citizen):claims[int(id)]=key
  for a in sim.people:
-  if actors.has(a.id):actors[a.id]["planned_task"]=""
+  if actors.has(a.id) and not claims.has(int(a.id)) and a.task not in ["social","aid","explore"]:actors[a.id]["planned_task"]=""
  services_dirty=false
+ update_service_labels()
 
 func assign_homes():
  var usage={}
@@ -3712,9 +3802,9 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
  var marker:Label3D=r.action_marker
  var prop:Node3D=r.action_prop
  var shown=active!="" and (a.task_stage in ["In corso","Consegna"] or a.delivery)
- marker.visible=shown and distance<35 and not photo_mode
+ marker.visible=(shown or a.task_stage=="Fugge") and distance<20 and not photo_mode and (show_labels or selected==a.id or a.task_stage=="Fugge")
  var marks={"eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
- marker.text="TRASPORTO" if a.delivery else str(marks.get(active,""))
+ marker.text="FUGA!" if a.task_stage=="Fugge" else "TRASPORTO" if a.delivery else str(marks.get(active,""))
  marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
  var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else ""
  if str(r.get("prop_kind",""))!=visual:
@@ -3734,6 +3824,28 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
     block(prop,Color("d37d6c"),Vector3(0,0,.12),Vector3(.05,.16,.025))
     block(prop,Color("d37d6c"),Vector3(0,0,.135),Vector3(.16,.05,.025))
    "play":sphere(prop,Color("e5bd70"),Vector3.ZERO,Vector3(.23,.23,.23))
+ if distance<22:
+  var mouth=r.get("mouth")
+  if is_instance_valid(mouth):mouth.scale.y=.12 if a.emotion=="Felice" else .065+absf(sin(r.phase*3))*.055 if active=="social" else .045
+  var brows=r.get("brows",[])
+  for j in range(brows.size()):brows[j].rotation.z=(1 if j==0 else -1)*(.25 if a.emotion in ["Triste","In lutto","Spaventato"] else -.10)
+ if not moving and a.task_stage=="In corso" and not r.arms.is_empty():
+  match active:
+   "eat":
+    r.arms[0].rotation.x=-1.0+sin(r.phase*4)*.4
+    r.arms[1].rotation.x=-.7
+   "gather","house","build":
+    r.arms[0].rotation.x=-1.15+sin(r.phase*5)*.8
+    r.arms[1].rotation.x=-.55+sin(r.phase*5)*.4
+   "farm":
+    r.body.rotation.x=.42+sin(r.phase*3)*.12
+    r.arms[0].rotation.x=-.8+sin(r.phase*4)*.5
+   "social","aid":
+    r.arms[0].rotation.z=-.35+sin(r.phase*3)*.3
+    r.arms[1].rotation.x=-.6+sin(r.phase*2)*.35
+   "play":r.body.position.y=.09+absf(sin(r.phase*4))*.13
+ else:
+  for arm in r.arms:arm.rotation.z=0.0
  if not moving and active=="sleep" and a.task_stage=="In corso":
   r.body.rotation.x=lerpf(r.body.rotation.x,PI*.42,.25)
   r.body.position.y=.14
@@ -3778,5 +3890,124 @@ func test_services()->bool:
  sample.daily()
  if sample.villages[0].food!=food or sample.villages[0].wood!=wood:return false
  print("SERVICES_TEST reservation=true housing=true transport=true no_passive_production=true")
+ sim.spatial_autonomy=false
+ return true
+
+func life_bubble(p:Vector3,message:String,tint:Color):
+ if test_mode or effects.size()>90:return
+ var label=Label3D.new()
+ effects_root.add_child(label)
+ label.position=p+Vector3.UP*1.85
+ label.text=message
+ label.modulate=tint
+ label.font_size=32
+ label.pixel_size=.007
+ label.outline_size=7
+ label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+ effects.append({"kind":"bubble","node":label,"life":3.5,"max":3.5})
+
+func update_service_labels():
+ for key in services:
+  var row=services[key]
+  if is_instance_valid(row.get("label")):row.label.visible=show_world_labels and distance<28 and not photo_mode
+
+func update_house_views():
+ var a=sim.find(selected)
+ var selected_home=str(a.get("home_key",""))
+ var selected_building=services.get(selected_home,{}).get("building")
+ for clan in range(2):
+  for home in houses[clan]:
+   var n:Node3D=home.node
+   var interior=n.get_meta("interior",null)
+   var cover=n.get_meta("cover",null)
+   if not is_instance_valid(interior) or not is_instance_valid(cover):continue
+   var cutaway=distance<12 and n==selected_building
+   cover.visible=not cutaway
+   interior.visible=cutaway
+
+func enter_interior(a:Dictionary,r:Dictionary,dt:float):
+ var row=services.get(str(a.station_id),{})
+ var building=row.get("building")
+ if not is_instance_valid(building):return
+ var n:Node3D=r.node
+ if not r.has("door_position"):r["door_position"]=n.position
+ var slot_index=0
+ for citizen in sim.people:
+  if citizen.id==a.id:break
+  if citizen.home_key==a.home_key:slot_index+=1
+ slot_index=posmod(slot_index,4)
+ var local=Vector3(-.69 if slot_index%2==0 else .69,.38,-.60+float(int(slot_index/2))*.98)
+ var bed:Vector3=building.to_global(local)
+ n.position=n.position.move_toward(bed,dt*2.5)
+ n.rotation.y=building.rotation.y
+
+func leave_interior(r:Dictionary):
+ if r.has("door_position"):
+  r.node.position=r.door_position
+  r.erase("door_position")
+
+func rebuild_discoveries():
+ if not is_instance_valid(discovery_root):return
+ for child in discovery_root.get_children():
+  discovery_root.remove_child(child)
+  child.queue_free()
+ if discovery_sites.is_empty():
+  for i in range(2):
+   var c:Vector3=centers[i]
+   for j in range(3):
+    var angle=(j*2.1+i)*1.1
+    var q=land_near(c.x+cos(angle)*15,c.z+sin(angle)*15)
+    if flat_dist(q,c)>7:discovery_sites.append({"x":q.x,"z":q.z,"found":false,"name":["Pietra antica","Fonte luminosa","Radura sacra"][j]})
+ for row in discovery_sites:
+  var q=ground(float(row.x),float(row.z))
+  if q.y<SEA+.3:continue
+  var n=Node3D.new()
+  discovery_root.add_child(n)
+  n.position=q
+  cone(n,Color("777e79"),Vector3(0,.38,0),.42,.76,.15,6)
+  sphere(n,Color("a6dfc8") if row.found else Color("d5b66d"),Vector3(0,.9,0),Vector3(.23,.34,.23),.8)
+  if row.found:
+   var tag=Label3D.new()
+   n.add_child(tag)
+   tag.position.y=1.3
+   tag.text=str(row.name)
+   tag.font_size=24
+   tag.pixel_size=.008
+   tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+
+func discover_near(a:Dictionary,p:Vector3):
+ for row in discovery_sites:
+  if row.found or flat_dist(p,Vector3(float(row.x),0,float(row.z)))>2.1:continue
+  row.found=true
+  sim.villages[a.clan].knowledge+=8
+  a.special_memory="Ho scoperto "+str(row.name)
+  a.special_until=sim.day+6
+  sim.milestone(a,"Esplorazione",a.special_memory)
+  sim.log_event(a.name+" scopre "+str(row.name)+".")
+  rebuild_discoveries()
+  life_bubble(p,"SCOPERTA!",Color("b2e5ca"))
+  break
+
+func test_life_upgrade()->bool:
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ var a=sim.people[0]
+ var friend=sim.people[1]
+ a.friend=friend.id
+ friend.friend=a.id
+ sim.die(friend,"test")
+ sim.tick_needs(a,.1)
+ if a.emotion!="In lutto" or a.stress<30:return false
+ apply_changes()
+ var home=str(a.home_key)
+ if not services.has(home):return false
+ var building=services[home].get("building")
+ if not is_instance_valid(building) or not building.has_meta("interior"):return false
+ if discovery_sites.is_empty():return false
+ var mark=discovery_sites[0]
+ var old_knowledge=float(sim.villages[a.clan].knowledge)
+ discover_near(a,Vector3(float(mark.x),0,float(mark.z)))
+ if not mark.found or sim.villages[a.clan].knowledge!=old_knowledge+8:return false
+ print("LIFE_UPGRADE_TEST grief=true interior=true discovery=true")
  sim.spatial_autonomy=false
  return true
