@@ -109,10 +109,19 @@ func record(message:String):
  if history.size()>40:history.pop_back()
  world.sim.log_event(message)
 
-func work_completed(clan:int,kind:String):
+func work_completed(a:Dictionary,kind:String,coins_before:float):
  if not enabled:return
+ var clan=int(a.clan)
  if kind=="gather":change(clan,"stone",.55)
  if kind=="craft":change(clan,"tools",1.0)
+ if kind=="eat":change(clan,"cash",maxf(0,coins_before-float(a.coins)))
+ if kind in ["farm","gather","build","house"] and float(a.tool)<15 and balance(clan,"tools")>=1:
+  var cost=price(clan,"tools")
+  if float(a.coins)>=cost:
+   a.coins-=cost
+   change(clan,"cash",cost)
+   change(clan,"tools",-1)
+   a.tool=100.0
 
 func recruit(clan:int,region:int)->bool:
  if not enabled or region not in [1,2] or world.sim.villages[clan].tech<2:return false
@@ -144,7 +153,6 @@ func recruit(clan:int,region:int)->bool:
 func place_order(seller:int,buyer:int,good:String,amount:float)->bool:
  if not enabled or seller==buyer or not GOODS.has(good) or voyages.size()>=8:return false
  if port_population(seller)<=0 or port_population(buyer)<=0:return false
- if seller<2 and buyer<2:return false
  if port_clan(seller)!=port_clan(buyer) and world.sim.peace<45:return false
  var quantity=minf(amount,balance(seller,good))
  var unit=(price(seller,good)+price(buyer,good))*.5
@@ -191,6 +199,10 @@ func daily():
  if not enabled:return
  for v in voyages.duplicate():
   if world.sim.day<int(v.due):continue
+  if float(route_for(v).length)<=.01:
+   v.due=int(v.due)+1
+   delayed+=1
+   continue
   if world.sim.weather_name=="Pioggia" and int(v.delay)<2:
    v.due=int(v.due)+1
    v.delay=int(v.delay)+1
@@ -238,7 +250,7 @@ func match_market():
    var best=-1
    var surplus=0.0
    for seller in ports:
-    if seller==buyer or (seller<2 and buyer<2):continue
+    if seller==buyer:continue
     if port_clan(seller)!=port_clan(buyer) and world.sim.peace<45:continue
     var excess=balance(seller,good)-target(seller,good)
     if excess>surplus:surplus=excess;best=int(seller)
@@ -275,6 +287,7 @@ func rebuild_sea_grid():
  sea_grid.cell_size=Vector2(2,2)
  sea_grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
  sea_grid.update()
+ sea_grid.fill_solid_region(sea_grid.region,false)
  for x in range(-26,27):
   for z in range(-26,27):
    if world.height_at(x*2,z*2)>world.SEA-.20:sea_grid.set_point_solid(Vector2i(x,z))
@@ -406,3 +419,21 @@ func report()->String:
  lines.append("")
  for entry in history.slice(0,8):lines.append(entry)
  return "\n".join(lines)
+
+
+func damage_colonies(p:Vector3,radius:float,damage:float,kind:String):
+ if not enabled:return
+ for c in colonies:
+  var point:Vector2=world.REGION_POINTS[int(c.region)]
+  var dist=Vector2(p.x,p.z).distance_to(point)
+  if dist>radius+2.0:continue
+  var strength=clampf(damage/100.0,0,1)*clampf(1.0-dist/maxf(1,radius+2),0,1)
+  var lost=mini(int(c.population),floori(float(c.population)*strength*.50))
+  c.population=int(c.population)-lost
+  c.deaths=int(c.deaths)+lost
+  c.food=maxf(0,float(c.food)*(1.0-strength*.5))
+  c.wood=maxf(0,float(c.wood)*(1.0-strength*.35))
+  if strength>.5:c.houses=maxi(0,int(c.houses)-1)
+  c.prosperity=maxf(0,float(c.prosperity)-strength*35)
+  record("%s colpisce la colonia %s: %d vittime."%[kind,c.name,lost])
+ sync_visuals()
