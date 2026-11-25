@@ -18,6 +18,8 @@ const Districts=preload("res://scripts/civic_districts.gd")
 const Origins=preload("res://scripts/origins.gd")
 const Cave=preload("res://scripts/cave_exploration.gd")
 const Rivers=preload("res://scripts/river_system.gd")
+const Legacy=preload("res://scripts/legacy_society.gd")
+const LivingArt=preload("res://scripts/living_art.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -35,6 +37,12 @@ var fluid_root:Node3D
 var legend=Legend.new()
 var districts=Districts.new()
 var origins=Origins.new()
+var legacy=Legacy.new()
+var legacy_root:Node3D
+var legacy_view:RichTextLabel
+var title_intro:Control
+var intro_time=0.0
+var ash_time=0.0
 var cave=Cave.new()
 var rivers=Rivers.new()
 var cave_root:Node3D
@@ -633,6 +641,7 @@ func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=fal
   sim.population_limit=Sim.MAX_CITY_POPULATION
   sim.housing_limit=100
  legend.reset(self)
+ legacy.reset(self)
  wildlife.reset(self)
  districts.reset(self)
  origins.reset(self)
@@ -655,7 +664,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root,cave_root,river_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root,cave_root,river_root,legacy_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -795,6 +804,10 @@ func reset_visuals():
  river_root=Node3D.new()
  add_child(river_root)
  rivers.reset(self,river_root,river_saved)
+ legacy_root=Node3D.new()
+ add_child(legacy_root)
+ legacy.build(legacy_root)
+ rebuild_roads()
  rebuild_services()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
@@ -1069,6 +1082,7 @@ func create_actor(a:Dictionary):
  actors[a.id]["mouth"]=rig.get("mouth")
  actors[a.id]["skeletal"]=rig.get("skeletal",{})
  Art.portrait(self,actors[a.id],a)
+ LivingArt.morphology(self,actors[a.id],a)
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -1189,8 +1203,10 @@ func step_day():
  apply_changes()
  if not test_mode:
   legend.daily()
+  legacy.daily()
   wildlife.daily()
   districts.sync()
+  if sim.day%7==0:rebuild_roads()
  if sim.day%7==0:
   repair_structures()
   rebuild_farms()
@@ -1315,6 +1331,7 @@ func _process(delta:float):
    if detailed or rig_elapsed>=.10:
     CreatureRig.drive(r,a,moving,detailed,rig_elapsed)
     if detailed:Art.portrait(self,r,a)
+    LivingArt.animate_morph(r,a,moving)
     rig_elapsed=0.0
    r["rig_elapsed"]=rig_elapsed
    if is_instance_valid(r.get("signet")):
@@ -1640,7 +1657,7 @@ func divine(p:Vector3):
   return
  if power=="Osserva":return
  var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Incendio","Terremoto","Tornado","Epidemia"] else 9.0
- if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=Sim.LIMIT:
+ if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=sim.population_limit:
   hint.text="Limite della popolazione raggiunto."
   return
  if power=="Foresta" and scarred(p):
@@ -2091,7 +2108,7 @@ func refresh():
  if is_instance_valid(map_panel):map_panel.visible=player_hud
  if is_instance_valid(map_region):map_region.text=Art.BIOMES[Art.biome(self,ground(focus.x,focus.z))]
  if is_instance_valid(journey_label):journey_label.text=legend.goal_text()
- if is_instance_valid(legend_view) and inspector_tabs.current_tab==5:legend_view.text=legend.report()+"\n\n"+wildlife.report()
+ if is_instance_valid(legend_view) and inspector_tabs.current_tab==5:legend_view.text=legend.report()+"\n\n"+wildlife.report()+"\n\n"+legacy.report()
  top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,global_population,int(sim.energy),int(sim.peace)]
  if life_overlay!=null:
   life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
@@ -2334,6 +2351,7 @@ func save_path(path:String,show_hint:bool)->bool:
  d["vast_world"]=vast_world
  d["districts"]=districts.export_state()
  d["origins"]=origins.export_state()
+ d["legacy"]=legacy.export_state()
  d["cave"]=cave.export_state()
  d["rivers"]=rivers.export_state()
  d["ocean"]=ocean.export_state()
@@ -2408,6 +2426,7 @@ func load_path(p:String)->bool:
  districts.reset(self,data.get("districts",{}))
  origins.reset(self,data.get("origins",{}))
  legend.reset(self,data.get("legend",{}))
+ legacy.reset(self,data.get("legacy",{}))
  wildlife.reset(self,data.get("wildlife",{}))
  ocean.restore(self,data.get("ocean",{}))
  hydro_saved=data.get("hydrology",{})
@@ -2605,6 +2624,7 @@ func self_test():
  if not test_player_experience():failed=true
  if not test_frontier_origins():failed=true
  if not test_world_depth():failed=true
+ if not test_living_legacy():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2768,28 +2788,7 @@ func rebuild_roads():
  var st=SurfaceTool.new()
  st.begin(Mesh.PRIMITIVE_TRIANGLES)
  var triangle_count=0
- for i in range(2):
-  for j in range(houses[i].size()):
-   var p=centers[i]
-   var q:Vector3=houses[i][j].node.position
-   var dir=Vector2(q.x-p.x,q.z-p.z)
-   if dir.length()<1:continue
-   var perpendicular=dir.normalized().orthogonal()*.25
-   var segments=maxi(3,ceili(dir.length()/0.55))
-   for k in range(segments):
-    var a=p.lerp(q,float(k)/segments)
-    var b=p.lerp(q,float(k+1)/segments)
-    var bend=Vector3(perpendicular.x,0,perpendicular.y)*1.1
-    a+=bend*sin(float(k)/segments*PI)
-    b+=bend*sin(float(k+1)/segments*PI)
-    var left_a=ground(a.x+perpendicular.x,a.z+perpendicular.y)+Vector3.UP*.13
-    var right_a=ground(a.x-perpendicular.x,a.z-perpendicular.y)+Vector3.UP*.13
-    var left_b=ground(b.x+perpendicular.x,b.z+perpendicular.y)+Vector3.UP*.13
-    var right_b=ground(b.x-perpendicular.x,b.z-perpendicular.y)+Vector3.UP*.13
-    if minf(minf(left_a.y,right_a.y),minf(left_b.y,right_b.y))<SEA+.1:continue
-    for v in [left_a,right_a,left_b,right_a,right_b,left_b]:
-     st.add_vertex(v)
-    triangle_count+=2
+ for i in range(2):triangle_count+=LivingArt.streets(self,st,i)
  if triangle_count==0:return
  st.generate_normals()
  var mi=MeshInstance3D.new()
@@ -3307,6 +3306,7 @@ func rebuild_settlement_details():
  for i in range(2):
   var v=sim.villages[i]
   if int(v.era)<2:continue
+  LivingArt.plaza(self,settlement_root,i)
   var p=land_near(centers[i].x+(3.0 if i==0 else -3.0),centers[i].z+2.5)
   var market=Node3D.new()
   settlement_root.add_child(market)
@@ -3724,6 +3724,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   leave_interior(r)
   if sim.spatial_autonomy and a.held_goods=="":
    if not test_mode and not ocean.industry.jobs.has(str(int(a.id))):
+    if morning_ritual(a,r,dt):return false
     var ritual=int(legend.ritual_advance(a,n,dt))
     if ritual>=0:
      r.planned_task=""
@@ -3821,6 +3822,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
     if delivering:a.held_goods=""
     completed_visible+=1
     if kind=="explore":discover_near(a,n.position)
+    if not test_mode and kind=="sleep":a["morning_stage"]=1
     if kind=="social" and not test_mode:
      life_bubble(n.position,str(a.special_memory).left(42),Color("d6edd0"))
      if actors.has(target_id):life_bubble(actors[target_id].node.position,str(sim.find(target_id).get("last_speech","Ti ascolto.")).left(42),Color("f2d4a4"))
@@ -3975,7 +3977,8 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
   if not actors.has(a.id):continue
   var dist=flat_dist(actors[a.id].node.position,p)
   if dist>radius:continue
-  a.health-=damage*(1.0-.65*dist/radius)
+  var protection=float(legacy.societies[int(a.clan)].resistance) if not test_mode and kind in ["Meteorite","Fulmine","Vulcano","Tsunami"] else 0.0
+  a.health-=damage*(1.0-.65*dist/radius)*(1-protection)
   a.stress=minf(100,float(a.stress)+60)
   if damage>=35 and a.health>0:a["scars"]=mini(3,int(a.get("scars",0))+1)
   a.special_memory="Sono sopravvissuto a "+kind
@@ -4486,6 +4489,7 @@ func rebuild_discoveries():
    tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
 
 func discover_near(a:Dictionary,p:Vector3):
+ if not test_mode:legacy.discover(a,p)
  for row in discovery_sites:
   if row.found or (ocean.enabled and str(row.name) in REGION_NAMES.slice(1)) or flat_dist(p,Vector3(float(row.x),0,float(row.z)))>2.1:continue
   row.found=true
@@ -5285,6 +5289,7 @@ func _exit_tree():
  if origins!=null:origins.world=null
  if cave!=null:cave.world=null
  if rivers!=null:rivers.world=null
+ if legacy!=null:legacy.world=null
 
 
 func show_legend():
@@ -5331,6 +5336,7 @@ func show_biomes():
   lines.append(rivers.report())
   lines.append(cave.report()+" · premi C")
  lines.append(districts.report())
+ lines.append(legacy.report())
  open_dialog("ATLANTE NATURALE","\n".join(lines))
 
 func test_player_experience()->bool:
@@ -5464,4 +5470,76 @@ func test_world_depth()->bool:
  if not restored.import_state(JSON.parse_string(JSON.stringify(large.export_state()))) or restored.people.size()!=200:return false
  if absf(rivers.mass()+rivers.discharged-rivers.supplied-rivers.initial)>.01:return false
  print("WORLD_DEPTH_TEST cave=true river_mass_error=",mass_error," district_stations=",stations," species=4 population_capacity=640 population_roundtrip=200 persistence=true")
+ return true
+
+
+# Two short, interruptible personal-care phases following an actual sleep.
+# These are timed gestures at the home, not a fake log of completed chores.
+func morning_ritual(a:Dictionary,r:Dictionary,dt:float)->bool:
+ var stage=int(a.get("morning_stage",0))
+ if stage<=0:return false
+ if a.hunger>75 or a.fatigue>85 or a.health<45:
+  a["morning_stage"]=0
+  r.erase("morning_left")
+  return false
+ if not r.has("morning_left"):r["morning_left"]=.85 if stage==1 else .65
+ a["industry_action"]="heal" if stage==1 else "craft"
+ a.task_stage="In corso"
+ a.activity="Si lava" if stage==1 else "Si veste"
+ r.morning_left=float(r.morning_left)-dt
+ if float(r.morning_left)<=0:
+  r.erase("morning_left")
+  if stage==1:
+   a.health=minf(100,float(a.health)+.4)
+   a["morning_stage"]=2
+  else:
+   a.mood=minf(100,float(a.mood)+1)
+   a["morning_stage"]=0
+   a["morning_completed"]=int(a.get("morning_completed",0))+1
+ return true
+
+func test_living_legacy()->bool:
+ new_world(47,0,true,true,true)
+ var a=sim.people[0]
+ var clan=int(a.clan)
+ sim.villages[clan].wood=100
+ var before=float(sim.villages[clan].wood)
+ if not legacy.invent(clan,a,2):return false
+ if absf(float(sim.villages[clan].wood)-before+16)>.001 or float(legacy.societies[clan].resistance)<=0:return false
+ if legacy.invent(clan,a,2):return false
+ legacy.elect(clan,"Repubblica","Test elezione")
+ if legacy.societies[clan].leader<0:return false
+ for citizen in sim.people:
+  if int(citizen.clan)==clan:
+   citizen.age=25
+   citizen.faith=10
+   citizen["dissident"]=true
+   citizen.mood=0
+   citizen.hunger=100
+   citizen.stress=100
+ legend.worship[clan].temple=true
+ legacy.societies[clan].opposition=95.0
+ legacy.daily()
+ if not legacy.societies[clan].ban or legend.worship[clan].temple:return false
+ if int(legacy.societies[clan].revolutions)<1:return false
+ if legacy.sites.size()!=4:return false
+ var site:Dictionary=legacy.sites[0]
+ legacy.discover(a,ground(float(site.x),float(site.z)))
+ if not site.found:return false
+ a.hunger=0
+ a.fatigue=0
+ a.health=100
+ a["morning_stage"]=1
+ var r:Dictionary=actors[a.id]
+ for i in range(10):morning_ritual(a,r,.25)
+ if int(a.get("morning_completed",0))!=1:return false
+ var count=legacy.archive.size()
+ var file="user://genesis47_legacy_test.json"
+ if not save_path(file,false):return false
+ new_world(47,0)
+ var ok=load_path(file)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
+ if not ok or legacy.archive.size()!=count or not legacy.societies[clan].ban or not legacy.sites[0].found:return false
+ print("LEGACY_TEST invention=true election=true revolt=true worship_ban=true relic=true morning=true persistence=true")
  return true
