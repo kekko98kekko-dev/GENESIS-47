@@ -31,6 +31,7 @@ func normalize(a:Dictionary,c:Dictionary,index:int):
  a["last_child_day"]=int(a.get("last_child_day",-40))
  a["memories"]=a.get("memories",[])
  a["skill"]=float(a.get("skill",0))
+ a["tool"]=float(a.get("tool",0))
  a["job"]=str(a.get("job",""))
  a["task"]=str(a.get("task",""))
  a["task_stage"]=str(a.get("task_stage","Decide"))
@@ -156,7 +157,9 @@ func finish(c:Dictionary,a:Dictionary):
  match task:
   "farm":c.food=minf(500,float(c.food)+(3.5 if world.sim.weather_name=="Siccità" else 5.0))
   "gather":c.wood=minf(300,float(c.wood)+3.0)
-  "mine":c.stone=minf(250,float(c.stone)+2.0)
+  "mine":
+   c.stone=minf(250,float(c.stone)+2.0)
+   ocean.change(int(c.id),"ore",.75)
   "craft":
    if float(c.wood)>=3 and float(c.stone)>=2:c.wood-=3;c.stone-=2;c.tools+=1
    else:ok=false
@@ -197,6 +200,9 @@ func finish(c:Dictionary,a:Dictionary):
    var wage=minf(1.5,float(c.cash))
    c.cash-=wage
    a.coins+=wage
+   ocean.industry.on_work(int(c.id),a,task)
+  if task=="eat":ocean.consume_bread(int(c.id),a)
+  if task=="build":ocean.use_materials(int(c.id),a)
  a.task=""
  a.task_stage="Decide"
  a.path=[]
