@@ -6,6 +6,12 @@ const STEP=0.912
 const POWERS=["Osserva","Vita","Foresta","Provviste","Guarigione","Meteorite","Conoscenza","Pace","Mutazione","Pioggia","Conflitto","Fede","Fulmine","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Profeta","Nuova specie","Carestia","Incendio","Terremoto","Tornado","Epidemia"]
 const SAVE_PREFIX="user://genesis47_slot"
 var sim=Sim.new()
+var expanded_world=false
+var regional_root:Node3D
+var culture_view:RichTextLabel
+const REGION_NAMES=["Isola delle origini","Isola del vento","Isola dell’alba"]
+const REGION_POINTS=[Vector2.ZERO,Vector2(-43,-39),Vector2(43,39)]
+const REGION_BRIDGES=[[Vector2(-27,-24),Vector2(-43,-39)],[Vector2(27,24),Vector2(43,39)]]
 var rng=RandomNumberGenerator.new()
 var noise=FastNoiseLite.new()
 var art_catalog:Dictionary={}
@@ -413,6 +419,13 @@ func height_at(x:float,z:float)->float:
  var stream=x-4.2*sin(z*.105)
  if absf(z)<32:
   h-=2.3*exp(-stream*stream/7.0)*clampf((36-absf(z))/8,0,1)
+ if expanded_world:
+  for i in range(1,REGION_POINTS.size()):
+   var d_island=Vector2(x,z).distance_to(REGION_POINTS[i])/7.4
+   if d_island<1.5:h=maxf(h,3.6*(1.0-d_island*d_island)-.55+noise.get_noise_2d(x*2,z*2)*.4)
+  for link in REGION_BRIDGES:
+   var anchor_dist=Vector2(x,z).distance_to(link[0])
+   if anchor_dist<4.0:h=maxf(h,1.2-anchor_dist*.35)
  for q in deformation:
   var dd=Vector2(x-float(q.x),z-float(q.z)).length()
   if dd<float(q.r):
@@ -499,7 +512,8 @@ func make_terrain():
    depth_image.set_pixel(dx,dz,Color(v,v,v))
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
 
-func new_world(seed_value:int,which:int):
+func new_world(seed_value:int,which:int,expanded=false):
+ expanded_world=expanded
  set_tour(false)
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
@@ -536,7 +550,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -581,6 +595,9 @@ func reset_visuals():
  discovery_root=Node3D.new()
  hazard_root=Node3D.new()
  outpost_root=Node3D.new()
+ regional_root=Node3D.new()
+ add_child(regional_root)
+ rebuild_regional_bridges()
  hazard_nodes.clear()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
  rebuild_trade_route()
@@ -955,6 +972,13 @@ func apply_changes():
    "trade":spawn_caravan(int(e.id))
    "trade_arrived":remove_caravan(int(e.id))
    "project":rebuild_civic()
+   "culture":
+    if not test_mode:
+     var q:Vector3=centers[int(e.clan)]
+     if str(e.event_type)=="festival":
+      life_bubble(q,"FESTA DELLA MEMORIA",Color("f0d291"))
+      for j in range(5):spark(q+Vector3(cos(j*TAU/5)*2,.7,sin(j*TAU/5)*2),Color("e8c779"),.7)
+     elif str(e.event_type)=="vote":life_bubble(q,"NUOVO CONSIGLIO",Color("afdfcf"))
    "migration":
     claims.erase(int(e.id))
     var a=sim.find(int(e.id))
@@ -1350,6 +1374,7 @@ func alter_ground(p:Vector3,amount:float,r:float):
  for i in range(centers.size()):centers[i]=ground(centers[i].x,centers[i].z)
  rebuild_roads()
  rebuild_trade_route()
+ rebuild_regional_bridges()
  rebuild_settlement_details()
  rebuild_landmarks()
  rebuild_meadow()
@@ -1701,6 +1726,16 @@ func setup_ui():
  input.text_submitted.connect(func(_message):send_message())
  button(chat,"Segnali delle creature",show_signals)
  text_label(chat,"Seleziona un abitante prima di parlargli.",12).autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+ var culture_tab=VBoxContainer.new()
+ culture_tab.name="Cultura"
+ inspector_tabs.add_child(culture_tab)
+ text_label(culture_tab,"SOCIETÀ E TERRITORI",15)
+ culture_view=rich(culture_tab,180)
+ culture_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ button(culture_tab,"Isola delle origini",func():observe_region(0))
+ button(culture_tab,"Isola del vento",func():observe_region(1))
+ button(culture_tab,"Isola dell’alba",func():observe_region(2))
+ button(culture_tab,"Atlante delle regioni",show_regions)
  var bottom=panel(hud,Rect2(14,769,1412,117),.91)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
@@ -1773,6 +1808,7 @@ func refresh():
   trust_bar.value=float(a.get("trust",50))
   trust_bar.get_parent().visible=not a.is_empty()
  if dialogue_view!=null:refresh_dialogue(a)
+ if is_instance_valid(culture_view) and inspector_tabs.current_tab==3:culture_view.text=sim.culture_report()
  if event_feed!=null:event_feed.text="\n".join(sim.events.slice(0,18))
  if social_summary!=null:social_summary.text="Vita sociale: %d azioni · %d aiuti · %d incontri"%[sim.social_actions,sim.aid_actions,sim.meet_actions]
  if route_status!=null:route_status.text="Carovane: %d in viaggio · %d arrivate\nEdifici distrutti: %d · macerie: %d"%[sim.shipments.size(),sim.trades,destroyed_total,ruins.size()]
@@ -1824,7 +1860,11 @@ func open_welcome():
  var seed_input=LineEdit.new()
  seed_input.text=str(rng.randi_range(1,999999))
  box.add_child(seed_input)
- text_label(box,"Seme del mondo · cambia il numero per creare una nuova isola",13)
+ text_label(box,"Seme del mondo · cambia il numero per creare una nuova mappa",13)
+ var world_choice=CheckButton.new()
+ world_choice.text="Arcipelago: due nuove isole collegate da ponti"
+ world_choice.button_pressed=true
+ box.add_child(world_choice)
  button(box,"Seme casuale",func():seed_input.text=str(rng.randi_range(1,999999)))
  text_label(box,"Clicca per osservare · F6 tour · F1 guida · F10 cinema",13)
  for i in range(3):
@@ -1836,7 +1876,7 @@ func open_welcome():
   welcome_open=false
   world_started=true
   deformation.clear()
-  new_world(maxi(1,abs(int(seed_input.text))),option.selected)
+  new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.button_pressed)
   dlg.queue_free()
   if onboarding_enabled:start_onboarding())
  dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free();maybe_onboard())
@@ -1970,6 +2010,7 @@ func save_game(show_hint:bool):
 
 func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
+ d["expanded_world"]=expanded_world
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2035,6 +2076,7 @@ func load_path(p:String)->bool:
  sim.spatial_autonomy=not test_mode and not benchmark_mode
  if advanced>0:
   for person in sim.people:person.task="";person.task_stage="Decide"
+ expanded_world=bool(data.get("expanded_world",false))
  deformation=data.get("deformation",[])
  planted=data.get("planted",[])
  house_sites=data.get("house_sites",[[],[]])
@@ -2211,6 +2253,7 @@ func self_test():
  if not test_integrated_upgrade():failed=true
  if not test_exchange_and_inventory():failed=true
  if not test_behavior_brain():failed=true
+ if not test_culture_and_regions():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -3101,6 +3144,10 @@ func show_playtest():
 
 func walking_height(x:float,z:float)->float:
  var h=height_at(x,z)
+ if expanded_world and h<SEA+.85:
+  var q=Vector2(x,z)
+  for link in REGION_BRIDGES:
+   if q.distance_to(Geometry2D.get_closest_point_to_segment(q,link[0],link[1]))<1.35:return maxf(h,SEA+.85)
  if h<SEA+.55:
   for p in trade_route:
    if Vector2(x-p.x,z-p.z).length()<.65:return maxf(h,p.y)
@@ -3174,7 +3221,7 @@ func task_destination(a:Dictionary)->Vector3:
     if landmark.found:continue
     var q=ground(float(landmark.x),float(landmark.z))
     var d=flat_dist(q,c)
-    if d<best and d<24.0:best=d;dest=q
+    if d<best and d<(82.0 if expanded_world else 24.0):best=d;dest=q
    return dest
  return c+offset
 
@@ -3808,6 +3855,18 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
    "play":r.body.position.y=.09+absf(sin(r.phase*4))*.13
  else:
   for arm in r.arms:arm.rotation.z=0.0
+ if not moving and a.task_stage=="In corso" and not r.arms.is_empty():
+  match active:
+   "research":
+    r.body.rotation.x=lerpf(r.body.rotation.x,.19,.25)
+    r.arms[0].rotation.x=-.85+sin(r.phase*3)*.12
+    r.arms[1].rotation.x=-.85
+   "heal":
+    r.arms[0].rotation.x=-1.1+sin(r.phase*2)*.18
+    r.arms[1].rotation.x=-.50
+   "explore":
+    r.body.rotation.z=sin(r.phase*1.5)*.13
+    r.arms[0].rotation.x=-.75
  if not moving and active=="sleep" and a.task_stage=="In corso":
   r.body.rotation.x=lerpf(r.body.rotation.x,PI*.42,.25)
   r.body.position.y=.14
@@ -3920,6 +3979,10 @@ func rebuild_discoveries():
     var angle=(j*2.1+i)*1.1
     var q=land_near(c.x+cos(angle)*15,c.z+sin(angle)*15)
     if flat_dist(q,c)>7:discovery_sites.append({"x":q.x,"z":q.z,"found":false,"name":["Pietra antica","Fonte luminosa","Radura sacra"][j]})
+  if expanded_world:
+   for i in range(1,REGION_POINTS.size()):
+    var point:Vector2=REGION_POINTS[i]
+    discovery_sites.append({"x":point.x,"z":point.y,"found":false,"name":REGION_NAMES[i]})
  for row in discovery_sites:
   var q=ground(float(row.x),float(row.z))
   if q.y<SEA+.3:continue
@@ -4222,4 +4285,90 @@ func test_behavior_brain()->bool:
  sample.storyteller()
  if v.get("council_focus","")!="CIBO":return false
  print("BRAIN_TEST priorities=true learning=true prerequisite_plan=true persistence=true storyteller=true")
+ return true
+
+
+func rebuild_regional_bridges():
+ if not is_instance_valid(regional_root):return
+ for child in regional_root.get_children():
+  regional_root.remove_child(child)
+  child.queue_free()
+ if not expanded_world:return
+ for link in REGION_BRIDGES:
+  var a=Vector3(link[0].x,SEA+.85,link[0].y)
+  var b=Vector3(link[1].x,SEA+.85,link[1].y)
+  var count=ceili(a.distance_to(b))
+  var side=(b-a).normalized().cross(Vector3.UP)*1.1
+  for j in range(count):
+   var p=a.lerp(b,float(j)/count)
+   var q=a.lerp(b,float(j+1)/count)
+   if height_at((p.x+q.x)*.5,(p.z+q.z)*.5)>SEA+.65:continue
+   route_beam(regional_root,p-Vector3.UP*.08,q-Vector3.UP*.08,2.5,.16,Color("a58a61"))
+   for sign_value in [-1,1]:
+    var edge=p+side*sign_value
+    block(regional_root,Color("766249"),edge+Vector3.UP*.34,Vector3(.10,.68,.10))
+    route_beam(regional_root,edge+Vector3.UP*.47,q+side*sign_value+Vector3.UP*.47,.08,.10,Color("9b815b"))
+ for i in range(1,REGION_POINTS.size()):
+  var pt:Vector2=REGION_POINTS[i]
+  var q=ground(pt.x,pt.y)
+  var signpost=Label3D.new()
+  regional_root.add_child(signpost)
+  signpost.position=q+Vector3.UP*2.2
+  signpost.text=REGION_NAMES[i]
+  signpost.font_size=30
+  signpost.pixel_size=.011
+  signpost.outline_size=5
+  signpost.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+
+func observe_region(i:int):
+ if i>0 and not expanded_world:
+  open_dialog("REGIONI","Questa partita usa la mappa classica. Seleziona Arcipelago alla creazione di un nuovo universo.")
+  return
+ set_tour(false)
+ following=false
+ var q:Vector2=REGION_POINTS[i]
+ focus=ground(q.x,q.y)
+ distance=37 if i==0 else 20
+ pitch=.84
+ update_camera()
+
+func show_regions():
+ var lines=["Isola delle origini · territorio iniziale dei due popoli."]
+ if expanded_world:
+  for i in range(1,REGION_POINTS.size()):
+   var discovered=discovery_sites.any(func(row):return str(row.name)==REGION_NAMES[i] and bool(row.found))
+   lines.append(REGION_NAMES[i]+" · "+("scoperta dagli abitanti" if discovered else "ancora da esplorare"))
+  lines.append("I ponti collegano le isole: gli esploratori possono raggiungerle senza teletrasporto.")
+ else:lines.append("Mappa classica. Le isole aggiuntive sono disponibili creando un nuovo arcipelago.")
+ open_dialog("ATLANTE DELLE REGIONI","\n\n".join(lines))
+
+func test_culture_and_regions()->bool:
+ var t=Sim.new()
+ t.start(47,0)
+ t.spatial_autonomy=true
+ var a=t.people[0]
+ t.begin_task(a,{"kind":"research","duration":1.0,"reason":"test"})
+ if not t.complete_task(a) or absf(float(t.villages[0].culture.treasury)-.25)>.001:return false
+ t.day=7
+ t.villages[0].food=0
+ t.advance_culture()
+ if t.villages[0].culture.policy!="Sostentamento" or int(t.villages[0].culture.leader)<0:return false
+ t.day=30
+ t.villages[0].food=200
+ t.villages[0].culture.treasury=50
+ t.advance_culture()
+ if int(t.villages[0].culture.festivals)!=1 or int(t.villages[0].culture.heritage)!=3 or float(t.villages[0].culture.treasury)>=50:return false
+ var clone=Sim.new()
+ if not clone.import_state(JSON.parse_string(JSON.stringify(t.export_state()))):return false
+ if int(clone.villages[0].culture.festivals)!=1:return false
+ new_world(47,0,true)
+ for i in range(1,REGION_POINTS.size()):
+  var pt:Vector2=REGION_POINTS[i]
+  if height_at(pt.x,pt.y)<SEA+.3:return false
+  var origin=near_cell(centers[i-1])
+  var target=near_cell(ground(pt.x,pt.y))
+  if not nav_grid.region.has_point(origin) or not nav_grid.region.has_point(target):return false
+  if nav_grid.get_id_path(origin,target).is_empty():return false
+ if discovery_sites.filter(func(row):return str(row.name) in REGION_NAMES.slice(1)).size()!=2:return false
+ print("CULTURE_REGION_TEST treasury=true votes=true persistence=true connected_islands=2")
  return true
