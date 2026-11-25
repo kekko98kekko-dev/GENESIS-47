@@ -18,12 +18,13 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 10.1.0 — Profondità del mondo.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: f73203cb22dd46ec9a1ce34c4b036cf340b56f77.
-- Ultima versione interamente collaudata: 10.0, commit 3fc7b329a32b96c62d455dd20279686ce48a991f, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
+- Versione del codice: 11.0.0 — Eredità vivente.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: 207d993e07a246b8415fc1c66c7c344f764eed69.
+- Ultima versione interamente collaudata: 10.1, commit 939fb9bedd3f1962ad32bf3f162df65a811ecf26, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242 (build e Windows riusciti).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
-- 10.1: pubblicata in main (commit 939fb9bedd3f1962ad32bf3f162df65a811ecf26); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242, stato in_progress, esito in attesa. Verificare prima di dichiarare stabile.
+- 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
+- 11.0: sviluppata sul ramo upgrade-11-0-living-legacy, collaudo da verificare.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -98,9 +99,18 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - WORLD_DEPTH_TEST: capacità, registrazione dei servizi, bilancio idrico, quattro specie iniziali, ricerca del percorso nella grotta e movimento con collisioni, scoperta, persistenza e serializzazione di 200 cittadini. Catture reali di grotta e fiumi richieste dalla CI. Esito 10.1 da verificare.
 - PLAYTEST.md: protocollo di cinque ore per valutare l'esperienza, senza voti inventati; non è un playtest umano eseguito. Nessun modello AI esterno.
 
+
+## 11.0 — Eredità vivente
+- Base 10.1 completamente collaudata (run 45589975242, build e windows-smoke riusciti, WORLD_DEPTH_TEST e QA_SUITE PASS). Artifact: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738. Bilancio dei fiumi: errore assoluto circa 7,55e-9 nel test; 4 stazioni civiche e quattro specie iniziali; serializzazione di 200 cittadini; capacità teorica 640.
+- Immagini reali 10.1 esaminate: grotta troppo geometrica e luminosa, città ancora semplici, strade radiali, panoramiche troppo regolari, fiumi poco leggibili, HUD migliorabile. Modifiche: architettura con materiali procedurali, rete di strade locali collegata a case e distretti, piazze e fontane, nuvole meno invasive. Grotta con ambiente scuro separato, illuminazione locale, rocce e due reperti aggiuntivi. Queste non equivalgono ancora a una direzione artistica commerciale professionale.
+- scripts/living_art.gd: quattro morfotipi ereditari (Silvano, Cornuto, Slanciato, Crestato), proporzioni, appendici, code animate. Rig e mesh di base ancora condivisi: non sono quattro specie intelligenti con anatomie scheletriche completamente diverse. scripts/portrait_widget.gd: ritratto 2D animato legato a genetica, età, umore e cicatrici. Icone originali dei poteri, schermata d'ingresso con logo e panoramica animata del mondo reale.
+- scripts/legacy_society.gd: regimi, successione, elezioni, opposizione, rivolte, scontri civili localizzati, secessione e avamposti autonomisti. Membri rimangono nel clan originario per la simulazione economica e demografica: non terza civiltà sovrana. Legittimità e fede dipendono dagli abitanti, divieto del culto smantella il santuario e impedisce ricostruzione e preghiera, riconciliazione possibile. Osservatorio aumenta resistenza ai danni divini. Cinque invenzioni con costi e benefici effettivi; quattro reliquie regionali con ricompense e scopritore reale; tre scoperte sotterranee includendo il cristallo precedente. Cronaca storica separata con eventi importanti conservati, anno di gioco di 120 giorni. Nessuna prova di millenni simulati.
+- Routine post-sonno con due fasi temporizzate e interrompibili (lavarsi e vestirsi), riutilizzano gesti della libreria esistente; non motion capture specifico né sistema di igiene completo. Catastrofi: vulcano con foschia/attenuazione della luce temporanea, protezione biologico-culturale tramite invenzioni; mantengono effetti, panico e distruzione già presenti. Nessuna guerra civile su vasta scala, sotterraneo abitato, linguaggio interamente simulato o nuovo motore evolutivo scientifico.
+- LEGACY_TEST: invenzione a costo reale, elezione, rivolta, divieto culto, reliquia, routine e salvataggio; QA_LEGACY 120 giorni di simulazione aggregata con coerenza del leader, delle risorse e delle invenzioni. Nuova cattura preview-title.png. Esiti 11.0 da verificare. Playtest umano, audio e qualità artistica non certificati. Nessun modello AI esterno.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 10.1, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
-- P0: prova umana di gioco con la 10.1; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
+- P0: verificare esito finale CI 11.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: prova umana di gioco con la 11.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
 - P1: verificare visivamente la mesh connessa 8.0 e le animazioni; retarget professionale, IK e motion capture originale per i gesti specifici non equivalenti a registrazioni umane analoghe.
@@ -139,3 +149,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
 
 - Priorità residua 10.1: verificare pipeline, nuove catture e stabilità con popolazioni elevate; eseguire PLAYTEST.md. Limiti: bacino oceanico centrale separato, fiumi 1D, una grotta esplorabile, metropoli non ancora dimostrata, quattro morfotipi semplificati e qualità artistica/coinvolgimento non certificati.
+
+- Priorità 11.0: pipeline, catture, valutazione umana; secessione non ancora sovranità indipendente, nuove morfologie con rig comune, grafica professionale non dimostrata, approfondire esplorazione e società sotterranee.
