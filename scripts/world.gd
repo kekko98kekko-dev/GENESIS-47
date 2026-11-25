@@ -40,6 +40,7 @@ var origins=Origins.new()
 var legacy=Legacy.new()
 var legacy_root:Node3D
 var legacy_view:RichTextLabel
+var citizen_portrait:Control
 var title_intro:Control
 var intro_time=0.0
 var ash_time=0.0
@@ -1156,7 +1157,9 @@ func apply_changes():
     services_dirty=true
     if selected==e.id:selected=-1
    "house","era":
-    if e.kind=="era" and not test_mode:legend.era(int(e.clan))
+    if e.kind=="era" and not test_mode:
+     legend.era(int(e.clan))
+     legacy.preserve("Era",int(e.clan),-1,sim.CLANs_name(int(e.clan))+" · "+Sim.ERAS[sim.villages[int(e.clan)].era],centers[int(e.clan)])
     sync_houses(int(e.clan))
     nav_dirty=true
     rebuild_farms()
@@ -1809,7 +1812,9 @@ func divine(p:Vector3):
   if sim.find(int(a.id)).is_empty():continue
   if power in ["Guarigione","Provviste","Pace","Pioggia"]:sim.adjust_trust(a,5)
   elif power in ["Meteorite","Fulmine","Tsunami","Vulcano","Carestia"]:sim.adjust_trust(a,-12)
- if not test_mode:legend.miracle(power,clan,near,p)
+ if not test_mode:
+  legend.miracle(power,clan,near,p)
+  legacy.preserve("Miracolo",clan,-1,power+" · "+str(near.size())+" testimoni",p)
  spark(p,color,1.5)
  if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
@@ -1951,6 +1956,10 @@ func setup_ui():
  var inspect=VBoxContainer.new()
  inspect.name="Osserva"
  inspector_tabs.add_child(inspect)
+ citizen_portrait=preload("res://scripts/portrait_widget.gd").new()
+ citizen_portrait.custom_minimum_size=Vector2(0,104)
+ inspect.add_child(citizen_portrait)
+ citizen_portrait.hide()
  status_bar=ProgressBar.new()
  status_bar.custom_minimum_size.y=12
  status_bar.show_percentage=false
@@ -1971,7 +1980,7 @@ func setup_ui():
  mood_bar=small_meter(inspect,"Umore",Color("79bda2"))
  hunger_bar=small_meter(inspect,"Sazietà",Color("e1bc78"))
  trust_bar=small_meter(inspect,"Fiducia",Color("9eb9ed"))
- details=rich(inspect,235)
+ details=rich(inspect,142)
  details.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var line=HBoxContainer.new()
  inspect.add_child(line)
@@ -2138,6 +2147,7 @@ func refresh():
   var pending=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
   signals_button.text="Segnali "+str(pending) if pending>0 else "Segnali"
  var a=sim.find(selected)
+ if is_instance_valid(citizen_portrait):citizen_portrait.set_person(a)
  if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else LivingArt.variant(a)+" · "+str(a.get("activity","Decide"))
  if status_bar!=null:
   status_bar.value=sim.energy if a.is_empty() else float(a.health)
@@ -2758,8 +2768,11 @@ func capture_preview():
   var cave_err=get_viewport().get_texture().get_image().save_png("res://preview-cave.png")
   if cave_err!=OK:err=cave_err
   cave.leave()
- speed=1
- await get_tree().create_timer(.7).timeout
+ show_title_screen()
+ await get_tree().create_timer(1.3).timeout
+ await RenderingServer.frame_post_draw
+ var title_err=get_viewport().get_texture().get_image().save_png("res://preview-title.png")
+ if title_err!=OK:err=title_err
  print("CAPTURE ",err)
  get_tree().quit(0 if err==OK else 1)
 
@@ -2941,11 +2954,11 @@ func create_clouds():
  mat.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA
  mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
  mat.cull_mode=BaseMaterial3D.CULL_DISABLED
- for i in range(9):
+ for i in range(6):
   var n=Node3D.new()
   ambient_root.add_child(n)
   n.position=Vector3(rng.randf_range(-75,75),rng.randf_range(18,28),rng.randf_range(-68,68))
-  for j in range(4):
+  for j in range(5):
    var m=SphereMesh.new()
    m.radius=.5
    m.height=1.0
@@ -2956,14 +2969,14 @@ func create_clouds():
    puff.material_override=mat
    puff.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
    n.add_child(puff)
-   puff.position=Vector3(j*3.2-4.8,sin(j*1.7)*.5,cos(j*1.1)*1.5)
-   puff.scale=Vector3(7.0,2.1,4.7)
+   puff.position=Vector3(cos(j*2.39996)*2.2,sin(j*1.7)*.35,sin(j*2.39996)*1.3)
+   puff.scale=Vector3(5.5+float(j%3),1.0+float(j%2)*.5,3.8)
   clouds.append(n)
 
 func update_clouds(delta:float):
  for n in clouds:
   if not is_instance_valid(n):continue
-  n.visible=quality_mode>0 and distance>22
+  n.visible=quality_mode>0 and distance>22 and distance<80
   if n.visible:
    n.position.x+=delta*.22
    if n.position.x>80:n.position.x=-80
@@ -4054,7 +4067,7 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  rebuild_navigation()
  rebuild_services()
  if not test_mode:
-  legend.log_event("Catastrofe",-1,-1,"%s: %d edifici perduti, %d vittime."%[kind,destroyed,dead_count],p)
+  legacy.record("Catastrofe",-1,-1,"%s: %d edifici perduti, %d vittime."%[kind,destroyed,dead_count],p)
   if flat_dist(p,focus)<35 and damage>=65:impact_shake=minf(1.0,damage/110.0)
  sim.log_event("%s: %d edifici distrutti, %d vittime."%[kind,destroyed,dead_count])
  apply_changes()
@@ -4584,7 +4597,7 @@ func rebuild_outposts():
   for j in range(5):sphere(n,Color("b6cc75"),Vector3((j-2)*.25,.20,-.55),Vector3(.18,.32,.18))
   var tag=Label3D.new()
   n.add_child(tag)
-  tag.text="AVAMPOSTO"
+  tag.text="AUTONOMISTI" if bool(post.get("autonomist",false)) else "AVAMPOSTO"
   tag.font_size=24
   tag.pixel_size=.007
   tag.position.y=1.7
