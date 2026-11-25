@@ -5,19 +5,29 @@ var tense:AudioStreamPlayer
 var weather:AudioStreamPlayer
 var world
 var enabled=false
+var ambience:AudioStreamPlayer
+var voice:AudioStreamPlayer
+var voice_clock=0.0
+var ambient_city:AudioStreamWAV
+var ambient_nature:AudioStreamWAV
 
 func setup(w):
  world=w
  calm=AudioStreamPlayer.new()
  tense=AudioStreamPlayer.new()
  weather=AudioStreamPlayer.new()
- for p in [calm,tense,weather]:
+ ambience=AudioStreamPlayer.new()
+ voice=AudioStreamPlayer.new()
+ for p in [calm,tense,weather,ambience,voice]:
   w.add_child(p)
   p.volume_db=-60
  calm.stream=score(false)
  tense.stream=score(true)
  weather.stream=rain()
- for p in [calm,tense,weather]:p.play()
+ ambient_city=ambient(true)
+ ambient_nature=ambient(false)
+ ambience.stream=ambient_nature
+ for p in [calm,tense,weather,ambience]:p.play()
  enabled=true
 
 func wav(data:PackedByteArray,rate:int,frames:int)->AudioStreamWAV:
@@ -81,3 +91,59 @@ func update(dt:float):
  tense.volume_db=lerpf(tense.volume_db,-70.0 if muted else gain-44+28*risk,clampf(dt*.7,0,1))
  weather.volume_db=lerpf(weather.volume_db,gain-14 if rainy and not muted else -70,clampf(dt,0,1))
  world.audio.volume_db=-70
+ var in_city=false
+ for p in world.centers:
+  if world.flat_dist(world.focus,p)<10 and world.distance<30:in_city=true
+ var desired=ambient_city if in_city else ambient_nature
+ if ambience.stream!=desired:ambience.stream=desired;ambience.play()
+ ambience.volume_db=lerpf(ambience.volume_db,gain-21 if not muted else -70,clampf(dt,0,1))
+ voice_clock=maxf(0,voice_clock-dt)
+ if not muted and voice_clock<=0 and world.speed>0 and world.distance<15:
+  for a in world.sim.people:
+   if a.task_stage=="In corso" and a.task in ["social","teach","aid"] and world.actors.has(a.id) and world.flat_dist(world.actors[a.id].node.position,world.focus)<4:
+    voice.stream=chirp(int(a.id),float(a.genes[3]))
+    voice.volume_db=gain-11
+    voice.play()
+    voice_clock=3.0
+    break
+
+
+func ambient(city:bool)->AudioStreamWAV:
+ var rate=12000
+ var frames=rate*6
+ var bytes=PackedByteArray()
+ bytes.resize(frames*2)
+ var rng=RandomNumberGenerator.new()
+ rng.seed=470 if city else 147
+ var low=0.0
+ for i in range(frames):
+  var t=float(i)/rate
+  var noise=rng.randf_range(-1,1)
+  low=lerpf(low,noise,.04)
+  var sample_value=low*.09
+  if city:
+   var beat=fposmod(t,1.33)
+   sample_value+=sin(TAU*124*beat)*exp(-beat*18)*minf(beat*60,1)*.045
+   sample_value+=sin(TAU*220*t)*sin(TAU*.19*t)*.008
+  else:
+   var beat=fposmod(t,2.13)
+   if beat<.19:sample_value+=sin(TAU*(1300*beat+300*beat*beat))*sin(PI*beat/.19)*.045
+  var edge=minf(1,minf(t,6-t)*8)
+  bytes.encode_s16(i*2,int(clampf(sample_value*edge,-1,1)*26000))
+ return wav(bytes,rate,frames)
+
+func chirp(id:int,trait:float)->AudioStreamWAV:
+ var rate=12000
+ var frames=int(rate*.65)
+ var bytes=PackedByteArray()
+ bytes.resize(frames*2)
+ for i in range(frames):
+  var t=float(i)/rate
+  var beat=fposmod(t,.21)
+  var f=270+trait*240+float(posmod(id+int(t/.21),4))*45
+  var envelope=sin(PI*minf(1.0,beat/.18)) if beat<.18 else 0.0
+  var sample_value=(sin(TAU*f*beat)+sin(TAU*f*2.05*beat)*.23)*envelope*.10
+  bytes.encode_s16(i*2,int(sample_value*28000))
+ var clip=wav(bytes,rate,frames)
+ clip.loop_mode=AudioStreamWAV.LOOP_DISABLED
+ return clip
