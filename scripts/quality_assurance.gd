@@ -19,16 +19,18 @@ func run(w)->bool:
   result["kind"]=kind
   families.append(result)
  var anatomy_ok=families.size()==3 and families.all(func(row):return bool(row.ok))
+ var contact=contact_audit()
+ var growth=natural_growth_audit()
  print("QA_ANATOMIES families=",families.size()," ok=",anatomy_ok)
  var industry=industry_soak()
  var live=live_soak()
  var water=ocean_audit()
  var politics=legacy_soak()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and anatomy_ok and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -263,3 +265,39 @@ func legacy_soak()->Dictionary:
  var ok=error=="" and count==120 and events>0 and not world.sim.people.is_empty()
  print("QA_LEGACY days=",count," initial=",initial," population=",world.sim.people.size()," events=",events," ok=",ok)
  return {"ok":ok,"days":count,"initial_population":initial,"population":world.sim.people.size(),"historical_events":events,"error":error,"scope":"120-day aggregate civilization and political history; not a human playtest"}
+
+
+func contact_audit()->Dictionary:
+ var results=[]
+ for kind in [1,2]:
+  var chosen={}
+  for a in world.sim.people:
+   if int(world.actors[a.id].skeletal.kind)==kind:chosen=a;break
+  if chosen.is_empty():return {"ok":false,"error":"missing anatomy"}
+  var r:Dictionary=world.actors[chosen.id]
+  var s:Skeleton3D=r.skeletal.skeleton
+  var ids:Array=r.skeletal.extra[0]
+  apply_pose(r,chosen,"walk",.8)
+  var tip=s.get_bone_global_pose(int(ids[2])).origin
+  var goal=tip+Vector3(.015,.045,.035)
+  var before=tip.distance_to(goal)
+  var after=Rig.aim_chain(s,ids,goal,.7)
+  results.append({"kind":kind,"before":before,"after":after,"ok":is_finite(after) and after<before})
+ var ok=results.all(func(row):return row.ok)
+ print("QA_CONTACT ",JSON.stringify(results)," ok=",ok)
+ return {"ok":ok,"results":results}
+func natural_growth_audit()->Dictionary:
+ var simulation=preload("res://scripts/sim.gd").new()
+ simulation.start(47,0)
+ var milestones=[]
+ var last=-1
+ for day in range(240):
+  var era=int(simulation.villages[0].era)
+  if era!=last:
+   last=era
+   milestones.append({"day":simulation.day,"era":era,"population":simulation.count(0),"houses":simulation.villages[0].houses})
+  if era>=4:break
+  simulation.daily()
+ var ok=last>=4 and milestones.size()>=3 and int(milestones.back().houses)>int(milestones[0].houses)
+ print("QA_NATURAL_GROWTH ",JSON.stringify(milestones)," ok=",ok)
+ return {"ok":ok,"milestones":milestones,"scope":"same-seed aggregate autonomous daily simulation; no imposed era, citizens, resources or housing"}
