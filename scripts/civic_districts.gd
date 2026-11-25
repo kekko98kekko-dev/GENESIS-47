@@ -5,6 +5,8 @@ var root:Node3D
 var districts:Array=[]
 var nodes:Dictionary={}
 var signature=""
+const SERVICE_KINDS=["eat","research","play","research","craft","heal"]
+const NAMES=["Mercato","Archivio","Piazza","Università","Officine","Ospedale"]
 func reset(w,data={}):
  world=w
  districts=data.get("districts",[]) if data is Dictionary else []
@@ -34,9 +36,11 @@ func sync():
    var p=world.land_near(center.x+cos(angle)*12,center.z+sin(angle)*12)
    if p.y<=world.SEA+.5 or float(v.wood)<6:continue
    v.wood-=6
+   world.services_dirty=true
    districts.append({"clan":clan,"index":i,"x":p.x,"z":p.z,"era":int(v.era),"founded":world.sim.day,"ruined":false})
   for row in districts:
    if int(row.clan)!=clan:continue
+   row.era=int(v.era)
    var id=str(clan)+":"+str(row.index)
    var is_ruined=world.sim.count(clan)==0 or bool(row.get("ruined",false))
    if world.sim.count(clan)==0:row.ruined=true
@@ -69,10 +73,13 @@ func sync():
       var y=.4+floor_index*.46
       if y<h:world.block(n,Color("476e78"),Vector3(x,y,.75),Vector3(.64,.18,.045),.25)
      if era>=5:world.cone(n,tint,Vector3(x,h+.48,0),.10,.7,.02,6,.3)
+   var door=Vector3(0,.1,1.4)
+   for side in [-1,1]:world.block(n,tint,door+Vector3(side*1.25,.40,0),Vector3(.25,.6,.25))
+   for stripe in range(5):world.block(n,tint if stripe%2==0 else Color("e7d8b7"),Vector3(-.64+stripe*.32,1.05,1.45),Vector3(.32,.11,.62))
    var tag=Label3D.new()
    n.add_child(tag)
    tag.position.y=2.5+maxf(0,era-2)*.8
-   tag.text=["Quartiere","Archivio","Piazza","Università","Distretto","Osservatorio"][int(row.index)]
+   tag.text=NAMES[int(row.index)]
    tag.font_size=25
    tag.pixel_size=.008
    tag.billboard=BaseMaterial3D.BILLBOARD_ENABLED
@@ -80,4 +87,26 @@ func damage(p:Vector3,radius:float):
  for row in districts:
   if Vector2(float(row.x)-p.x,float(row.z)-p.z).length()<radius:row.ruined=true
  signature=""
+ world.services_dirty=true
  sync()
+
+# These service stations are claimed and occupied using the existing real
+# citizen routes, capacities and task completion, not decorative crowds.
+func register_stations():
+ for row in districts:
+  if bool(row.ruined) or world.sim.count(int(row.clan))==0:continue
+  var i=int(row.index)
+  var p=world.ground(float(row.x),float(row.z)+2.2)
+  var key=world.register_service(SERVICE_KINDS[i],int(row.clan),p,4+mini(8,int(row.era)),NAMES[i],false)
+  if key!="":world.services[key]["district"]=i
+
+func report()->String:
+ var visits=0
+ var capacity=0
+ for key in world.services:
+  var service=world.services[key]
+  if not service.has("district"):continue
+  capacity+=int(service.capacity)
+  for claim in world.claims.values():
+   if claim==key:visits+=1
+ return "Quartieri civici · %d distretti · %d posti di servizio · %d prenotazioni"%[districts.size(),capacity,visits]
