@@ -145,7 +145,6 @@ func work_completed(a:Dictionary,kind:String,coins_before:float):
    change(clan,"cash",cost)
    change(clan,"tools",-1)
    a.tool=100.0
- industry.on_work(clan,a,kind)
  if kind=="eat":consume_bread(clan,a)
  if kind in ["build","house"]:use_materials(clan,a)
 
@@ -428,7 +427,10 @@ func animate(day_fraction:float,clock:float):
   var pos=ship_position(row,day_fraction)
   var future=ship_position(row,day_fraction+.05)
   var dir=future-pos
-  n.position=pos+Vector3.UP*sin(clock*2.1+id)*.055
+  var water=world.ocean_dynamics
+  n.position=pos+Vector3.UP*(sin(clock*2.1+id)*.055+water.surface_at(pos))
+  var current:Vector3=water.current(pos)
+  n.position+=Vector3(current.x,0,current.z)*.12
   if dir.length()>.001:n.rotation.y=atan2(dir.x,dir.z)
   n.rotation.z=sin(clock*1.7+id)*.08
   n.rotation.x=cos(clock*1.3+id)*.04
