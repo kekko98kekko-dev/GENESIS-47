@@ -34,6 +34,7 @@ static func morphology(w,r:Dictionary,a:Dictionary):
    for j in range(5):
     var crest=w.cone(n,tint.lightened(.17),Vector3(0,.29,-.18+j*.075),.065,.18+float(j%2)*.08,.008,5)
     crest.rotation.x=-.5
+ if int(rig.get("kind",0))==2:return
  var tail=Node3D.new()
  rig.chest_anchor.add_child(tail)
  tail.position=Vector3(0,-.36,-.25)
@@ -47,8 +48,10 @@ static func animate_morph(r:Dictionary,a:Dictionary,moving:bool):
  if not r.has("morph_kind"):return
  var k=int(r.morph_kind)
  var scales=[Vector3(.68,.68,.68),Vector3(.89,.59,.83),Vector3(.55,.87,.56),Vector3(.72,.78,.65)]
- r.body.scale=scales[k]
+ r.body.scale=scales[k] if int(r.get("skeletal",{}).get("kind",0))==0 else Vector3.ONE*.68
 static func variant(a:Dictionary)->String:
+ if float(a.genes[3])>.69:return "Quadrupede"
+ if float(a.genes[1])>.65:return "Tetrabraccio"
  if float(a.genes[0])>.75 and float(a.genes[2])>.58:return "Crestato"
  if float(a.genes[3])>.68:return "Slanciato"
  if float(a.genes[1])>.58:return "Cornuto"
