@@ -18,15 +18,15 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 13.0.0 — Orion, il Custode.
+- Versione stabile su main: 13.0.0 — Orion, il Custode; ramo upgrade-14-0-performance: 14.0.0 in collaudo.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 21bbc86b656cedaf8dd7c3d5d8fff580b7e8e0.
-- Ultima versione interamente collaudata: 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
+- Ultima versione con pipeline integralmente superata: 13.0 (run 45604507360); precedente 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
 - 11.0: pipeline interamente riuscita. LEGACY_TEST PASS; QA_LEGACY 120 giorni, 28→76 cittadini, 14 eventi, ok=true. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642/artifacts/15012212401.
 - 12.0: pipeline integralmente riuscita, artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860/artifacts/15012529864.
-- 13.0: pubblicata in main (commit 24bc721cbbc3ce075da8a01fcb037a256c895afb); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45604507360, stato in_progress, esito in attesa. Verificare prima di dichiarare stabile.
+- 13.0: pubblicata in main (commit 24bc721cbbc3ce075da8a01fcb037a256c895afb); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45604507360, stato completed, conclusion success (build e Windows headless). Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45604507360/artifacts/15016474221. Prova reale: prestazioni insufficienti.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -173,3 +173,11 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Priorità 12.0: verificare ARTISAN_TEST e QA_ANATOMIES, analizzare dieci catture reali, correggere eventuali regressioni e svolgere PLAYTEST.md. Limiti espliciti: qualità grafica commerciale non dimostrata, animazioni extra procedurali, nessun avatar gigante autonomo, crescita urbana spontanea non documentata con time-lapse.
 
 - Priorità 13.0: verificare CI, growth-evidence, QA_CONTACT, Orion, catture effettive e playtest umano. Non dichiarare equivalenza artistica commerciale.
+
+
+## 14.0 — Performance Update (ramo upgrade-14-0-performance)
+- Riscontro reale del proprietario sulla 13.0: avvio molto lento sulla schermata Godot ma completato; Ryzen 5 3400G / GTX 1050 Ti / 32 GB, 28 abitanti, circa 45 FPS in pausa e 2 FPS a simulazione attiva anche in Prestazioni. Task manager: processo Godot 12,4% CPU, 281 MB RAM. Non è una misura per singolo sottosistema. CI 13.0 superata integralmente, ma benchmark llvmpipe 2,4 / 0,6 / 0,6 FPS senza soglia minima e Windows test headless. QA_CONTACT e QA_NATURAL_GROWTH ok; era 4 al giorno 71 nel test aggregato.
+- scripts/ocean_dynamics.gd: integrazione numerica identica in worker isolato con copie di buffer, pubblicazione non bloccante, invalidazione generazionale su modifica terreno/tsunami/drenaggio, attesa solo durante reset/chiusura e test. Accumulo massimo 0,30 s, massimo due passi per task; possibile ritardo del tempo oceanico. Solver resta disponibile anche in mappe semplici. Non dimostrato che fosse l'unica causa.
+- scripts/world.gd: frequenze scheletriche limitate, diagnostica per sezioni di _process e F8 per performance-genesis47.json, benchmark esteso, schermata iniziale a fasi prima del lavoro pesante (generazione ancora sincrona), cleanup worker.
+- scripts/quality_assurance.gd: QA_ASYNC_OCEAN (equivalenza numerica, volume e risultato obsoleto). Workflow: build su ramo dedicato, test del normale avvio grafico Linux, obbligo QA_ASYNC_OCEAN. project.godot e README aggiornati. Nessuna AI esterna; nessun salvataggio cancellato.
+- Stato: modifiche da collaudare tramite GitHub Actions del ramo; non dichiarare 30/60 FPS senza benchmark reale. Prossima priorità: controllare run, test e artifact; prova sul PC del proprietario con F8 a 1x, stessa mappa e zoom; intervenire sui sottosistemi residui misurati. Main 13.0 resta invariato fino a verifica.

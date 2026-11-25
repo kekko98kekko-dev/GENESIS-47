@@ -25,12 +25,13 @@ func run(w)->bool:
  var industry=industry_soak()
  var live=live_soak()
  var water=ocean_audit()
+ var async_water=async_ocean_audit()
  var politics=legacy_soak()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -239,6 +240,41 @@ func ocean_audit()->Dictionary:
  print("QA_OCEAN rest=",rest_ok," volume_error=",max_error," runoff_error=",runoff_error," wave_relative_error=",relative," ok=",ok)
  return {"ok":ok,"rest":rest_ok,"volume_error":max_error,"runoff_error":runoff_error,"terrain_displacement_error":terrain_error,"terrain_change":terrain_ok,"steps":steps,"real_terrain":dynamics,"wave_analytic":analytic,"wave_numeric":coefficient,"wave_error_over_initial_amplitude":relative,"wave_tolerance":.15,"scope":"Short standing-wave reference and mass checks, not full CFD validation"}
 
+
+func async_ocean_audit()->Dictionary:
+ world.new_world(47,0,true,true)
+ var ocean=world.ocean_dynamics
+ ocean.wind_enabled=false
+ var cell=-1
+ for i in range(ocean.wet.size()):
+  if ocean.wet[i] and ocean.bed[i]>2:
+   cell=i
+   break
+ if cell<0:return {"ok":false,"error":"no wet cell"}
+ var pos=Vector3((cell%OceanDynamics.N-26)*OceanDynamics.CELL,world.SEA,(int(cell/OceanDynamics.N)-26)*OceanDynamics.CELL)
+ ocean.disturb(pos,.5)
+ var original_eta=ocean.eta.duplicate()
+ var original_velocity=ocean.velocity.duplicate()
+ var initial=ocean.displacement()
+ ocean.step(OceanDynamics.DT)
+ var expected_eta=ocean.eta.duplicate()
+ var expected_velocity=ocean.velocity.duplicate()
+ ocean.eta=original_eta
+ ocean.velocity=original_velocity
+ ocean.queue_worker(float(world.sim.day),1)
+ var accepted=ocean.collect_worker(true)
+ var error=0.0
+ for i in range(expected_eta.size()):error=maxf(error,absf(expected_eta[i]-ocean.eta[i]))
+ for i in range(expected_velocity.size()):error=maxf(error,expected_velocity[i].distance_to(ocean.velocity[i]))
+ var mass_error=absf(ocean.displacement()-initial)
+ ocean.queue_worker(float(world.sim.day),1)
+ ocean.disturb(pos,.25)
+ var disturbed=ocean.displacement()
+ var stale=ocean.collect_worker(true)
+ var stale_error=absf(ocean.displacement()-disturbed)
+ var ok=accepted and not stale and error<.00001 and mass_error<.003 and stale_error<.00001
+ print("QA_ASYNC_OCEAN equivalence=",error," mass_error=",mass_error," stale_error=",stale_error," ok=",ok)
+ return {"ok":ok,"numeric_error":error,"mass_error":mass_error,"stale_error":stale_error,"worker":ocean.performance_report()}
 
 func legacy_soak()->Dictionary:
  world.new_world(81,0)

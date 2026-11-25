@@ -2,12 +2,12 @@ name: GENESIS 47 — Windows build and tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, upgrade-14-0-performance]
     paths: ['project.godot', 'main.tscn', 'scripts/**', 'shaders/**', 'tools/**', 'assets/**', 'export_presets.cfg', '.github/workflows/build.yml']
 permissions:
   contents: read
 concurrency:
-  group: genesis-build
+  group: genesis-build-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -48,6 +48,7 @@ jobs:
           set -o pipefail
           timeout 480s godot --headless --path . -- --qa-test 2>&1 | tee qa.log
           grep -q 'QA_SUITE PASS' qa.log
+          grep -q 'QA_ASYNC_OCEAN .*ok=true' qa.log
           test -s qa-report.json
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' qa.log; then exit 1; fi
       - name: Capture real rendered screenshot
@@ -65,6 +66,12 @@ jobs:
           for scene in before heal meteor aftermath; do test -s "preview-art-$scene.png"; done
           for pose in walk farm craft eat sleep social; do test -s "preview-pose-$pose.png"; done
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
+      - name: Normal graphical startup
+        run: |
+          set -o pipefail
+          timeout 180s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility -- --startup-smoke 2>&1 | tee startup.log
+          grep -q INTERACTIVE_STARTUP_PASS startup.log
+          if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' startup.log; then exit 1; fi
       - name: Benchmark graphical integration
         run: |
           set -o pipefail

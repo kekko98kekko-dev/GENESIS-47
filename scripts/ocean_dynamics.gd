@@ -18,12 +18,26 @@ var tex:ImageTexture
 var active=false
 var wind_enabled=true
 var dry_reserve=0.0
+# Only the detached solver touches its private arrays on the worker thread.
+var worker_task:int=-1
+var worker
+var generation:int=0
+var worker_generation:int=0
+var worker_steps:int=0
+var completed_steps:int=0
+var discarded_steps:int=0
+var worker_ms:float=0.0
 
 func idx(x:int,z:int)->int:return z*N+x
 func voxel(i:int,y:int)->int:return i*L+y
 func sample_index(p:Vector3)->int:return idx(clampi(roundi(p.x/CELL)+26,0,N-1),clampi(roundi(p.z/CELL)+26,0,N-1))
 
 func reset(w,data={}):
+ stop_worker()
+ generation+=1
+ completed_steps=0
+ discarded_steps=0
+ worker_ms=0.0
  world=w
  wet.resize(N*N)
  bed.resize(N*N)
@@ -49,6 +63,7 @@ func reset(w,data={}):
 func terrain():
  if revision==int(world.terrain_revision):return
  revision=int(world.terrain_revision)
+ generation+=1
  var displaced=dry_reserve
  var wet_count=0
  dry_reserve=0.0
@@ -84,6 +99,7 @@ func displacement()->float:
  return sum*CELL*CELL
 
 func disturb(p:Vector3,amount:float):
+ generation+=1
  var i=sample_index(p)
  if not wet[i]:
   var best=INF
@@ -105,6 +121,10 @@ func neighbor(x:int,z:int,i:int)->int:
 
 func step(dt:float):
  terrain()
+ integrate(dt,float(world.sim.day))
+
+# Pure numeric integration; no scene, RenderingServer or world access.
+func integrate(dt:float,day:float):
  var next=velocity.duplicate()
  var flux=eta.duplicate()
  # Conservative face fluxes move surface volume between wet columns.
@@ -145,8 +165,8 @@ func step(dt:float):
     if y==0:v.y=0
     if y==L-1:
      if wind_enabled:
-      v.x+=sin(float(world.sim.day)*.15)*dt*.025
-      v.z+=cos(float(world.sim.day)*.15)*dt*.025
+      v.x+=sin(day*.15)*dt*.025
+      v.z+=cos(day*.15)*dt*.025
      v.y=clampf((flux[i]-eta[i])/maxf(dt,.001),-2,2)
     if left==i and v.x<0 or right==i and v.x>0:v.x=0
     if front==i and v.z<0 or back==i and v.z>0:v.z=0
@@ -176,13 +196,64 @@ func render():
 
 func tick(dt:float):
  if not active:return
- elapsed+=minf(dt,.3)
- var count=0
- while elapsed>=DT and count<4:
-  step(DT)
-  elapsed-=DT
-  count+=1
- if count>0:render()
+ terrain()
+ collect_worker()
+ # Limit catch-up: a slow worker never creates unbounded main-thread debt.
+ elapsed=minf(.30,elapsed+maxf(0,dt))
+ if worker_task<0 and elapsed>=DT:
+  var count=mini(2,int(elapsed/DT))
+  elapsed-=count*DT
+  queue_worker(float(world.sim.day),count)
+
+func queue_worker(day:float,count:int):
+ if worker_task>=0:return
+ # New RefCounted instance has no world or texture. Explicit copies isolate
+ # every writable buffer from the main thread and the save/terrain systems.
+ worker=get_script().new()
+ worker.wet=wet.duplicate()
+ worker.bed=bed.duplicate()
+ worker.eta=eta.duplicate()
+ worker.velocity=velocity.duplicate()
+ worker.wind_enabled=wind_enabled
+ worker_generation=generation
+ worker_steps=count
+ worker_task=WorkerThreadPool.add_task(Callable(worker,"compute_batch").bind(day,count),false,"GENESIS ocean")
+
+func compute_batch(day:float,count:int):
+ var started=Time.get_ticks_usec()
+ for i in range(count):integrate(DT,day)
+ worker_ms=float(Time.get_ticks_usec()-started)/1000.0
+
+func collect_worker(block:bool=false)->bool:
+ if worker_task<0:return false
+ if not block and not WorkerThreadPool.is_task_completed(worker_task):return false
+ WorkerThreadPool.wait_for_task_completion(worker_task)
+ worker_task=-1
+ worker_ms=worker.worker_ms
+ # Terrain, tsunami or runoff changed the live state: never overwrite them.
+ var accepted=worker_generation==generation
+ if accepted:
+  eta=worker.eta
+  velocity=worker.velocity
+  clock+=worker_steps*DT
+  completed_steps+=worker_steps
+  render()
+ else:
+  discarded_steps+=worker_steps
+  elapsed=minf(.30,elapsed+worker_steps*DT)
+ worker=null
+ worker_steps=0
+ return accepted
+
+func stop_worker():
+ if worker_task>=0:
+  WorkerThreadPool.wait_for_task_completion(worker_task)
+  worker_task=-1
+ worker=null
+ worker_steps=0
+
+func performance_report()->Dictionary:
+ return {"worker_ms":worker_ms,"completed_steps":completed_steps,"discarded_steps":discarded_steps,"backlog_seconds":elapsed,"busy":worker_task>=0,"grid_cells":N*N*L}
 
 
 # Approximate nonhydrostatic pressure correction on every wet 3D column.
@@ -249,6 +320,7 @@ func project(values:PackedVector3Array,dt:float)->PackedVector3Array:
 
 func absorb(p:Vector3,amount:float):
  if wet.size()!=N*N:return
+ generation+=1
  var i=sample_index(p)
  if wet[i]:eta[i]+=amount;return
  var best=INF

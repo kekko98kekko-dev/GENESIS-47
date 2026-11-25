@@ -236,6 +236,11 @@ var shared_sphere:SphereMesh
 var shared_box:BoxMesh
 var skin_cache:Dictionary={}
 var benchmark_mode=false
+var perf_totals:Dictionary={}
+var perf_last:Dictionary={}
+var perf_frames:int=0
+var perf_window_start:int=0
+var perf_speed:float=-1.0
 var nav_grid=AStarGrid2D.new()
 var nav_dirty=true
 var nav_version=0
@@ -256,11 +261,36 @@ const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"C
 func _ready():
  benchmark_mode="--benchmark" in OS.get_cmdline_user_args() or "--benchmark-test" in OS.get_cmdline_user_args()
  test_mode="--self-test" in OS.get_cmdline_user_args() or "--qa-test" in OS.get_cmdline_user_args()
+ var interactive=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
+ var loading:CanvasLayer
+ var loading_text:Label
+ if interactive:
+  loading=CanvasLayer.new()
+  loading.layer=20
+  add_child(loading)
+  var backdrop=ColorRect.new()
+  backdrop.color=Color("13282c")
+  loading.add_child(backdrop)
+  backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+  loading_text=Label.new()
+  backdrop.add_child(loading_text)
+  loading_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+  loading_text.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+  loading_text.vertical_alignment=VERTICAL_ALIGNMENT_CENTER
+  loading_text.add_theme_font_size_override("font_size",24)
+  loading_text.text="GENESIS 47\nCaricamento delle risorse..."
+  await get_tree().process_frame
+  await get_tree().process_frame
  load_catalog()
  setup_environment()
  setup_ui()
- if not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
+ if interactive:
+  restore_settings()
+  loading_text.text="GENESIS 47\nGenerazione del mondo e delle creature..."
+  await get_tree().process_frame
+  await get_tree().process_frame
  new_world(47,0)
+ if is_instance_valid(loading):loading.queue_free()
  if "--qa-test" in OS.get_cmdline_user_args():
   call_deferred("run_quality_assurance")
  elif test_mode:
@@ -273,6 +303,11 @@ func _ready():
  else:
   get_tree().auto_accept_quit=false
   show_title_screen()
+  if "--startup-smoke" in OS.get_cmdline_user_args():
+   await get_tree().process_frame
+   await RenderingServer.frame_post_draw
+   print("INTERACTIVE_STARTUP_PASS")
+   get_tree().quit(0)
 
 func load_catalog():
  var p="res://assets/generated/catalog.json"
@@ -1281,6 +1316,12 @@ func _process(delta:float):
  if cave.active:
   cave.tick(delta)
   return
+ var frame_started=Time.get_ticks_usec()
+ if perf_speed!=speed or perf_window_start==0:
+  perf_speed=speed
+  perf_totals.clear()
+  perf_frames=0
+  perf_window_start=frame_started
  if is_instance_valid(title_intro) and title_intro.visible:
   intro_time+=delta
   focus=centers[0].lerp(centers[1],.38+.16*sin(intro_time*.09))
@@ -1331,6 +1372,7 @@ func _process(delta:float):
    var anim=actors[a.id].get("animation")
    if is_instance_valid(anim):anim.active=speed>0
  if speed>0:
+  var phase_started=Time.get_ticks_usec()
   tick+=minf(delta,.1)*(minf(speed,20.0)/5.0 if sim.spatial_autonomy else speed)
   var loops=0
   while tick>=1.7 and loops<8 and speed>0:
@@ -1342,6 +1384,8 @@ func _process(delta:float):
    services_dirty=true
   if services_dirty:rebuild_services()
   update_house_views()
+  perf_add("daily_navigation",phase_started)
+  phase_started=Time.get_ticks_usec()
   for a in sim.people.duplicate():
    if not actors.has(a.id):continue
    var r=actors[a.id]
@@ -1372,7 +1416,8 @@ func _process(delta:float):
    update_action_visual(a,r,moving)
    var rig_elapsed=float(r.get("rig_elapsed",0))+delta
    var detailed=distance<35 and quality_mode>0 and flat_dist(n.position,focus)<28
-   if detailed or rig_elapsed>=.10:
+   var rig_interval=.05 if detailed else (.20 if quality_mode==0 else .10)
+   if rig_elapsed>=rig_interval:
     CreatureRig.drive(r,a,moving,detailed,rig_elapsed)
     if detailed:CreatureRig.contact(self,r,a,moving)
     if detailed:Art.portrait(self,r,a)
@@ -1382,6 +1427,8 @@ func _process(delta:float):
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
     r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
+  perf_add("citizens",phase_started)
+  phase_started=Time.get_ticks_usec()
   if not sim.changes.is_empty():apply_changes()
   society_tick+=delta*minf(speed,20.0)
   if society_tick>=1.0:
@@ -1394,7 +1441,11 @@ func _process(delta:float):
   ocean.industry.animate(delta*minf(speed,4.0))
   hydro.tick(delta*minf(speed,12.0))
   fluid_volume.tick(delta*minf(speed,4.0))
+  perf_add("society_and_fluids",phase_started)
+  phase_started=Time.get_ticks_usec()
   ocean_dynamics.tick(delta*minf(speed,4.0))
+  perf_add("ocean_main_thread",phase_started)
+  phase_started=Time.get_ticks_usec()
   if vast_world:rivers.tick(delta*minf(speed,4.0))
   for animal in animals:
    var n:Node3D=animal.node
@@ -1425,6 +1476,7 @@ func _process(delta:float):
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
   sky_material.sky_horizon_color=Color("495478").lerp(Color("cfdfd4"),daylight)
   env.fog_light_color=Color("374f68").lerp(Color("afc8cf"),daylight)
+  perf_add("world_and_ui",phase_started)
  if ash_time>0:
   ash_time=maxf(0,ash_time-delta*minf(speed,2.0))
   var haze=clampf(ash_time/8,0,1)
@@ -1483,6 +1535,30 @@ func _process(delta:float):
  divine_presentation.update(delta)
  update_effects(delta)
  if speed>0:update_hazards(delta*minf(speed,12.0))
+ perf_add("main_total",frame_started)
+ perf_frames+=1
+ if Time.get_ticks_usec()-perf_window_start>=2000000:
+  perf_last=performance_snapshot()
+  perf_totals.clear()
+  perf_frames=0
+  perf_window_start=Time.get_ticks_usec()
+
+func perf_add(key:String,started:int):
+ perf_totals[key]=float(perf_totals.get(key,0.0))+float(Time.get_ticks_usec()-started)/1000.0
+
+func performance_snapshot()->Dictionary:
+ var timings={}
+ for key in perf_totals:timings[key]=float(perf_totals[key])/maxi(1,perf_frames)
+ return {"version":ProjectSettings.get_setting("application/config/version"),"fps":Engine.get_frames_per_second(),"frames":perf_frames,"speed":speed,"population":sim.people.size(),"day":sim.day,"quality":quality_mode,"map_wide":vast_world,"gpu":RenderingServer.get_video_adapter_name(),"main_ms_per_frame":timings,"ocean":ocean_dynamics.performance_report()}
+
+func export_performance():
+ var report=performance_snapshot() if perf_frames>0 else perf_last
+ var f=FileAccess.open("user://performance-genesis47.json",FileAccess.WRITE)
+ if f==null:return
+ f.store_string(JSON.stringify(report,"  "))
+ f.close()
+ OS.shell_open(ProjectSettings.globalize_path("user://"))
+
 
 func _unhandled_input(event:InputEvent):
  if is_instance_valid(title_intro) and title_intro.visible:return
@@ -1514,6 +1590,7 @@ func _unhandled_input(event:InputEvent):
    distance=27
    pitch=.72
    update_camera()
+  if event.keycode==KEY_F8:export_performance()
   if event.keycode==KEY_F5:save_game(true)
   if event.keycode==KEY_F9:load_game()
   if event.keycode==KEY_SPACE:
@@ -3611,7 +3688,7 @@ func run_benchmark():
   for frame in samples:total+=frame
   var mean_ms=total/samples.size()
   var p99=samples[clampi(ceili(samples.size()*.99)-1,0,samples.size()-1)]
-  info.profiles.append({"name":names[profile],"day":sim.day,"population":sim.people.size(),"fps_average":snappedf(1000/maxf(.01,mean_ms),.1),"fps_p99_equivalent":snappedf(1000/maxf(.01,p99),.1),"frames":samples.size()})
+  info.profiles.append({"name":names[profile],"day":sim.day,"population":sim.people.size(),"fps_average":snappedf(1000/maxf(.01,mean_ms),.1),"fps_p99_equivalent":snappedf(1000/maxf(.01,p99),.1),"frames":samples.size(),"performance":perf_last.duplicate(true),"ocean":ocean_dynamics.performance_report()})
  var file=FileAccess.open("user://benchmark-genesis47.json",FileAccess.WRITE)
  if file==null:
   get_tree().quit(1)
@@ -5375,7 +5452,9 @@ func _exit_tree():
   ocean.world=null
  if hydro!=null:hydro.world=null
  if fluid_volume!=null:fluid_volume.world=null
- if ocean_dynamics!=null:ocean_dynamics.world=null
+ if ocean_dynamics!=null:
+  ocean_dynamics.stop_worker()
+  ocean_dynamics.world=null
  if debris!=null:debris.world=null
  if legend!=null:legend.world=null
  if wildlife!=null:wildlife.world=null
