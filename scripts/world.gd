@@ -580,8 +580,8 @@ func make_terrain():
   sea=MeshInstance3D.new()
   var wm=PlaneMesh.new()
   wm.size=Vector2(390,390) if vast_world else Vector2(230,230)
-  wm.subdivide_width=100
-  wm.subdivide_depth=100
+  wm.subdivide_width=160 if vast_world else 100
+  wm.subdivide_depth=160 if vast_world else 100
   sea.mesh=wm
   var sm=ShaderMaterial.new()
   sm.shader=preload("res://shaders/water.gdshader")
@@ -589,13 +589,15 @@ func make_terrain():
   add_child(sea)
   sea.position.y=SEA
   sea.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+ var extent=192.0 if vast_world else 106.0
  var depth_image=Image.create(128,128,false,Image.FORMAT_RGB8)
  for dz in range(128):
   for dx in range(128):
-   var h=height_at(float(dx)/127*106-53,float(dz)/127*106-53)
+   var h=height_at(float(dx)/127*extent-extent*.5,float(dz)/127*extent-extent*.5)
    var v=clampf((h+5.0)/20.0,0,1)
    depth_image.set_pixel(dx,dz,Color(v,v,v))
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
+ sea.material_override.set_shader_parameter("terrain_extent",extent)
  sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
@@ -956,7 +958,7 @@ func sync_houses(i:int):
     rebuild_ruins()
     break
   if site.is_empty():
-   for j in range(180):
+   for j in range(360 if vast_world else 180):
     var q=house_location(i,j)
     if q.y>SEA+.7 and not occupied_site(i,q) and not blocked_site(q):
      site={"x":q.x,"z":q.z}
@@ -2416,6 +2418,7 @@ func load_path(p:String)->bool:
  if absent_progress and not test_mode:
   advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
  sim.spatial_autonomy=not test_mode and not benchmark_mode
+ if advanced>0 and origins.active:advanced=0
  if advanced>0:
   for person in sim.people:person.task="";person.task_stage="Decide"
  expanded_world=bool(data.get("expanded_world",false)) or ocean.enabled
@@ -2745,7 +2748,7 @@ func populate_powers(i:int):
   b.tooltip_text=POWER_TIPS.get(name_value,"")
   power_buttons.append(b)
 func show_help():
- open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
+ open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nC = grotta (Grande frontiera) | P = poteri | L = leggenda\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
 func show_achievements():
  var entries=["Un mondo vivo","La via del commercio","Il secolo delle scoperte","La mano del Creatore","Eredità"]
  var lines=["TRAGUARDI  %d / %d"%[sim.achievements.size(),entries.size()]]
@@ -4163,7 +4166,7 @@ func rebuild_services():
    for j in range(3):
     var q=c+Vector3(4.0+j*2.2,0,4.5 if i==0 else -4.5)
     register_service("farm",i,q,3,"RACCOLTA")
-  for j in range(180):
+  for j in range(360 if vast_world else 180):
    var q=house_location(i,j)
    if q.y>SEA+.7 and not occupied_site(i,q) and not blocked_site(q):
     if register_service("house",i,q,1,"CANTIERE")!="":break
@@ -4218,7 +4221,7 @@ func service_open(key:String,a:Dictionary)->bool:
  if row.kind=="house" and sim.villages[a.clan].wood<22:return false
  if row.kind=="craft" and sim.villages[a.clan].wood<4:return false
  if row.kind=="sleep" and a.home_key!=key and not (a.home_key=="" and row.get("temporary",false)):return false
- if row.kind=="house" and sim.villages[a.clan].houses>=mini(25,3+int(sim.count(a.clan)/4)+sim.villages[a.clan].era):return false
+ if row.kind=="house" and sim.villages[a.clan].houses>=mini(sim.housing_limit,3+int(sim.count(a.clan)/4)+sim.villages[a.clan].era):return false
  return true
 
 func nearest_service(a:Dictionary,kind:String,origin:Vector3)->String:
@@ -5355,7 +5358,7 @@ func test_player_experience()->bool:
  a.health=100
  a.faith=80
  sim.day+=posmod(-sim.day-int(a.id),14)
- for i in range(180):
+ for i in range(360 if vast_world else 180):
   legend.ritual_advance(a,actors[a.id].node,.25)
   if int(legend.worship[0].visits)>0:break
  if int(legend.worship[0].visits)<1:return false
