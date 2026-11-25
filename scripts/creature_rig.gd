@@ -18,7 +18,7 @@ static func attach(s:Skeleton3D,label:String)->BoneAttachment3D:
  n.bone_name=label
  return n
 
-static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
+static func build(w,body:Node3D,skin:Color,cloth:Color,kind:int=0)->Dictionary:
  var skeleton=Skeleton3D.new()
  body.add_child(skeleton)
  var base=bone(skeleton,"Root",-1,Vector3.ZERO)
@@ -43,11 +43,29 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
   var fingers=bone(skeleton,"Fingers"+suffix,wrist,Vector3(0,-.065,0))
   var toes=bone(skeleton,"Toes"+suffix,ankle,Vector3(0,-.015,.16))
   extremities.append([wrist,fingers,ankle,toes])
+ var extra=[]
+ if kind==1:
+  for side in [-1,1]:
+   var suffix="L" if side<0 else "R"
+   var joint=bone(skeleton,"SecondShoulder"+suffix,spine,Vector3(side*.25,.06,.06))
+   var elbow=bone(skeleton,"SecondElbow"+suffix,joint,Vector3(side*.24,-.09,.12))
+   var wrist=bone(skeleton,"SecondHand"+suffix,elbow,Vector3(side*.11,-.21,.06))
+   extra.append([joint,elbow,wrist])
+ elif kind==2:
+  for side in [-1,1]:
+   var suffix="L" if side<0 else "R"
+   var joint=bone(skeleton,"RearHip"+suffix,pelvis,Vector3(side*.20,.02,-.42))
+   var knee=bone(skeleton,"RearKnee"+suffix,joint,Vector3(side*.04,-.20,-.05))
+   var ankle=bone(skeleton,"RearFoot"+suffix,knee,Vector3(0,-.15,0))
+   extra.append([joint,knee,ankle])
+  var tail=bone(skeleton,"TailRoot",pelvis,Vector3(0,.05,-.49))
+  var tip=bone(skeleton,"TailTip",tail,Vector3(0,-.03,-.26))
+  extra.append([tail,tip])
  skeleton.reset_bone_poses()
- var skins=[ContinuousSkin.build(w,skeleton,skin)]
+ var skins=[ContinuousSkin.build(w,skeleton,skin,kind)]
  var head_anchor=attach(skeleton,"Head")
  var chest_anchor=attach(skeleton,"Chest")
- return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"extremities":extremities,"head_anchor":head_anchor,"chest_anchor":chest_anchor}
+ return {"skeleton":skeleton,"kind":kind,"extra":extra,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"extremities":extremities,"head_anchor":head_anchor,"chest_anchor":chest_anchor}
 
 static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var rig=r.get("skeletal",{})
@@ -102,6 +120,27 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
   var e:Array=rig.extremities[i]
   pose(s,int(e[1]),Vector3(-.18 if task in ["gather","craft","eat","farm","mine","build"] else -.04,0,0),blend)
   pose(s,int(e[3]),Vector3(maxf(0,sin(cycle))*.24 if moving else 0,0,0),blend)
+
+ # Independent joints for the inherited extra limbs. The standard two hands remain usable for tools.
+ var extra:Array=rig.get("extra",[])
+ var kind=int(rig.get("kind",0))
+ if kind>0:
+  for i in range(2):
+   var phase_shift=phase+i*PI+PI*.5
+   var ids:Array=extra[i]
+   if kind==1:
+    var reach=.25*sin(phase_shift*2) if not moving and task in ["farm","craft","gather","build","house","industry"] else .23*sin(phase_shift) if moving else .02
+    pose(s,int(ids[0]),Vector3(reach,0,.08*sin(phase_shift)),blend)
+    pose(s,int(ids[1]),Vector3(-.20-absf(reach)*.5,0,0),blend)
+    pose(s,int(ids[2]),Vector3(.1*sin(phase_shift),0,0),blend)
+   else:
+    var gait=sin(phase_shift)*.38 if moving else 0.0
+    pose(s,int(ids[0]),Vector3(gait,0,0),blend)
+    pose(s,int(ids[1]),Vector3(maxf(0,-gait)*.9,0,0),blend)
+    pose(s,int(ids[2]),Vector3(-maxf(0,-gait)*.3,0,0),blend)
+  if kind==2:
+   pose(s,int(extra[2][0]),Vector3(0,sin(phase)*.25,0),blend)
+   pose(s,int(extra[2][1]),Vector3(0,sin(phase-.5)*.28,0),blend)
 
 static func pose(s:Skeleton3D,i:int,euler:Vector3,weight:float):
  var desired=Quaternion.from_euler(euler)
