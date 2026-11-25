@@ -43,10 +43,12 @@ var meet_actions=0
 var active_crisis={}
 var crisis_history:Array=[]
 var spatial_autonomy=false
+var market_mode=false
 const TASK_LABELS={"craft":"Fabbrica utensili","teach":"Educa un figlio","guard":"Difende il popolo","house":"Costruisce casa","eat":"Mangia","sleep":"Riposa","farm":"Coltiva","gather":"Raccoglie legna","research":"Studia","build":"Lavora al progetto","social":"Incontra un amico","aid":"Aiuta un vicino","play":"Si svaga","heal":"Si cura","explore":"Esplora"}
 const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
 const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
+ market_mode=false
  seed_value=s
  mode=m
  rng.seed=s
@@ -235,7 +237,7 @@ func daily():
   if new_relation!=diplomacy_state:
    diplomacy_state=new_relation
    log_event("Relazioni fra i popoli: "+new_relation+".")
-  if day%12==0 and peace>45:
+  if day%12==0 and peace>45 and not market_mode:
    var donor=0 if villages[0].food>villages[1].food else 1
    var amount=minf(18,villages[donor].food*.12)
    if amount>=1.0:dispatch_shipment(donor,amount)
