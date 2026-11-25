@@ -32,7 +32,9 @@ func restore(d):
  next_id=int(d.get("next_id",1))
 
 func customer(port:int,id:int)->Dictionary:
- if port<2:return ocean.world.sim.find(id)
+ if port<2:
+  var citizen=ocean.world.sim.find(id)
+  return citizen if not citizen.is_empty() and int(citizen.clan)==port else {}
  var c=ocean.colony(port)
  for a in c.get("citizens",[]):
   if int(a.id)==id:return a
