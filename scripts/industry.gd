@@ -20,6 +20,9 @@ var taxes=0.0
 var wages=0.0
 var root:Node3D
 var nodes:Dictionary={}
+var jobs:Dictionary={}
+var delivered_units=0.0
+var produced_units=0.0
 
 func setup(owner):
  ocean=owner
@@ -32,9 +35,12 @@ func setup(owner):
  taxes=0.0
  wages=0.0
  nodes.clear()
+ jobs={}
+ delivered_units=0.0
+ produced_units=0.0
 
 func export_state()->Dictionary:
- return {"companies":companies,"ledger":ledger,"contracts":contracts,"next_id":next_id,"next_contract":next_contract,"batches":batches,"taxes":taxes,"wages":wages}
+ return {"companies":companies,"ledger":ledger,"contracts":contracts,"next_id":next_id,"next_contract":next_contract,"batches":batches,"taxes":taxes,"wages":wages,"jobs":jobs,"delivered_units":delivered_units,"produced_units":produced_units}
 
 func restore(d):
  if not d is Dictionary:return
@@ -46,6 +52,10 @@ func restore(d):
  batches=int(d.get("batches",0))
  taxes=float(d.get("taxes",0))
  wages=float(d.get("wages",0))
+ jobs=d.get("jobs",{})
+ delivered_units=float(d.get("delivered_units",0))
+ produced_units=float(d.get("produced_units",0))
+ for job in jobs.values():job["revision"]=-1
 
 func log_entry(f:Dictionary,kind:String,amount:float,good=""):
  ledger.push_front({"day":ocean.world.sim.day,"company":int(f.id),"kind":kind,"amount":amount,"good":good})
@@ -186,6 +196,8 @@ func settle_contract(row:Dictionary):
 func close(f:Dictionary):
  ocean.finance.liquidate_company(int(f.port),int(f.id))
  f.active=false
+ for key in jobs.keys():
+  if int(jobs[key].company)==int(f.id):cancel_job(key)
  for row in contracts.duplicate():
   if int(row.seller)==int(f.id) or int(row.buyer)==int(f.id):settle_contract(row)
  for good in f.stock:ocean.change(int(f.port),good,float(f.stock[good]))
@@ -216,21 +228,14 @@ func daily():
  for f in companies:
   if not f.active:continue
   if ocean.world.sim.day%7==0:hire(f)
-  if produce(f):f.idle_days=0
-  else:f.idle_days+=1
-  var good=str(RECIPES[f.recipe].output)
-  var available=float(f.stock.get(good,0))
-  for other in companies:
-   if available<1:break
-   if not other.active or int(other.port)!=int(f.port) or other.id==f.id:continue
-   var needs:Dictionary=RECIPES[other.recipe].input
-   if not needs.has(good):continue
-   var q=minf(available,maxf(0,float(needs[good])*2-float(other.stock.get(good,0))))
-   if q>=1 and make_contract(int(f.id),int(other.id),good,q):available-=q
-  if available>0 and ocean.balance(int(f.port),good)<ocean.target(int(f.port),good)*2:sell(f,good,minf(available,4))
+  f.idle_days+=1
   if float(f.cash)<5 and int(f.idle_days)>5:ocean.finance.lend_company(int(f.port),int(f.id),8)
   if ocean.world.sim.day%15==0:pay_dividend(f)
   if int(f.idle_days)>30 and float(f.cash)<1 and f.stock.values().all(func(q):return float(q)<.1):close(f)
+ for key in jobs.keys():
+  var job=jobs[key]
+  var company=find(int(job.company))
+  if company.is_empty() or not company.active or ocean.finance.customer(int(company.port),int(key)).is_empty():cancel_job(key)
  sync_visuals()
 
 func cash_total()->float:
@@ -273,7 +278,7 @@ func sync_visuals():
   nodes[id]=n
 
 func report()->String:
- var lines=["IMPRESE E FILIERE","Lotti %d · Salari %.1f · Imposte %.1f · Contratti aperti %d"%[batches,wages,taxes,contracts.size()]]
+ var lines=["IMPRESE E FILIERE","Unità prodotte %.1f · Consegnate %.1f · Salari %.1f · Imposte %.1f"%[produced_units,delivered_units,wages,taxes],"Lavoratori in filiera: "+str(jobs.size())]
  for f in companies:
   var owner=ocean.finance.customer(int(f.port),int(f.get("owner",-1)))
   lines.append("%s · %s · %s\nProprietà %s · Cassa %.1f · Dipendenti %d\nRicavi %.1f · Costi %.1f · Dividendi %.1f\nScorte %s"%[f.name,ocean.port_name(int(f.port)),"Attiva" if f.active else "Liquidata",str(owner.get("name","Comunità")),float(f.cash),f.employees.size(),float(f.revenue),float(f.cost),float(f.get("dividends",0)),str(f.stock)])
@@ -290,3 +295,162 @@ func pay_dividend(f:Dictionary):
  else:owner.coins+=amount
  f["dividends"]=float(f.get("dividends",0))+amount
  log_entry(f,"Dividendo",amount)
+
+
+func cancel_job(key:String):
+ if not jobs.has(key):return
+ var job:Dictionary=jobs[key]
+ var f=find(int(job.company))
+ if not f.is_empty():
+  for good in job.get("cargo",{}):
+   if f.active:f.stock[good]=float(f.stock.get(good,0))+float(job.cargo[good])
+   else:ocean.change(int(f.port),good,float(job.cargo[good]))
+ jobs.erase(key)
+
+func warehouse(port:int)->Vector3:
+ var w=ocean.world
+ if port<2:return w.centers[port]
+ var p:Vector2=w.REGION_POINTS[ocean.port_region(port)]
+ return w.ground(p.x,p.y)
+
+func factory(f:Dictionary)->Vector3:
+ var node=nodes.get(int(f.id))
+ if is_instance_valid(node):return node.position+Vector3(0,0,1)
+ return warehouse(int(f.port))
+
+func choose_job(port:int,a:Dictionary)->Dictionary:
+ if float(a.age)<14 or float(a.hunger)>68 or float(a.fatigue)>68 or float(a.health)<50:return {}
+ for f in companies:
+  if not f.active or int(f.port)!=port or not f.employees.has(int(a.id)) or not nodes.has(int(f.id)):continue
+  if jobs.values().any(func(j):return int(j.company)==int(f.id)):continue
+  var recipe:Dictionary=RECIPES[f.recipe]
+  var output=str(recipe.output)
+  if float(f.stock.get(output,0))>=.99 and ocean.balance(port,"cash")>=ocean.price(port,output) and ocean.balance(port,output)<ocean.target(port,output)*2:
+   return {"company":int(f.id),"stage":"output_pickup","cargo":{},"remaining":0.0,"path":[],"index":0,"revision":-1,"quantity":1.0}
+  if float(f.stock.get(output,0))>=8 or float(f.cash)<.8:continue
+  var ratio=1.0/float(recipe.quantity)
+  var needed={}
+  var cost=.8
+  for good in recipe.input:
+   var q=maxf(0,float(recipe.input[good])*ratio-float(f.stock.get(good,0)))
+   if q>.0001:
+    if ocean.balance(port,good)<q:cost=INF;break
+    needed[good]=q
+    cost+=q*ocean.price(port,good)
+  if float(f.cash)<cost:continue
+  return {"company":int(f.id),"stage":"warehouse" if not needed.is_empty() else "work","needed":needed,"cargo":{},"remaining":float(recipe.labor)*ratio*4.0,"path":[],"index":0,"revision":-1,"quantity":1.0}
+ return {}
+
+func set_stage(job:Dictionary,stage:String):
+ job.stage=stage
+ job.path=[]
+ job.index=0
+ job.revision=-1
+
+# Return -1 for ordinary life, 0 for processing, 1 for walking.
+func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
+ a.erase("industry_action")
+ if not ocean.enabled or not is_instance_valid(node):return -1
+ var key=str(int(a.id))
+ if float(a.hunger)>82 or float(a.fatigue)>82 or float(a.health)<40:
+  if jobs.has(key):jobs[key].revision=-1
+  return -1
+ if not jobs.has(key):
+  var created=choose_job(port,a)
+  if created.is_empty():return -1
+  jobs[key]=created
+ var job:Dictionary=jobs[key]
+ var f=find(int(job.company))
+ if f.is_empty() or not f.active or int(f.port)!=port:
+  cancel_job(key)
+  return -1
+ var w=ocean.world
+ var stage=str(job.stage)
+ var destination=warehouse(port) if stage in ["warehouse","output_delivery"] else factory(f)
+ if int(job.revision)!=int(w.nav_version):
+  job.path=[]
+  var start:Vector2i=w.near_cell(node.position)
+  var end:Vector2i=w.near_cell(destination)
+  if w.nav_grid.region.has_point(start) and w.nav_grid.region.has_point(end):
+   for cell in w.nav_grid.get_id_path(start,end):job.path.append([cell.x,cell.y])
+  if job.path.is_empty():cancel_job(key);return -1
+  job.index=0
+  job.revision=int(w.nav_version)
+ var budget=dt*2.7
+ while int(job.index)<job.path.size() and budget>0:
+  var cell=job.path[int(job.index)]
+  var target:Vector3=w.ground(float(cell[0]),float(cell[1]))
+  var diff=Vector3(target.x-node.position.x,0,target.z-node.position.z)
+  var length=diff.length()
+  if length>.01:node.rotation.y=lerp_angle(node.rotation.y,atan2(diff.x,diff.z),clampf(dt*7,0,1))
+  if length>budget:
+   var pos=node.position+diff.normalized()*budget
+   node.position=w.ground(pos.x,pos.z)
+   budget=0
+  else:
+   node.position=target
+   budget-=length
+   job.index+=1
+ if int(job.index)<job.path.size():
+  a["industry_action"]="deliver" if not job.cargo.is_empty() else "explore"
+  a.task_stage="Trasporto industriale"
+  return 1
+ var recipe:Dictionary=RECIPES[f.recipe]
+ var output=str(recipe.output)
+ match stage:
+  "warehouse":
+   # Recheck availability and funds at pickup; transfers are exact.
+   var bill=.8
+   for good in job.needed:
+    if ocean.balance(port,good)<float(job.needed[good]):cancel_job(key);return -1
+    bill+=float(job.needed[good])*ocean.price(port,good)
+   if float(f.cash)<bill:cancel_job(key);return -1
+   for good in job.needed:
+    var q=float(job.needed[good])
+    var cost=q*ocean.price(port,good)
+    ocean.change(port,good,-q)
+    ocean.change(port,"cash",cost)
+    f.cash-=cost
+    f.cost+=cost
+    job.cargo[good]=q
+    log_entry(f,"Ritiro",cost,good)
+   set_stage(job,"work")
+  "work":
+   for good in job.cargo:f.stock[good]=float(f.stock.get(good,0))+float(job.cargo[good])
+   job.cargo={}
+   a["industry_action"]="industry"
+   a.task_stage="In corso"
+   job.remaining=maxf(0,float(job.remaining)-dt)
+   if job.remaining>0:return 0
+   var ratio=1.0/float(recipe.quantity)
+   for good in recipe.input:
+    if float(f.stock.get(good,0))+.0001<float(recipe.input[good])*ratio:cancel_job(key);return -1
+   if float(f.cash)<.8:cancel_job(key);return -1
+   for good in recipe.input:f.stock[good]=maxf(0,float(f.stock[good])-float(recipe.input[good])*ratio)
+   f.stock[output]=float(f.stock.get(output,0))+1.0
+   f.cash-=.8
+   f.wages+=.8
+   f.cost+=.8
+   wages+=.8
+   a.coins+=.8
+   a.tasks_done=int(a.tasks_done)+1
+   f.idle_days=0
+   produced_units+=1
+   log_entry(f,"Unità prodotta",1,output)
+   jobs.erase(key)
+  "output_pickup":
+   if float(f.stock.get(output,0))<1:cancel_job(key);return -1
+   f.stock[output]-=1
+   job.cargo[output]=1.0
+   set_stage(job,"output_delivery")
+  "output_delivery":
+   # Sale occurs only after physical arrival at warehouse.
+   var q=float(job.cargo.get(output,0))
+   if q<=0:cancel_job(key);return -1
+   f.stock[output]=float(f.stock.get(output,0))+q
+   job.cargo={}
+   if sell(f,output,q):delivered_units+=q
+   jobs.erase(key)
+ a["industry_action"]="industry"
+ a.task_stage="In corso"
+ return 0
