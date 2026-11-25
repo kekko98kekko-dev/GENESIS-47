@@ -1,4 +1,8 @@
 extends RefCounted
+const ColonyLife=preload("res://scripts/colony_life.gd")
+const Finance=preload("res://scripts/finance.gd")
+var life=ColonyLife.new()
+var finance=Finance.new()
 # Independent colonies, sea transport and double-entry trade. Simulation is daily;
 # graphical ships interpolate between departure and arrival.
 const GOODS=["food","wood","stone","tools"]
@@ -36,9 +40,11 @@ func reset(w,on:bool):
  turnover=0
  for i in range(2):accounts.append({"cash":150.0,"stone":0.0,"tools":0.0})
  world.sim.market_mode=enabled
+ life.setup(self)
+ finance.setup(self)
 
 func export_state()->Dictionary:
- return {"enabled":enabled,"colonies":colonies,"voyages":voyages,"accounts":accounts,"history":history,"next_id":next_id,"completed":completed,"delayed":delayed,"failed":failed,"turnover":turnover}
+ return {"enabled":enabled,"colonies":colonies,"voyages":voyages,"accounts":accounts,"history":history,"next_id":next_id,"completed":completed,"delayed":delayed,"failed":failed,"turnover":turnover,"finance":finance.export_state()}
 
 func restore(w,data):
  reset(w,false)
@@ -58,6 +64,8 @@ func restore(w,data):
  delayed=int(data.get("delayed",0))
  failed=int(data.get("failed",0))
  turnover=float(data.get("turnover",0))
+ finance.restore(data.get("finance",{}))
+ for c in colonies:life.migrate(c)
 
 func colony(id:int)->Dictionary:
  for c in colonies:
@@ -112,6 +120,12 @@ func record(message:String):
 func work_completed(a:Dictionary,kind:String,coins_before:float):
  if not enabled:return
  var clan=int(a.clan)
+ if kind in ["farm","gather","build","house","research","craft","guard"]:
+  var wage=minf(1.5,balance(clan,"cash"))
+  change(clan,"cash",-wage)
+  var contribution=minf(.25,wage)
+  a.coins=coins_before+wage-contribution
+  world.sim.villages[clan].culture.treasury+=contribution
  if kind=="gather":change(clan,"stone",.55)
  if kind=="craft":change(clan,"tools",1.0)
  if kind=="eat":change(clan,"cash",maxf(0,coins_before-float(a.coins)))
@@ -136,7 +150,11 @@ func recruit(clan:int,region:int)->bool:
  if candidates.size()<2:return false
  var crew=[]
  for a in candidates.slice(0,2):
-  crew.append({"id":int(a.id),"name":str(a.name),"age":float(a.age),"genes":a.genes.duplicate()})
+  finance.settle_depositor(clan,int(a.id))
+  var migrant:Dictionary=a.duplicate(true)
+  for key in ["position","path","path_index","task","task_stage","target_id","home","remaining"]:migrant.erase(key)
+  migrant.friend=-1
+  crew.append(migrant)
   for other in world.sim.people:
    if int(other.friend)==int(a.id):other.friend=-1
   world.sim.people.erase(a)
@@ -173,6 +191,7 @@ func settle(row:Dictionary):
   var clan=int(row.seller)
   var founders:Array=row.crew
   var c={"id":region+1,"region":region,"clan":clan,"name":str(world.REGION_NAMES[region]),"population":founders.size(),"founders":founders,"food":float(row.food),"wood":float(row.wood),"cash":float(row.cash),"stone":0.0,"tools":0.0,"houses":1,"age":0,"births":0,"deaths":0,"prosperity":50.0}
+  life.migrate(c)
   colonies.append(c)
   for site in world.discovery_sites:
    if str(site.name)==str(world.REGION_NAMES[region]):site.found=true
@@ -209,31 +228,8 @@ func daily():
    delayed+=1
    continue
   settle(v)
- for c in colonies:
-  c.age=int(c.age)+1
-  var n=int(c.population)
-  if n<=0:continue
-  var productivity=.9+minf(.5,float(c.tools)*.05)
-  if world.sim.weather_name=="Siccità":productivity*=.65
-  c.food=minf(500,float(c.food)+n*(productivity-.70))
-  c.wood=minf(300,float(c.wood)+n*.30)
-  c.stone=minf(250,float(c.stone)+n*.18)
-  if int(c.age)%7==0 and float(c.wood)>=3 and float(c.stone)>=2:
-   c.wood-=3
-   c.stone-=2
-   c.tools=minf(80,float(c.tools)+1)
-  if int(c.age)%10==0 and n>=int(c.houses)*3 and float(c.wood)>=12 and float(c.stone)>=5:
-   c.wood-=12
-   c.stone-=5
-   c.houses=mini(12,int(c.houses)+1)
-  if int(c.age)%12==0 and n>=2 and n<int(c.houses)*4 and n<40 and float(c.food)>n*4:
-   c.food-=3
-   c.population=n+1
-   c.births=int(c.births)+1
-  if float(c.food)<.1 and int(c.age)%5==0:
-   c.population=maxi(0,int(c.population)-1)
-   c.deaths=int(c.deaths)+1
-  c.prosperity=clampf(float(c.prosperity)+(1 if float(c.food)>n*2 else -3),0,100)
+ for c in colonies:life.daily(c)
+ finance.daily()
  if world.sim.day%10==0:
   for i in range(2):recruit(i,i+1)
  if world.sim.day%3==0:match_market()
@@ -349,6 +345,7 @@ func rebuild_visuals(parent:Node3D):
  root=parent
  fleet.clear()
  colony_nodes.clear()
+ life.rebuild(parent)
  routes.clear()
  sea_revision=-1
  if not enabled:return
@@ -379,10 +376,6 @@ func sync_visuals():
    var offset=Vector3(cos(angle),0,sin(angle))*sqrt(float(i))*1.3
    world.block(n,Color("a68b69"),offset+Vector3.UP*.45,Vector3(1.0,.9,.82))
    world.cone(n,tint,offset+Vector3.UP*1.12,.75,.56,.05,4).rotation.y=PI*.25
-  for i in range(mini(12,int(c.population))):
-   var p=Vector3(cos(i*2.4)*2.4,.26,sin(i*2.4)*2.4)
-   world.sphere(n,tint,p,Vector3(.23,.42,.23))
-   world.sphere(n,Color("f0cfaa"),p+Vector3.UP*.27,Vector3(.22,.22,.22))
   var label=Label3D.new()
   n.add_child(label)
   label.position.y=2.1
@@ -391,6 +384,7 @@ func sync_visuals():
   label.pixel_size=.009
   label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
   colony_nodes[id]={"node":n,"key":key}
+ life.sync()
 
 func animate(day_fraction:float,clock:float):
  if not enabled:return
@@ -418,6 +412,8 @@ func report()->String:
  for row in voyages:lines.append("Nave %d · %s · arrivo G%d"%[int(row.id),"Coloni" if row.kind=="settle" else LABELS[row.good],int(row.due)])
  lines.append("")
  for entry in history.slice(0,8):lines.append(entry)
+ lines.append(finance.report())
+ for c in colonies:lines.append(life.report(c))
  return "\n".join(lines)
 
 
@@ -428,9 +424,7 @@ func damage_colonies(p:Vector3,radius:float,damage:float,kind:String):
   var dist=Vector2(p.x,p.z).distance_to(point)
   if dist>radius+2.0:continue
   var strength=clampf(damage/100.0,0,1)*clampf(1.0-dist/maxf(1,radius+2),0,1)
-  var lost=mini(int(c.population),floori(float(c.population)*strength*.50))
-  c.population=int(c.population)-lost
-  c.deaths=int(c.deaths)+lost
+  var lost=life.damage(c,p,radius,damage)
   c.food=maxf(0,float(c.food)*(1.0-strength*.5))
   c.wood=maxf(0,float(c.wood)*(1.0-strength*.35))
   if strength>.5:c.houses=maxi(0,int(c.houses)-1)
