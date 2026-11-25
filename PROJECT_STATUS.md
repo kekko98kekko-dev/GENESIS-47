@@ -18,10 +18,10 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 5.0.0 — Oceani e civiltà.
-- Ultimo commit applicativo prima di questo registro: 5522778536c141624a6e5d52294337339a7f4401.
-- Ultima versione interamente collaudata: 4.2 corretta, commit ccaa5ad461d028d15672bb4119ff8c78c0ca1da1, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45580933044 (successo build e Windows).
-- 5.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45581769849. Al momento della stesura: importazione script, test simulazione/poteri e cattura grafica risultano superati; benchmark in corso, esportazione e test Windows non ancora confermati. Consultare il run per esito aggiornato.
+- Versione del codice: 6.0.0 — Vita oltre il mare.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: 5f544be37b9c7b151188fd2e0eb5da18e4934d38.
+- Ultima versione interamente collaudata: 5.0, commit 5522778536c141624a6e5d52294337339a7f4401, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45581769849 (successo build e Windows).
+- 6.0: codice scritto nel ramo upgrade-6-0-individuals; test integrato DEEP_TEST aggiunto, esito CI da verificare dopo pubblicazione.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -41,14 +41,21 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - scripts/minimap.gd, scripts/sim.gd, shaders/water.gdshader, shaders/terrain.gdshader: aggiornamenti geografici, disattivazione vecchie carovane gratuite nella modalità oceano, materiali e dettagli scalabili.
 - project.godot / README.md: versione e documentazione.
 
+## Modifiche 6.0
+- scripts/colony_life.gd: ogni colono è un agente persistente con posizione, percorso A*, compiti, risorse, bisogni, ricordi, parentele, figli, denaro, morte; visualizzazione individuale e selezione. I fondatori conservano l'identità, i vecchi salvataggi aggregati vengono migrati.
+- scripts/finance.gd: capitale bancario, riserva, depositi/prelievi, prestiti con interesse e insolvenze, bilanci e registro; integrazione di stipendi finanziati dalle casse, tasse civiche e acquisti locali.
+- scripts/mocap_walk.gd: ciclo di camminata da CMU 35_01 (32 campioni, fonte e licenza in ASSET-CREDITS.md). scripts/creature_rig.gd: mesh con pesi normalizzati e skinning, blend con movimento procedurale.
+- scripts/hydrology.gd: acqua a celle, trasferimento conservativo, drenaggio, danni, rendering e persistenza; scripts/structure.gd: cedimento dei supporti e riparazioni. Detriti con collisione del terreno e limite 160.
+- scripts/world.gd, ocean.gd, sim.gd e minimap.gd: integrazione, migrazione, test DEEP_TEST. Priorità qualità rispetto all'hardware attuale, come richiesto dall'utente.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 5.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
-- P0: test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Hardware di riferimento: Ryzen 5 3400G, GTX 1050 Ti 4 GB, RAM 32 GB. Nessun intervento BIOS/overclock necessario.
-- P1: colonie con singoli agenti persistenti, familiari, attività, case e navigazione locale; oggi la colonia è aggregata con rappresentazione grafica semplificata. Migrazione e popolazione globale coerenti; colonizzazione di più regioni con più civiltà e limiti espliciti.
+- P0: verificare esito finale CI 6.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
+- P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali sono implementati nella 6.0, in attesa di test.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
-- P1: animazioni scheletriche professionali con mesh deformabili e pesi, blending/AnimationTree, eventualmente IK e animazioni create o licenziate con crediti; oggi ossa native con geometrie rigide, non mocap o qualità professionale certificata.
-- P1: economia completa con produzione/consumo coerenti, professioni, contabilità e moneta consistente, lavoro e salari, mercati fisici, contratti e catene produttive, inventari, bilanci e test di conservazione risorse/denaro. Oggi mercato semplificato a quattro merci.
-- P2: fisica dei fluidi, collisione con terreno reale, distruzione strutturale e interazione fisica più profonda. Oggi detriti limitati e piano di collisione locale, danni di gioco deterministici.
+- P1: retarget completo del corpo, IK, clip mocap multiple per corsa, azioni, emozioni e transizioni; ora esiste skinning delle quattro arti e un ciclo reale di camminata CMU adattato, altre attività procedurali. Qualità professionale da validare visivamente.
+- P1: economia estesa con imprese, credito individuale/aziendale, contratti, filiere, audit monetario completo e inventari; ora banche cash-backed e salari pagati dalle casse in modo Oceano, con test bilancio. Quattro merci e alcuni flussi originari non ancora auditati.
+- P2: fluidi con solver di velocità 2D/3D più avanzato, interazioni solide/acqua, erosione e danni strutturali di elementi fisici con collegamenti; ora flusso conservativo su celle, collisione con terreno reale e modello di supporti danneggiabili.
 - P2: direzione artistica coerente, materiali, ambiente, animazioni, UI e ottimizzazione dopo misure reali; test umani e partite prolungate con salvataggi ripetuti.
 - P2: evoluzione offline coerente con i sistemi spaziali e portuali; oggi l'assenza è aggregata.
 - Non introdurre LLM locale da centinaia di MB: rimosso in 4.1. Preferire intelligenza di gioco leggera e verificabile.
@@ -67,8 +74,10 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 ## Registro sessioni
 - 25/11/2026 — 4.1: rimosso modello AI esterno, sostituito con cervello procedurale. CI riuscita.
 - 25/11/2026 — 4.2: cultura, arcipelago, voto, cassa comune, feste, animazioni, meteo; CI riuscita. Correzione meadow e test ampliati; CI riuscita.
-- 25/11/2026 — 5.0: oceano, colonie, mercato, scheletro, fisica e grafica; codice pubblicato in main, primi test superati, esito completo CI ancora da verificare al momento della stesura.
+- 25/11/2026 — 5.0: oceano, colonie, mercato, scheletro, fisica e grafica; CI completa riuscita, compreso Windows.
 - 25/11/2026 — Continuità: istituito questo registro e AGENTS.md, da mantenere ad ogni sessione.
+
+- 25/11/2026 — 6.0: cittadini individuali nelle colonie, banche, mocap camminata reale e skinning, idrologia e danni strutturali. Test DEEP_TEST scritto; esito CI non ancora verificato al momento della stesura.
 
 ## Frase per riprendere in una nuova chat
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
