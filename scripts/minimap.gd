@@ -36,6 +36,10 @@ func _draw():
   for colony in world.ocean.colonies:
    var point:Vector2=world.REGION_POINTS[int(colony.region)]
    draw_circle(to_map(Vector3(point.x,0,point.y)),3.0,Color("9ff0bb") if int(colony.clan)==0 else Color("f3b97e"))
+ if world.ocean.enabled:
+  for id in world.ocean.life.actors:
+   var colonist=world.ocean.life.actors[id]
+   if is_instance_valid(colonist.node):draw_circle(to_map(colonist.node.position),1.65,Color("ffdba4"))
  for a in world.sim.people:
   if not world.actors.has(a.id):continue
   var p=world.actors[a.id].node.position
