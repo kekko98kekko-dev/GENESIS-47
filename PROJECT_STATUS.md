@@ -20,11 +20,11 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 ## Stato attuale
 - Versione del codice: 11.0.0 — Eredità vivente.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 207d993e07a246b8415fc1c66c7c344f764eed69.
-- Ultima versione interamente collaudata: 10.1, commit 939fb9bedd3f1962ad32bf3f162df65a811ecf26, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242 (build e Windows riusciti).
+- Ultima versione interamente collaudata: 11.0, commit bd3fba81e7a220ba3e5d0d186820853482189d61, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
-- 11.0: pubblicata in main (commit bd3fba81e7a220ba3e5d0d186820853482189d61); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642, stato queued, esito in attesa. Verificare prima di dichiarare stabile.
+- 11.0: pipeline interamente riuscita. LEGACY_TEST PASS; QA_LEGACY 120 giorni, 28→76 cittadini, 14 eventi, ok=true. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642/artifacts/15012212401.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -150,4 +150,4 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 
 - Priorità residua 10.1: verificare pipeline, nuove catture e stabilità con popolazioni elevate; eseguire PLAYTEST.md. Limiti: bacino oceanico centrale separato, fiumi 1D, una grotta esplorabile, metropoli non ancora dimostrata, quattro morfotipi semplificati e qualità artistica/coinvolgimento non certificati.
 
-- Priorità 11.0: pipeline, catture, valutazione umana; secessione non ancora sovranità indipendente, nuove morfologie con rig comune, grafica professionale non dimostrata, approfondire esplorazione e società sotterranee.
+- Priorità 11.0: benchmark artistico del proprietario in ART_DIRECTION.md. Catture 11.0 esaminate, divario evidente rispetto ai riferimenti: costruzioni geometriche, vegetazione rada, biologia con rig comune, scala divina modesta. Prossima iterazione: area verticale di qualità, kit originali o licenziati e verifiche visive; non aggiungere complessità invisibile. Playtest umano non eseguito.
