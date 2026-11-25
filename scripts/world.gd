@@ -2415,10 +2415,9 @@ func load_path(p:String)->bool:
  ocean_dynamics_saved=data.get("ocean_dynamics",{})
  colony_selected=-1
  var advanced=0
- if absent_progress and not test_mode:
+ if absent_progress and not test_mode and not origins.active:
   advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
  sim.spatial_autonomy=not test_mode and not benchmark_mode
- if advanced>0 and origins.active:advanced=0
  if advanced>0:
   for person in sim.people:person.task="";person.task_stage="Decide"
  expanded_world=bool(data.get("expanded_world",false)) or ocean.enabled
@@ -5455,6 +5454,14 @@ func test_world_depth()->bool:
  for ext in ["",".bak",".tmp"]:
   if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
  if not ok or not cave.found or sim.population_limit!=640 or rivers.streams.size()!=2:return false
+ var large=Sim.new()
+ large.start(47,0)
+ large.population_limit=640
+ large.housing_limit=100
+ while large.people.size()<200:
+  if large.birth(large.people.size()%2,[]).is_empty():return false
+ var restored=Sim.new()
+ if not restored.import_state(JSON.parse_string(JSON.stringify(large.export_state()))) or restored.people.size()!=200:return false
  if absf(rivers.mass()+rivers.discharged-rivers.supplied-rivers.initial)>.01:return false
- print("WORLD_DEPTH_TEST cave=true river_mass_error=",mass_error," district_stations=",stations," species=4 population_capacity=640 persistence=true")
+ print("WORLD_DEPTH_TEST cave=true river_mass_error=",mass_error," district_stations=",stations," species=4 population_capacity=640 population_roundtrip=200 persistence=true")
  return true
