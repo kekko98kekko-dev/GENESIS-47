@@ -9,15 +9,26 @@ func run(w)->bool:
  world=w
  world.new_world(47,0,true,true)
  var skin=pose_audit()
+ var families=[]
+ for kind in range(3):
+  var selected={}
+  for a in world.sim.people:
+   if int(world.actors[a.id].skeletal.get("kind",0))==kind:selected=a;break
+  if selected.is_empty():families.append({"ok":false,"kind":kind,"error":"missing phenotype"});continue
+  var result=pose_audit(selected)
+  result["kind"]=kind
+  families.append(result)
+ var anatomy_ok=families.size()==3 and families.all(func(row):return bool(row.ok))
+ print("QA_ANATOMIES families=",families.size()," ok=",anatomy_ok)
  var industry=industry_soak()
  var live=live_soak()
  var water=ocean_audit()
  var politics=legacy_soak()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -37,8 +48,8 @@ static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float)
  var s:Skeleton3D=r.skeletal.skeleton
  s.force_update_all_bone_transforms()
 
-func pose_audit()->Dictionary:
- var a=world.sim.people[0]
+func pose_audit(chosen:Dictionary={})->Dictionary:
+ var a=world.sim.people[0] if chosen.is_empty() else chosen
  var r:Dictionary=world.actors[a.id]
  var s:Skeleton3D=r.skeletal.skeleton
  var mesh:MeshInstance3D=r.skeletal.skins[0]
