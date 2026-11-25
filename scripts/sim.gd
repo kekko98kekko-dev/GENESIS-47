@@ -87,6 +87,7 @@ func start(s:int,m:int):
  season="Primavera"
  for i in range(2):
   villages.append({"food":72.0 if m!=3 else 26.0,"wood":35.0,"knowledge":0.0,"faith":55.0,"era":0,"houses":3,"government":"Consiglio","belief":"Il cielo vivente","tech":0,"project":-1,"progress":0.0,"completed":0,"bonuses":[0,0,0,0,0,0]})
+  init_culture(villages[i])
   for j in range(14):
    birth(i,[])
  log_event("Il mondo si risveglia. Due popoli, un cielo.")
@@ -310,6 +311,7 @@ func daily():
  if discoveries.size()>=14:award("Il secolo delle scoperte")
  if miracles>=10:award("La mano del Creatore")
  if not people.is_empty() and people.any(func(a):return a.gen>=4):award("Eredità")
+ if spatial_autonomy:advance_culture()
  check_ending()
 func award(name_value:String):
  if not achievements.has(name_value):
@@ -450,6 +452,7 @@ func import_state(d:Dictionary)->bool:
   v["bonuses"]=v.get("bonuses",[0,0,0,0,0,0])
   if not v.bonuses is Array or v.bonuses.size()!=6:v.bonuses=[0,0,0,0,0,0]
   for i in range(6):v.bonuses[i]=maxi(0,int(v.bonuses[i]))
+  init_culture(v)
  return true
 
 func answer_signal(index:int,choice:int)->bool:
@@ -806,6 +809,8 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
   var council=str(v.get("council_focus",""))
   var focus_task={"CIBO":"farm","CASA":"house","CURA":"heal","SOCIALE":"social","RICERCA":"research"}.get(council,"")
   if scores.has(focus_task):scores[focus_task]+=12
+  var policy_task={"Sostentamento":"farm","Sapere":"research","Solidarietà":"aid","Dimore":"house","Comunità":"social"}.get(str(v.culture.policy),"")
+  if scores.has(policy_task):scores[policy_task]+=10
   if adult and v.houses*4<count(a.clan) and day>=int(v.get("rebuild_after",0)) and a.hunger<70 and a.fatigue<70:
    a.plan_goal="house"
    if v.wood<22 and scores.has("gather"):
@@ -948,7 +953,15 @@ func complete_task(a:Dictionary)->bool:
   a.tasks_done+=1
   a.last_task=a.task
   a.work_history[action]=int(a.work_history.get(action,0))+1
-  if action in ["farm","gather","build","house","research","craft","guard"]:a.coins=minf(999,a.coins+1.5)
+  if action in ["farm","gather","build","house","research","craft","guard"]:
+   a.coins=minf(999,a.coins+1.5)
+   if spatial_autonomy:
+    var contribution=minf(.25,float(a.coins))
+    a.coins-=contribution
+    v.culture.treasury=minf(2000,float(v.culture.treasury)+contribution)
+  if spatial_autonomy:
+   v.culture.actions[action]=int(v.culture.actions.get(action,0))+1
+   if action=="teach":v.culture.heritage=mini(100,int(v.culture.heritage)+1)
  a.task=""
  a.task_stage="Decide"
  a.task_target=-1
@@ -1074,3 +1087,94 @@ func storyteller():
   if str(v.get("council_focus",""))!=focus:
    v["council_focus"]=focus
    log_event(CLANs_name(clan)+": "+message)
+
+
+# Culture lives in village records; version-2 saves migrate in place.
+const CULTURE_POLICIES=["Sostentamento","Sapere","Solidarietà","Dimore","Comunità"]
+func init_culture(v:Dictionary):
+ var raw=v.get("culture",{})
+ if not raw is Dictionary:raw={}
+ var policy=str(raw.get("policy","Comunità"))
+ if not CULTURE_POLICIES.has(policy):policy="Comunità"
+ var archive=raw.get("archive",[])
+ if not archive is Array:archive=[]
+ var actions=raw.get("actions",{})
+ if not actions is Dictionary:actions={}
+ v["culture"]={"policy":policy,"leader":int(raw.get("leader",-1)),"treasury":clampf(float(raw.get("treasury",0)),0,2000),"heritage":clampi(int(raw.get("heritage",0)),0,100),"archive":archive.slice(0,24),"actions":actions,"festivals":maxi(0,int(raw.get("festivals",0))),"relief":maxi(0,int(raw.get("relief",0))),"next_vote":maxi(1,int(raw.get("next_vote",7))),"next_festival":maxi(1,int(raw.get("next_festival",30))),"votes":raw.get("votes",{})}
+ if not v.culture.votes is Dictionary:v.culture.votes={}
+
+func cultural_event(clan:int,message:String,kind:String):
+ var culture=villages[clan].culture
+ culture.archive.push_front({"day":day,"text":message,"kind":kind})
+ if culture.archive.size()>24:culture.archive.pop_back()
+ log_event(CLANs_name(clan)+": "+message)
+ changes.append({"kind":"culture","clan":clan,"text":message,"event_type":kind})
+
+func advance_culture():
+ for clan in range(2):
+  var v=villages[clan]
+  var c=v.culture
+  var inhabitants=people.filter(func(a):return int(a.clan)==clan)
+  if inhabitants.is_empty():continue
+  var leader=find(int(c.leader))
+  if day>=int(c.next_vote) or (int(c.leader)>=0 and (leader.is_empty() or int(leader.clan)!=clan)):
+   c.next_vote=day+14
+   var votes={}
+   for policy in CULTURE_POLICIES:votes[policy]=0
+   var leader_id=-1
+   var best_merit=-1.0
+   for a in inhabitants:
+    if float(a.age)<14:continue
+    var vote="Comunità"
+    if float(a.hunger)>50 or float(v.food)<inhabitants.size()*1.5:vote="Sostentamento"
+    elif float(a.health)<65 or int(a.sick)>0:vote="Solidarietà"
+    elif v.houses*4<inhabitants.size():vote="Dimore"
+    elif float(a.social_need)>55 or float(a.stress)>55:vote="Comunità"
+    elif float(a.genes[0])>.58:vote="Sapere"
+    elif float(a.genes[1])>.65:vote="Solidarietà"
+    votes[vote]+=1
+    var merit=float(a.skill)+float(a.genes[1])*20+minf(30,float(a.tasks_done)*.1)
+    if merit>best_merit:best_merit=merit;leader_id=int(a.id)
+   var winner="Comunità"
+   for policy in CULTURE_POLICIES:
+    if int(votes[policy])>int(votes[winner]):winner=policy
+   c.votes=votes
+   c.policy=winner
+   c.leader=leader_id
+   var chosen=find(leader_id)
+   if not chosen.is_empty():cultural_event(clan,"Il consiglio sceglie "+str(chosen.name)+" e la priorità "+winner+".","vote")
+  if c.policy=="Solidarietà" or c.policy=="Sostentamento":
+   for a in inhabitants:
+    if float(c.treasury)<1.0 or float(v.food)<1.0:break
+    if float(a.hunger)>65 and float(a.coins)<2:
+     c.treasury-=1.0
+     v.food-=1.0
+     a.hunger=maxf(0,float(a.hunger)-18.0)
+     c.relief+=1
+  if day>=int(c.next_festival):
+   c.next_festival=day+30
+   var cost=maxf(3.0,float(inhabitants.size())*.3)
+   if float(v.food)>float(inhabitants.size())*2.0+cost and float(c.treasury)>=cost:
+    v.food-=cost
+    c.treasury-=cost
+    c.festivals+=1
+    c.heritage=mini(100,int(c.heritage)+3)
+    for a in inhabitants:
+     a.mood=minf(100,float(a.mood)+8)
+     a.social_need=maxf(0,float(a.social_need)-10)
+    cultural_event(clan,"Festa della memoria: il popolo celebra la propria storia.","festival")
+   else:cultural_event(clan,"La festa viene rimandata per conservare le risorse.","postponed")
+
+func culture_report()->String:
+ var lines=[]
+ for clan in range(2):
+  var v=villages[clan]
+  var c=v.culture
+  var leader=find(int(c.leader))
+  lines.append("%s · %s\nPriorità: %s\nDelegato: %s\nCassa comune: %.1f · Eredità: %d/100\nFeste: %d · Aiuti alimentari: %d\nProssimo consiglio: giorno %d"%[CLANS[clan],v.government,c.policy,leader.get("name","Nessuno"),float(c.treasury),int(c.heritage),int(c.festivals),int(c.relief),int(c.next_vote)])
+  var vote_lines=[]
+  for policy in CULTURE_POLICIES:vote_lines.append("%s %d"%[policy,int(c.votes.get(policy,0))])
+  lines.append("Voti: "+", ".join(vote_lines))
+  for event in c.archive.slice(0,5):lines.append("G%d · %s"%[int(event.day),str(event.text)])
+  lines.append("")
+ return "\n".join(lines)
