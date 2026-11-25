@@ -24,11 +24,18 @@ func _draw():
  for i in range(world.trade_route.size()-1):
   draw_line(to_map(world.trade_route[i]),to_map(world.trade_route[i+1]),Color("d2af79"),1.2,true)
  if world.expanded_world:
-  for link in world.REGION_BRIDGES:
+  for link in ([] if world.ocean.enabled else world.REGION_BRIDGES):
    draw_line(to_map(Vector3(link[0].x,0,link[0].y)),to_map(Vector3(link[1].x,0,link[1].y)),Color("d2af79"),1.2,true)
   for i in range(1,world.REGION_POINTS.size()):
    var p:Vector2=world.REGION_POINTS[i]
    draw_arc(to_map(Vector3(p.x,0,p.y)),4,0,TAU,16,Color("f5dda1"),1.0,true)
+ if world.ocean.enabled:
+  for row in world.ocean.voyages:
+   var ship=world.ocean.fleet.get(int(row.id))
+   if is_instance_valid(ship):draw_circle(to_map(ship.position),2.6,Color("fff0bd"))
+  for colony in world.ocean.colonies:
+   var point:Vector2=world.REGION_POINTS[int(colony.region)]
+   draw_circle(to_map(Vector3(point.x,0,point.y)),3.0,Color("9ff0bb") if int(colony.clan)==0 else Color("f3b97e"))
  for a in world.sim.people:
   if not world.actors.has(a.id):continue
   var p=world.actors[a.id].node.position
