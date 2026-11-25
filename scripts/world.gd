@@ -2461,8 +2461,9 @@ func capture_preview():
  speed=0
  hud.hide()
  focus=Vector3.ZERO
- distance=108
- pitch=1.22
+ distance=125
+ pitch=1.43
+ azimuth=-.74
  update_camera()
  await get_tree().create_timer(.5).timeout
  await RenderingServer.frame_post_draw
@@ -4968,3 +4969,17 @@ func capture_pose_gallery()->int:
   var result=img.save_png("res://preview-pose-"+action+".png")
   if result!=OK:return result
  return OK
+
+func _exit_tree():
+ # The ocean owns three RefCounted modules which refer back to it.
+ # Break these ownership cycles before Godot releases world resources.
+ if ocean!=null:
+  ocean.life.ocean=null
+  ocean.life.world=null
+  ocean.finance.ocean=null
+  ocean.industry.ocean=null
+  ocean.world=null
+ if hydro!=null:hydro.world=null
+ if fluid_volume!=null:fluid_volume.world=null
+ if ocean_dynamics!=null:ocean_dynamics.world=null
+ if debris!=null:debris.world=null
