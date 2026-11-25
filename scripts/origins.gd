@@ -34,6 +34,10 @@ func begin():
    world.actors.erase(a.id)
    world.activity_labels.erase(a.id)
  world.sim.changes.clear()
+ world.sim.total_births=0
+ for clan in range(2):
+  world.sim.villages[clan].houses=0
+  world.sync_houses(clan)
  world.selected=-1
  draw()
 func build(parent:Node3D):
@@ -72,6 +76,7 @@ func daily():
   var climate=.45 if world.sim.season=="Inverno" else .65
   a.energy=clampf(float(a.energy)+9-absf(float(a.genes[1])-climate)*18-float(a.genes[0])*3,0,100)
   if float(a.energy)<=0 or int(a.age)>20:continue
+  if next.size()>=48:continue
   next.append(a)
   if int(a.age)%4==0 and float(a.energy)>60 and next.size()<48:
    var g:Array=a.genes.duplicate()
@@ -100,6 +105,7 @@ func daily():
      citizen.age=18
      completed+=1
   active=false
+  world.sim.spatial_autonomy=not world.test_mode and not world.benchmark_mode
   world.legend.log_event("Origini",-1,-1,"Le linee evolutive hanno dato origine ai primi popoli.")
   world.apply_changes()
  draw()
