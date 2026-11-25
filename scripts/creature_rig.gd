@@ -129,12 +129,12 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
    var phase_shift=phase+i*PI+PI*.5
    var ids:Array=extra[i]
    if kind==1:
-    var reach=.25*sin(phase_shift*2) if not moving and task in ["farm","craft","gather","build","house","industry"] else .23*sin(phase_shift) if moving else .02
+    var reach=Library.sample(clip,phase_shift,i*6).x*.70 if clip!="walk" else Mocap.sample(phase_shift,i*6)*.65
     pose(s,int(ids[0]),Vector3(reach,0,.08*sin(phase_shift)),blend)
-    pose(s,int(ids[1]),Vector3(-.20-absf(reach)*.5,0,0),blend)
+    pose(s,int(ids[1]),Vector3(-.20-absf(reach)*.5+Library.sample(clip,phase_shift,i*6+1).x*.3,0,0),blend)
     pose(s,int(ids[2]),Vector3(.1*sin(phase_shift),0,0),blend)
    else:
-    var gait=sin(phase_shift)*.38 if moving else 0.0
+    var gait=Mocap.sample(phase_shift,i*6+3)*.80 if moving else Library.sample(clip,phase_shift,i*6+3).x*.35
     pose(s,int(ids[0]),Vector3(gait,0,0),blend)
     pose(s,int(ids[1]),Vector3(maxf(0,-gait)*.9,0,0),blend)
     pose(s,int(ids[2]),Vector3(-maxf(0,-gait)*.3,0,0),blend)
@@ -207,3 +207,50 @@ static func weighted_ellipsoid(w,s:Skeleton3D,ids:Array,center:Vector3,radius:Ve
  node.skin=s.create_skin_from_rest_transforms()
  node.material_override=w.material(tint)
  return node
+
+
+# Two-link target correction, applied after motion capture retargeting.
+# CCD rotates parent joints in their own coordinate system; bone lengths stay fixed.
+static func aim_chain(s:Skeleton3D,ids:Array,target:Vector3,weight:float=.75)->float:
+ var tip=int(ids[2])
+ for iteration in range(5):
+  for j in [1,0]:
+   s.force_update_all_bone_transforms()
+   var id=int(ids[j])
+   var current=s.get_bone_global_pose(id)
+   var from=current.basis.inverse()*(s.get_bone_global_pose(tip).origin-current.origin)
+   var to=current.basis.inverse()*(target-current.origin)
+   if from.length_squared()<.00001 or to.length_squared()<.00001:continue
+   var rotation=Quaternion(from.normalized(),to.normalized())
+   var correction=Quaternion.IDENTITY.slerp(rotation,weight)
+   s.set_bone_pose_rotation(id,(s.get_bone_pose_rotation(id)*correction).normalized())
+ s.force_update_all_bone_transforms()
+ return s.get_bone_global_pose(tip).origin.distance_to(target)
+
+static func contact(w,r:Dictionary,a:Dictionary,moving:bool):
+ var rig:Dictionary=r.get("skeletal",{})
+ if rig.is_empty():return
+ var kind=int(rig.get("kind",0))
+ if kind==0:return
+ var s:Skeleton3D=rig.skeleton
+ var chains:Array=rig.extra
+ var phase=float(r.phase)
+ if kind==1:
+  var prop=r.get("action_prop")
+  if moving or not is_instance_valid(prop) or a.task_stage!="In corso" or str(a.task) not in ["farm","gather","craft","build","house","research","eat","heal"]:return
+  for i in range(2):
+   var p:Vector3=prop.to_global(Vector3((i*2-1)*.13,.015,.04))
+   aim_chain(s,chains[i],s.to_local(p),.58)
+ elif kind==2 and moving:
+  for i in range(2):
+   # During stance the hind foot follows the actual terrain surface.
+   var gait=fposmod(phase+i*PI+PI*.5,TAU)
+   if gait>PI:continue
+   s.force_update_all_bone_transforms()
+   var id=int(chains[i][2])
+   var current=s.get_bone_global_pose(id).origin
+   var foot=s.to_global(current)
+   foot.y=w.walking_height(foot.x,foot.z)+.09*r.node.scale.y
+   var goal=s.to_local(foot)
+   goal.y=clampf(goal.y,current.y-.11,current.y+.11)
+   aim_chain(s,chains[i],goal,.65)
