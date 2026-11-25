@@ -18,9 +18,9 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione su main: 13.0.0 — Orion, il Custode. Ramo upgrade-14-0-performance: 14.0, CI integralmente riuscita e 64 FPS riferiti dal proprietario; ramo upgrade-15-0-living-world: 15.0 in collaudo.
+- Versione su main: 13.0.0 — Orion, il Custode. Ramo upgrade-14-0-performance: 14.0, CI integralmente riuscita e 64 FPS riferiti dal proprietario; ramo upgrade-15-0-living-world: 15.0 con CI riuscita; ramo upgrade-16-0-reborn: 16.0 in collaudo.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 21bbc86b656cedaf8dd7c3d5d8fff580b7e8e0.
-- Ultima versione con pipeline integralmente superata: 14.0 (run 45608380961); precedente 13.0 (run 45604507360) e 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
+- Ultima versione con pipeline integralmente superata: 15.0 (run 45611936709); 14.0 (run 45608380961); precedente 13.0 (run 45604507360) e 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
@@ -200,3 +200,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Limiti: non è un nuovo motore né una parità dimostrata con le tre immagini. I modelli di cittadini restano rig originali con aggiunte al volto, non nuovi personaggi professionali; manca una revisione completa di HUD, animazioni, era postindustriale, gameplay e urbanistica. Pipeline e catture reali da verificare; FPS sul PC del proprietario non misurati. Non dichiarare la resa raggiunta senza esaminare immagini e prova umana.
 
 - HUD REBORN: comandi principali separati da menu di gestione, indicatori visivi indipendenti e barra inferiore più compatta, minimappa in basso; titolo con gradiente sul mondo reale. Aggiunte catture obbligatorie primo mondo/HUD e fixture medievale dichiarata. Fauna importata passa tra idle e walk secondo il movimento reale. Test della nuova build ancora da verificare.
+
+- Commit REBORN c6aaa3e291e4cd15d1d59009c1abcedc4ae3722b (run 45658799064, download asset riuscito, poi annullato per sostituzione); commit aggiornato fc0320decc3988e30d0a851634b7b0c28f7adef6, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45658963298. Stato al controllo: in_progress, esito in attesa. Nessun nuovo artifact verificato; non pubblicizzare immagini di riferimento come screenshot reali.
