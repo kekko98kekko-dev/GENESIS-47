@@ -18,10 +18,10 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 6.0.0 — Vita oltre il mare.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: 5f544be37b9c7b151188fd2e0eb5da18e4934d38.
-- Ultima versione interamente collaudata: 5.0, commit 5522778536c141624a6e5d52294337339a7f4401, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45581769849 (successo build e Windows).
-- 6.0: pubblicata in main (commit 4657fec4a9f9028231d669a0006022e1f9d83739). Test integrato DEEP_TEST aggiunto. Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45583090178; esito in attesa al momento della pubblicazione. Controllare prima di dichiarare stabile.
+- Versione del codice: 7.0.0 — Industria e materia.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: 4cfe562e97c7a3392c543db09559d3ba1cc04df2.
+- Ultima versione interamente collaudata: 6.0, commit 4657fec4a9f9028231d669a0006022e1f9d83739, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45583090178 (successo build e Windows).
+- 7.0: codice scritto sul ramo upgrade-7-0-industry; pipeline da verificare dopo pubblicazione.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -48,14 +48,21 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - scripts/hydrology.gd: acqua a celle, trasferimento conservativo, drenaggio, danni, rendering e persistenza; scripts/structure.gd: cedimento dei supporti e riparazioni. Detriti con collisione del terreno e limite 160.
 - scripts/world.gd, ocean.gd, sim.gd e minimap.gd: integrazione, migrazione, test DEEP_TEST. Priorità qualità rispetto all'hardware attuale, come richiesto dall'utente.
 
+## Modifiche 7.0
+- scripts/mocap_library.gd: 11 nuove clip da registrazioni CMU, campionate e adattate in tre assi su 16 giunti; riferimento esatto in ASSET-CREDITS.md. La camminata 6.0 rimane. Clip analoghe condivise per i compiti senza capture dedicata.
+- scripts/creature_rig.gd: 22 ossa, pesi su dieci superfici deformabili, bacino/torace/collo/testa, mani e piedi, posa procedurale più capture, accessori facciali ancorati. Non è una mesh unica né retarget professionale verificato.
+- scripts/industry.gd: imprese pubbliche/private, dipendenti e salari, capitale, scorte, sette ricette produttive, contratti B2B, tasse, dividendi, vendita, liquidazione. scripts/finance.gd: credito alle imprese con riserve, interessi, rimborsi e insolvenze. scripts/ocean.gd e colony_life.gd: undici beni, lavori e consumo industriale.
+- scripts/fluid_volume.gd: particelle 3D, densità, pressione, viscosità, collisioni, galleggiamento, trasferimento conservativo all'idrologia esistente, rendering e salvataggi. Limitato a effetti locali, non oceano globale con solver incomprimibile.
+- scripts/world.gd: collegamento al potere Tsunami e salvataggi; test INDUSTRY_VOLUME_TEST e adeguamento delle aspettative dei test precedenti. Nessun vincolo di sviluppo imposto dall'hardware attuale.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 6.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: verificare esito finale CI 7.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
 - P0: test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
-- P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali sono implementati nella 6.0, in attesa di test.
+- P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
-- P1: retarget completo del corpo, IK, clip mocap multiple per corsa, azioni, emozioni e transizioni; ora esiste skinning delle quattro arti e un ciclo reale di camminata CMU adattato, altre attività procedurali. Qualità professionale da validare visivamente.
-- P1: economia estesa con imprese, credito individuale/aziendale, contratti, filiere, audit monetario completo e inventari; ora banche cash-backed e salari pagati dalle casse in modo Oceano, con test bilancio. Quattro merci e alcuni flussi originari non ancora auditati.
-- P2: fluidi con solver di velocità 2D/3D più avanzato, interazioni solide/acqua, erosione e danni strutturali di elementi fisici con collegamenti; ora flusso conservativo su celle, collisione con terreno reale e modello di supporti danneggiabili.
+- P1: retarget professionale e verifica visiva, IK di piedi e mani, dita indipendenti, mesh unica e motion capture dedicato per i compiti residui. La 7.0 usa 12 registrazioni totali e 22 ossa con 10 mesh pesate.
+- P1: aziende con filiere fisiche, produzione a stazioni e logistica individuale, contabilità completa dei flussi monetari, credito privato, contratti avanzati e mercati estesi. La 7.0 aggiunge imprese, 7 ricette, 11 beni e credito aziendale.
+- P2: solver incomprimibile 3D e superficie libera ricostruita, oceano globale, erosione, accoppiamento bidirezionale acqua/corpi rigidi e distruzione con vincoli fisici. La 7.0 implementa particelle locali 3D e trasferimento alla griglia idrologica.
 - P2: direzione artistica coerente, materiali, ambiente, animazioni, UI e ottimizzazione dopo misure reali; test umani e partite prolungate con salvataggi ripetuti.
 - P2: evoluzione offline coerente con i sistemi spaziali e portuali; oggi l'assenza è aggregata.
 - Non introdurre LLM locale da centinaia di MB: rimosso in 4.1. Preferire intelligenza di gioco leggera e verificabile.
@@ -64,7 +71,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - project.godot / main.tscn: avvio, configurazione, versione.
 - scripts/sim.gd: modello di simulazione, bisogni, attività, evoluzione, relazioni, cultura, stato serializzato.
 - scripts/world.gd: orchestrazione Godot, grafica, UI, navigazione, poteri, salvataggi, self_test e benchmark.
-- scripts/ocean.gd, creature_rig.gd, debris_physics.gd: moduli nuovi sopra descritti.
+- scripts/ocean.gd, creature_rig.gd, debris_physics.gd, colony_life.gd, finance.gd, hydrology.gd, structure.gd, mocap_library.gd, industry.gd, fluid_volume.gd: moduli sopra descritti.
 - scripts/minimap.gd e shaders/: visualizzazione.
 - tools/fetch_assets.py e ASSET-CREDITS.md: risorse e licenze.
 - .github/workflows/build.yml: import Godot, self-test, screenshot reali, benchmark CI, export Windows x64, smoke test Windows, controllo offline.
@@ -77,7 +84,8 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - 25/11/2026 — 5.0: oceano, colonie, mercato, scheletro, fisica e grafica; CI completa riuscita, compreso Windows.
 - 25/11/2026 — Continuità: istituito questo registro e AGENTS.md, da mantenere ad ogni sessione.
 
-- 25/11/2026 — 6.0: cittadini individuali nelle colonie, banche, mocap camminata reale e skinning, idrologia e danni strutturali. Test DEEP_TEST scritto; esito CI non ancora verificato al momento della stesura.
+- 25/11/2026 — 6.0: cittadini individuali nelle colonie, banche, mocap camminata reale e skinning, idrologia e danni strutturali. CI completa riuscita.
+- 25/11/2026 — 7.0: imprese e filiere, credito aziendale, clip CMU multiple, rig esteso e particelle fluidi 3D. Test INDUSTRY_VOLUME_TEST scritto; esito CI da verificare.
 
 ## Frase per riprendere in una nuova chat
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
