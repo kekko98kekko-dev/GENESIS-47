@@ -119,6 +119,7 @@ static func beast(w,n:Node3D,a:Dictionary)->bool:
  var item=model(w,n,"reborn_beast",names[i],Vector3.ZERO,size)
  if item==null:return false
  w.start_animation(item,["idle","walk"])
+ n.set_meta("reborn_beast_visual",item)
  return true
 static func face(w,r:Dictionary,a:Dictionary):
  var rig:Dictionary=r.skeletal

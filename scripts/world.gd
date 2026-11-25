@@ -58,6 +58,8 @@ var story_line:Label
 var story_action:Button
 var story_current:Dictionary={}
 var story_window:AcceptDialog
+var reborn_stats:Array=[]
+var reborn_menu:MenuButton
 var intro_time=0.0
 var ash_time=0.0
 var cave=Cave.new()
@@ -1350,8 +1352,8 @@ func _process(delta:float):
   perf_window_start=frame_started
  if is_instance_valid(title_intro) and title_intro.visible:
   intro_time+=delta
-  focus=centers[0].lerp(centers[1],.38+.16*sin(intro_time*.09))
-  distance=42+sin(intro_time*.13)*4
+  focus=centers[0].lerp(centers[1],.10+.08*sin(intro_time*.09))
+  distance=30+sin(intro_time*.13)*4
   azimuth=-.65+intro_time*.035
   pitch=.52
   update_camera()
@@ -2107,7 +2109,7 @@ func setup_ui():
   s.content_margin_bottom=5
   theme.set_stylebox(state,"Button",s)
  hud.theme=theme
- var header=panel(hud,Rect2(14,12,1412,80),.91)
+ var header=panel(hud,Rect2(14,12,1412,86),.94)
  var col=VBoxContainer.new()
  header.add_child(col)
  var row=HBoxContainer.new()
@@ -2125,20 +2127,54 @@ func setup_ui():
  story_btn.icon=power_icon("Conoscenza")
  var orion_btn=button(row,"Orion",show_colossus)
  orion_btn.icon=power_icon("Profeta")
- button(row,"Guida",show_help)
- button(row,"Opzioni",show_options)
- button(row,"Nuovo",open_welcome)
+ var photo_btn=button(row,"Foto",toggle_photo)
+ photo_btn.tooltip_text="F10 · nascondi l'interfaccia"
+ reborn_menu=MenuButton.new()
+ reborn_menu.text="Menu"
+ row.add_child(reborn_menu)
+ var popup=reborn_menu.get_popup()
+ for item in ["Nuovo universo","Salva partita","Carica partita","Slot 1","Slot 2","Slot 3","Opzioni","Guida","Audio on/off","Statistiche","Atlante"]:
+  popup.add_item(item)
+ popup.id_pressed.connect(func(id):
+  match id:
+   0:open_welcome()
+   1:save_game(true)
+   2:load_game()
+   3,4,5:
+    slot=id-3
+    selected_slot.select(slot)
+    reborn_menu.text="Menu · S"+str(slot+1)
+   6:show_options()
+   7:show_help()
+   8:audio.stream_paused=not audio.stream_paused;store_settings()
+   9:show_history()
+   10:show_atlas())
  selected_slot=OptionButton.new()
  for i in range(3):selected_slot.add_item("Slot "+str(i+1))
- selected_slot.item_selected.connect(func(i):slot=i)
  row.add_child(selected_slot)
- button(row,"Salva",func():save_game(true))
- button(row,"Carica",load_game)
- button(row,"Foto",toggle_photo)
+ selected_slot.hide()
  fps_label=text_label(row,"",12)
  fps_label.modulate=Color("a7d9bc")
- button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
- top=text_label(col,"",16)
+ top=text_label(col,"",12)
+ top.hide()
+ var stats=HBoxContainer.new()
+ stats.add_theme_constant_override("separation",28)
+ col.add_child(stats)
+ for spec in [["GIORNO","Fede"],["VITE","Vita"],["ENERGIA","Fulmine"],["PACE","Pace"],["CLIMA","Pioggia"]]:
+  var chip=HBoxContainer.new()
+  chip.add_theme_constant_override("separation",6)
+  stats.add_child(chip)
+  var ic=TextureRect.new()
+  ic.texture=power_icon(spec[1])
+  ic.custom_minimum_size=Vector2(20,20)
+  ic.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
+  ic.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+  chip.add_child(ic)
+  var cap=text_label(chip,spec[0],12)
+  cap.modulate=Color("9cb8b0")
+  var value=text_label(chip,"—",17)
+  value.modulate=Color("f0dfb3")
+  reborn_stats.append(value)
  var left=panel(hud,Rect2(14,104,196,430),.94)
  left_panel=left
  var lv=VBoxContainer.new()
@@ -2160,7 +2196,7 @@ func setup_ui():
  power_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  populate_powers(0)
  button(lv,"Osserva il mondo",func():power="Osserva";selected=-1;following=false;refresh();populate_powers(power_category.selected))
- map_panel=panel(hud,Rect2(14,550,196,174),.86)
+ map_panel=panel(hud,Rect2(14,710,196,176),.94)
  var mv=VBoxContainer.new()
  map_panel.add_child(mv)
  map_region=text_label(mv,"ATLANTE",12)
@@ -2173,7 +2209,7 @@ func setup_ui():
  unlimited_toggle.text="Energia infinita"
  unlimited_toggle.toggled.connect(func(on):unlimited=on)
  lv.add_child(unlimited_toggle)
- var right=panel(hud,Rect2(1108,104,318,620),.95)
+ var right=panel(hud,Rect2(1108,110,318,650),.95)
  right_panel=right
  var rv=VBoxContainer.new()
  right.add_child(rv)
@@ -2298,13 +2334,13 @@ func setup_ui():
   else:open_dialog("ALBERO DELLA VITA","Seleziona prima un abitante."))
  button(story_tab,"Esplora i biomi",show_biomes)
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
- var bottom=panel(hud,Rect2(14,726,1412,160),.91)
+ var bottom=panel(hud,Rect2(230,770,980,116),.94)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
  bottom.add_child(bv)
  var controls=HBoxContainer.new()
  bv.add_child(controls)
- text_label(controls,"TEMPO",15)
+ text_label(controls,"TEMPO",12).modulate=Color("9cb8b0")
  for s in [0.0,1.0,3.0,12.0,20.0]:
   var tb=button(controls,"Pausa" if s==0 else str(int(s))+"×",func():speed=s;update_time_buttons())
   tb.toggle_mode=true
@@ -2312,12 +2348,14 @@ func setup_ui():
   time_buttons.append(tb)
  tour_button=button(controls,"Tour",func():set_tour(not tour))
  tour_button.toggle_mode=true
- button(controls,"Mondo",func():set_tour(false);following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
+ var globe=button(controls,"Mondo",func():set_tour(false);following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
+ globe.icon=power_icon("Osserva")
  for i in range(2):
   button(controls,Sim.CLANS[i],func():set_tour(false);following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
  hint=text_label(controls,"Trascina sinistro · rotella · destro per ruotare",13)
  hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ hint.hide()
  var narrative_row=HBoxContainer.new()
  bv.add_child(narrative_row)
  journey_label=text_label(narrative_row,"",16)
@@ -2335,6 +2373,8 @@ func setup_ui():
  life_overlay=text_label(bv,"",12)
  life_overlay.modulate=Color("b9dbc8")
  chronicle.scroll_following=false
+ chronicle.hide()
+ life_overlay.hide()
  toast_panel=panel(hud,Rect2(430,104,570,64),.94)
  toast_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE
  toast_label=text_label(toast_panel,"",16)
@@ -2381,6 +2421,9 @@ func refresh():
   life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
   if ocean.enabled:life_overlay.text+="  ·  Colonie %d · Navi %d"%[ocean.colonies.size(),ocean.voyages.size()]
  top.text+="    ·    "+sim.season+" / "+sim.weather_name
+ if reborn_stats.size()==5:
+  var values=[str(sim.day),str(global_population),str(int(sim.energy))+"%",str(int(sim.peace))+"%",sim.season+" · "+sim.weather_name]
+  for i in range(values.size()):reborn_stats[i].text=values[i]
  power_label.text=power
  if map_view!=null:map_view.queue_redraw()
  update_time_buttons()
@@ -2927,6 +2970,24 @@ func self_test():
 func capture_preview():
  speed=0
  hud.hide()
+ focus=centers[0]
+ distance=19
+ pitch=.56
+ azimuth=-.75
+ update_camera()
+ await get_tree().create_timer(.4).timeout
+ await RenderingServer.frame_post_draw
+ if get_viewport().get_texture().get_image().save_png("res://preview-reborn-first-world.png")!=OK:
+  get_tree().quit(1)
+  return
+ hud.show()
+ refresh()
+ await get_tree().create_timer(.3).timeout
+ await RenderingServer.frame_post_draw
+ if get_viewport().get_texture().get_image().save_png("res://preview-reborn-hud.png")!=OK:
+  get_tree().quit(1)
+  return
+ hud.hide()
  for i in range(55):
   sim.daily()
  apply_changes()
@@ -3007,6 +3068,22 @@ func capture_preview():
  await RenderingServer.frame_post_draw
  var city_err=get_viewport().get_texture().get_image().save_png("res://preview-city.png")
  if city_err!=OK:err=city_err
+ # Real medieval buildings/crops at the same actual simulation locations.
+ # This is an explicit controlled fixture, not organic growth evidence.
+ for clan in range(2):
+  sim.villages[clan].era=2
+  sync_houses(clan)
+ rebuild_farms()
+ districts.sync()
+ focus=centers[0]
+ distance=20
+ pitch=.52
+ azimuth=-.9
+ update_camera()
+ await get_tree().create_timer(.4).timeout
+ await RenderingServer.frame_post_draw
+ var art_reborn=get_viewport().get_texture().get_image().save_png("res://preview-reborn-medieval-fixture.png")
+ if art_reborn!=OK:err=art_reborn
  focus=cave.entrance()
  distance=24
  pitch=.78
@@ -6026,13 +6103,21 @@ func show_title_screen():
  var shade=ColorRect.new()
  title_intro.add_child(shade)
  shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
- shade.color=Color(.025,.055,.065,.63)
+ shade.color=Color(.025,.055,.065,.25)
+ var curtain=ColorRect.new()
+ title_intro.add_child(curtain)
+ curtain.position=Vector2.ZERO
+ curtain.size=Vector2(810,900)
+ curtain.mouse_filter=Control.MOUSE_FILTER_IGNORE
+ var fade=ShaderMaterial.new()
+ fade.shader=preload("res://shaders/reborn_menu.gdshader")
+ curtain.material=fade
  shade.mouse_filter=Control.MOUSE_FILTER_IGNORE
  var box=VBoxContainer.new()
  title_intro.add_child(box)
  box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
  box.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
- box.position=Vector2(74,126)
+ box.position=Vector2(66,140)
  box.custom_minimum_size=Vector2(650,430)
  box.add_theme_constant_override("separation",18)
  var mark=TextureRect.new()

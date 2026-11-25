@@ -177,6 +177,11 @@ func tick(dt:float):
    n.position=world.ground(next.x,next.y)
    var d=to-origin
    if d.length()>.1:n.rotation.y=atan2(d.x,d.y)
+   var imported=n.get_meta("reborn_beast_visual",null)
+   if is_instance_valid(imported):
+    var ap:AnimationPlayer=world.animation_player(imported)
+    var motion="walk" if origin.distance_to(next)>.005 else "idle"
+    if ap!=null and not str(ap.current_animation).to_lower().contains(motion):world.start_animation(imported,[motion])
   else:a.target=-1
 
 func report()->String:

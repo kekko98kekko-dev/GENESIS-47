@@ -59,6 +59,7 @@ jobs:
           timeout 480s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
           test -s preview-gameplay.png
+          for scene in first-world hud medieval-fixture; do test -s "preview-reborn-$scene.png"; done
           test -s preview-creature.png
           for scene in frontier city river cave title; do test -s "preview-$scene.png"; done
           test -s growth-evidence.json
