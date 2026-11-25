@@ -406,7 +406,7 @@ func setup_environment():
  env.sky=sky
  env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
  env.ambient_light_color=Color("d2e2e7")
- env.ambient_light_energy=.40
+ env.ambient_light_energy=.30
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
  env.fog_density=.0013
@@ -422,7 +422,7 @@ func setup_environment():
  add_child(sun)
  sun.rotation_degrees=Vector3(-53,-37,0)
  sun.light_color=Color("fff0cc")
- sun.light_energy=.76
+ sun.light_energy=.88
  sun.shadow_enabled=true
  sun.directional_shadow_max_distance=115
  sun.shadow_bias=.045
@@ -1401,11 +1401,11 @@ func _process(delta:float):
    update_service_labels()
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
-  sun.light_energy=.14+daylight*.70
+  sun.light_energy=.14+daylight*.78
   sun.light_color=Color("a4baff").lerp(Color("ffe7bd"),daylight)
   sun.rotation_degrees=Vector3(-22-daylight*38,-37+sin(phase*TAU)*24,0)
   env.ambient_light_color=Color("a4bdd8").lerp(Color("e2e7d3"),daylight)
-  env.ambient_light_energy=.12+daylight*.31
+  env.ambient_light_energy=.10+daylight*.25
   for lamp in village_lights:
    if is_instance_valid(lamp):lamp.light_energy=(1.0-daylight)*.85 if quality_mode>0 else 0.0
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
@@ -2755,6 +2755,8 @@ func capture_preview():
  if region_err!=OK:err=region_err
  var pose_err=await capture_pose_gallery()
  if pose_err!=OK:err=pose_err
+ var art_err=await capture_artisan_gallery()
+ if art_err!=OK:err=art_err
  new_world(47,0,true,true,true)
  speed=0
  hud.hide()
@@ -3440,7 +3442,14 @@ func rebuild_meadow():
  for i in range(26000 if vast_world else 18000):
   if transforms.size()>=10500:break
   var p=ground(local.randf_range(-extent,extent),local.randf_range(-extent,extent))
-  if p.y<SEA+.7 or p.y>7.3 or not far_village(p,4.0) or not away_from_route(p,.8) or scarred(p):continue
+  if p.y<SEA+.7 or p.y>7.3 or not far_village(p,3.8) or not away_from_route(p,.8) or scarred(p):continue
+  var crowded=false
+  for clan in range(2):
+   for site in house_sites[clan]:
+    if Vector2(p.x-float(site.x),p.z-float(site.z)).length()<1.55:crowded=true;break
+   for q in farm_points[clan]:
+    if flat_dist(q,p)<1.7:crowded=true;break
+  if crowded:continue
   var scale_value=local.randf_range(.55,1.35)
   var basis=Basis(Vector3.UP,local.randf()*TAU).scaled(Vector3.ONE*scale_value)
   transforms.append(Transform3D(basis,p))
@@ -5755,3 +5764,77 @@ func test_artisan_anatomy()->bool:
  if not divine_presentation.active.is_empty():return false
  print("ARTISAN_TEST distinct_meshes=",signatures," bones=[22,28,30] connected=true extra_weights=true articulation=true effect_cleanup=true")
  return true
+
+
+# Controlled art fixtures use actual citizens, real buildings and powers.
+# Era/house settings are staged for visual comparison, not a claimed natural
+# growth time-lapse. All files are direct viewport captures.
+func capture_artisan_gallery()->int:
+ new_world(47,0,true,true,true)
+ speed=0
+ hud.hide()
+ for stage in [0,2,4]:
+  for clan in range(2):
+   sim.villages[clan].era=stage
+   sim.villages[clan].houses=[4,9,16][int(stage/2)]
+   sim.villages[clan].wood=120
+   sync_houses(clan)
+  districts.sync()
+  rebuild_farms()
+  rebuild_settlement_details()
+  rebuild_roads()
+  rebuild_meadow()
+  focus=centers[0]
+  distance=19 if stage<4 else 25
+  pitch=.61
+  azimuth=.54
+  update_camera()
+  await get_tree().create_timer(.35).timeout
+  await RenderingServer.frame_post_draw
+  var result=get_viewport().get_texture().get_image().save_png("res://preview-art-era-"+str(stage)+".png")
+  if result!=OK:return result
+ for kind in range(3):
+  var chosen={}
+  for a in sim.people:
+   if Sim.anatomy(a)==kind:chosen=a;break
+  if chosen.is_empty():return ERR_DOES_NOT_EXIST
+  var r:Dictionary=actors[chosen.id]
+  r.node.rotation.y=0
+  QualityAssurance.apply_pose(r,chosen,"walk",PI*.5)
+  focus=r.node.position
+  distance=3.4
+  pitch=.22
+  azimuth=.65
+  update_camera()
+  await get_tree().create_timer(.22).timeout
+  await RenderingServer.frame_post_draw
+  var result=get_viewport().get_texture().get_image().save_png("res://preview-art-anatomy-"+str(kind)+".png")
+  if result!=OK:return result
+ focus=centers[0]
+ distance=17
+ pitch=.51
+ azimuth=.56
+ update_camera()
+ selected=-1
+ unlimited=true
+ power="Guarigione"
+ await RenderingServer.frame_post_draw
+ var before=get_viewport().get_texture().get_image().save_png("res://preview-art-before.png")
+ if before!=OK:return before
+ divine(centers[0])
+ await RenderingServer.frame_post_draw
+ var heal=get_viewport().get_texture().get_image().save_png("res://preview-art-heal.png")
+ if heal!=OK:return heal
+ power="Meteorite"
+ divine(centers[0])
+ await RenderingServer.frame_post_draw
+ var flight=get_viewport().get_texture().get_image().save_png("res://preview-art-meteor.png")
+ if flight!=OK:return flight
+ # Wait until the actual meteor effect has applied its destructive event.
+ for i in range(12):
+  if not effects.any(func(e):return e.kind=="meteor"):break
+  await get_tree().create_timer(.25).timeout
+ await RenderingServer.frame_post_draw
+ var after=get_viewport().get_texture().get_image().save_png("res://preview-art-aftermath.png")
+ power="Osserva"
+ return after
