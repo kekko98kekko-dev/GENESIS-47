@@ -165,8 +165,24 @@ func daily():
   if world.sim.day%13==0 and int(v.era)>=1:
    for a in adults:
     if float(a.genes[0])<.65 or int(a.tasks_done)<12 or float(a.skill)<3:continue
-    var index=posmod(int(a.id)+world.sim.day/13,INVENTIONS.size())
+    var index=posmod(int(a.id)+int(world.sim.day/13),INVENTIONS.size())
     if invent(clan,a,index):break
+  if float(row.opposition)>72 and int(row.revolutions)>=2 and not row.secession and world.vast_world:
+   var rebels=adults.filter(func(a):return bool(a.get("dissident",false)) and float(a.health)>50)
+   if rebels.size()>=3 and float(v.wood)>=24:
+    var target:Vector2=REGIONS[clan*2]
+    var p:Vector3=world.land_near(target.x,target.y)
+    v.wood-=24
+    row.secession=true
+    row["camp"]=[p.x,p.z]
+    row["members"]=[]
+    for a in rebels:
+     a["separatist"]=true
+     row.members.append(int(a.id))
+    world.outposts.append({"x":p.x,"z":p.z,"clan":clan})
+    world.rebuild_outposts()
+    world.services_dirty=true
+    record("Secessione",clan,int(row.leader),"Un gruppo dissidente fonda un avamposto autonomista.",p)
   if world.sim.day%40==0 and world.sim.peace>80 and float(row.opposition)<35:
    row.alliances=int(row.alliances)+1
    record("Patto",clan,int(row.leader),"Il consiglio rinnova il patto di pace.",world.centers[clan])
@@ -180,6 +196,7 @@ func report()->String:
   var row:Dictionary=societies[i]
   lines.append("%s · %s · legittimità %d%%"%( [world.sim.CLANs_name(i),row.system,int(row.legitimacy)] ))
   lines.append("Opposizione %d%% · rivolte %d · culto %s"%[int(row.opposition),int(row.revolutions),"proibito" if row.ban else "libero"])
+  if row.secession:lines.append("Avamposto autonomista · "+str(row.get("members",[]).filter(func(id):return not world.sim.find(int(id)).is_empty()).size())+" dissidenti vivi")
   var leader=world.sim.find(int(row.leader))
   if not leader.is_empty():lines.append("Guida: "+str(leader.name))
   for index in row.inventions:lines.append("Invenzione: "+INVENTIONS[int(index)])
