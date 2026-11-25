@@ -1052,7 +1052,10 @@ func step_day():
  var old_tech=sim.discoveries.size()
  var previous_projects=sim.projects_completed
  var previous_crises=sim.crises_seen
+ var treasury_before=[float(sim.villages[0].culture.treasury),float(sim.villages[1].culture.treasury)]
  sim.daily()
+ if ocean.enabled:
+  for clan in range(2):ocean.change(clan,"cash",maxf(0,float(treasury_before[clan])-float(sim.villages[clan].culture.treasury)))
  ocean.daily()
  apply_changes()
  if sim.day%7==0:
@@ -4706,10 +4709,11 @@ func test_deep_simulation()->bool:
  if not ocean.recruit(0,1):return false
  apply_changes()
  var row:Dictionary=ocean.voyages[0]
+ var migrant_id=int(row.crew[0].id)
  ocean.settle(row)
  ocean.sync_visuals()
  var c:Dictionary=ocean.colonies[0]
- if c.citizens.size()!=2 or not ocean.life.actors.has(first_id):return false
+ if c.citizens.size()!=2 or not ocean.life.actors.has(migrant_id):return false
  for i in range(240):ocean.life.tick(.25)
  if int(c.completed_tasks)<=0 or c.citizens.size()!=int(c.population):return false
  var location:Vector3=centers[0]
