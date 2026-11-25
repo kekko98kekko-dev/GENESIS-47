@@ -200,7 +200,6 @@ func finish(c:Dictionary,a:Dictionary):
    var wage=minf(1.5,float(c.cash))
    c.cash-=wage
    a.coins+=wage
-   ocean.industry.on_work(int(c.id),a,task)
   if task=="eat":ocean.consume_bread(int(c.id),a)
   if task=="build":ocean.use_materials(int(c.id),a)
  a.task=""
@@ -221,6 +220,19 @@ func tick(dt:float):
    a.hunger=minf(100,float(a.hunger)+dt*1.5)
    a.fatigue=minf(100,float(a.fatigue)+dt*1.0)
    a.social_need=minf(100,float(a.social_need)+dt*.7)
+   a.erase("industry_action")
+   if a.task=="" and actors.has(int(a.id)):
+    var ir:Dictionary=actors[int(a.id)]
+    var work=int(ocean.industry.advance(int(c.id),a,ir.node,dt))
+    if work>=0:
+     a.position=[ir.node.position.x,ir.node.position.z]
+     ir.phase+=dt*(7 if work==1 else 3)
+     for i in range(2):
+      ir.arms[i].rotation.x=sin(float(ir.phase)+i*PI)*(.35 if work==1 else .18)
+      ir.legs[i].rotation.x=sin(float(ir.phase)+i*PI+PI)*(.45 if work==1 else .04)
+     Rig.drive(ir,a,work==1,true,minf(dt,.2))
+     ir.tag.text=str(a.name)+" · "+str(a.task_stage)
+     continue
    if a.task=="" or (float(a.hunger)>95 and a.task!="eat" and c.food>=1):choose(c,a)
    if a.task=="":continue
    var moving=false
