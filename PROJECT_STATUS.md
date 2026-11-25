@@ -23,7 +23,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Ultima versione interamente collaudata: 10.0, commit 3fc7b329a32b96c62d455dd20279686ce48a991f, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
-- 10.1: codice nel ramo qa-10-1-world-depth; nuovo collaudo da verificare.
+- 10.1: pubblicata in main (commit 939fb9bedd3f1962ad32bf3f162df65a811ecf26); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242, stato in_progress, esito in attesa. Verificare prima di dichiarare stabile.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
