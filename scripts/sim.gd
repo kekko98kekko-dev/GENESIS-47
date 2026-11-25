@@ -766,6 +766,9 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
  reasons.play="Ha bisogno di svago"
  scores.explore=10+float(a.genes[0])*15
  reasons.explore="Curiosità"
+ if bool(a.get("separatist",false)):
+  scores.explore+=22
+  reasons.explore="Cerca la comunità autonomista"
  if adult:
   scores.farm=18+maxf(0,90-float(v.food))*0.55+(18 if a.role=="Coltivatore" else 0)
   reasons.farm="Rifornire le scorte"
@@ -900,7 +903,7 @@ func complete_task(a:Dictionary)->bool:
    a.stress=maxf(0,a.stress-15)
    a.health=minf(100,a.health+3)
   "heal":
-   a.health=minf(100,a.health+10)
+   a.health=minf(100,a.health+10+minf(4,float(v.bonuses[2])*.4))
    a.sick=maxi(0,int(a.sick)-2)
   "house":
    if v.wood<22:ok=false
@@ -911,6 +914,7 @@ func complete_task(a:Dictionary)->bool:
     log_event(CLANs_name(a.clan)+" costruisce una nuova casa.")
   "farm":
    var yield_amount=5.0*(1.2 if a.tool>0 else 1.0)
+   yield_amount*=1.0+minf(.25,float(v.bonuses[0])*.025)
    if weather_name=="Siccità":yield_amount*=.65
    if season=="Inverno":yield_amount*=.85
    v.food=minf(850,v.food+yield_amount)
@@ -921,7 +925,7 @@ func complete_task(a:Dictionary)->bool:
    a.tool=maxf(0,a.tool-10)
    a.skill=minf(100,a.skill+.3)
   "research":
-   v.knowledge+=1.3+float(a.genes[0])
+   v.knowledge+=(1.3+float(a.genes[0]))*(1+minf(.25,float(v.bonuses[1])*.025))
    a.skill=minf(100,a.skill+.7)
   "build":
    if int(v.project)<0:ok=false
