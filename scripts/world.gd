@@ -16,6 +16,8 @@ const LivingScore=preload("res://scripts/living_score.gd")
 const Frontier=preload("res://scripts/frontier.gd")
 const Districts=preload("res://scripts/civic_districts.gd")
 const Origins=preload("res://scripts/origins.gd")
+const Cave=preload("res://scripts/cave_exploration.gd")
+const Rivers=preload("res://scripts/river_system.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -33,6 +35,12 @@ var fluid_root:Node3D
 var legend=Legend.new()
 var districts=Districts.new()
 var origins=Origins.new()
+var cave=Cave.new()
+var rivers=Rivers.new()
+var cave_root:Node3D
+var river_root:Node3D
+var river_saved={}
+var cave_saved={}
 var vast_world=false
 var frontier_root:Node3D
 var district_root:Node3D
@@ -489,7 +497,9 @@ func height_at(x:float,z:float)->float:
   for link in REGION_BRIDGES:
    var anchor_dist=Vector2(x,z).distance_to(link[0])
    if anchor_dist<4.0:h=maxf(h,1.2-anchor_dist*.35)
- if vast_world:h=Frontier.terrain(self,x,z,h)
+ if vast_world:
+  h=Frontier.terrain(self,x,z,h)
+  if x< -48 or z>50:h=Rivers.carve(x,z,h)
  for q in deformation:
   var dd=Vector2(x-float(q.x),z-float(q.z)).length()
   if dd<float(q.r):
@@ -589,7 +599,10 @@ func make_terrain():
  sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
+ if cave.active:cave.leave()
  vast_world=wide
+ river_saved={}
+ cave_saved={}
  expanded_world=expanded or ocean_mode
  hydro_saved={}
  fluid_saved={}
@@ -614,6 +627,9 @@ func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=fal
  world_centers.clear()
  destroyed_total=0
  sim.start(seed_value,which)
+ if vast_world:
+  sim.population_limit=Sim.MAX_CITY_POPULATION
+  sim.housing_limit=100
  legend.reset(self)
  wildlife.reset(self)
  districts.reset(self)
@@ -637,7 +653,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root,cave_root,river_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -770,6 +786,14 @@ func reset_visuals():
  origin_root=Node3D.new()
  add_child(origin_root)
  origins.build(origin_root)
+ cave_root=Node3D.new()
+ add_child(cave_root)
+ cave.reset(self,cave_saved)
+ if vast_world:cave.build(cave_root)
+ river_root=Node3D.new()
+ add_child(river_root)
+ rivers.reset(self,river_root,river_saved)
+ rebuild_services()
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -1200,6 +1224,9 @@ func update_camera():
 
 func _process(delta:float):
  if camera==null or centers.size()!=2 or test_mode:return
+ if cave.active:
+  cave.tick(delta)
+  return
  visual_time+=delta
  living_score.update(delta)
  if impact_shake>0:
@@ -1303,6 +1330,7 @@ func _process(delta:float):
   hydro.tick(delta*minf(speed,12.0))
   fluid_volume.tick(delta*minf(speed,4.0))
   ocean_dynamics.tick(delta*minf(speed,4.0))
+  if vast_world:rivers.tick(delta*minf(speed,4.0))
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1380,12 +1408,23 @@ func _process(delta:float):
  if speed>0:update_hazards(delta*minf(speed,12.0))
 
 func _unhandled_input(event:InputEvent):
+ if cave.active:
+  if event is InputEventKey and event.pressed and event.keycode in [KEY_C,KEY_ESCAPE]:cave.leave()
+  return
  if event is InputEventKey and event.pressed and not event.echo:
   if event.keycode==KEY_F10:toggle_photo()
   if event.keycode==KEY_F1:show_help()
   if event.keycode==KEY_F2:start_onboarding()
   if event.keycode==KEY_TAB:toggle_compact()
   if event.keycode==KEY_L:show_legend()
+  if event.keycode==KEY_C and vast_world:
+   if not cave.enter():
+    following=false
+    focus=cave.entrance()
+    distance=12
+    pitch=.7
+    update_camera()
+    hint.text="Premi C di nuovo per entrare nella grotta."
   if event.keycode==KEY_P:left_panel.visible=not left_panel.visible;refresh()
   if event.keycode==KEY_F6:set_tour(not tour)
   if event.keycode==KEY_HOME:
@@ -2293,6 +2332,8 @@ func save_path(path:String,show_hint:bool)->bool:
  d["vast_world"]=vast_world
  d["districts"]=districts.export_state()
  d["origins"]=origins.export_state()
+ d["cave"]=cave.export_state()
+ d["rivers"]=rivers.export_state()
  d["ocean"]=ocean.export_state()
  d["hydrology"]=hydro.export_state()
  d["fluid_volume"]=fluid_volume.export_state()
@@ -2357,7 +2398,10 @@ func load_path(p:String)->bool:
    hint.text="Salvataggio non valido."
    return false
  set_tour(false)
+ if cave.active:cave.leave()
  sim=candidate
+ river_saved=data.get("rivers",{})
+ cave_saved=data.get("cave",{})
  vast_world=bool(data.get("vast_world",false))
  districts.reset(self,data.get("districts",{}))
  origins.reset(self,data.get("origins",{}))
@@ -2558,6 +2602,7 @@ func self_test():
  if not test_continuous_systems():failed=true
  if not test_player_experience():failed=true
  if not test_frontier_origins():failed=true
+ if not test_world_depth():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2658,6 +2703,20 @@ func capture_preview():
  await RenderingServer.frame_post_draw
  var city_err=get_viewport().get_texture().get_image().save_png("res://preview-city.png")
  if city_err!=OK:err=city_err
+ focus=cave.entrance()
+ distance=24
+ pitch=.78
+ update_camera()
+ await get_tree().create_timer(.3).timeout
+ await RenderingServer.frame_post_draw
+ var river_err=get_viewport().get_texture().get_image().save_png("res://preview-river.png")
+ if river_err!=OK:err=river_err
+ if cave.enter(true):
+  await get_tree().create_timer(.4).timeout
+  await RenderingServer.frame_post_draw
+  var cave_err=get_viewport().get_texture().get_image().save_png("res://preview-cave.png")
+  if cave_err!=OK:err=cave_err
+  cave.leave()
  speed=1
  await get_tree().create_timer(.7).timeout
  print("CAPTURE ",err)
@@ -4110,6 +4169,7 @@ func rebuild_services():
     if register_service("house",i,q,1,"CANTIERE")!="":break
   for q in timber_points:
    if flat_dist(q,c)<24:register_service("gather",i,q+(c-q).normalized()*.75,1,"LEGNA",false)
+ districts.register_stations()
  assign_homes()
  for id in old_claims:
   var citizen=sim.find(int(id))
@@ -5221,6 +5281,8 @@ func _exit_tree():
  if living_score!=null:living_score.world=null
  if districts!=null:districts.world=null
  if origins!=null:origins.world=null
+ if cave!=null:cave.world=null
+ if rivers!=null:rivers.world=null
 
 
 func show_legend():
@@ -5263,6 +5325,10 @@ func show_biomes():
  for label in Art.BIOMES:lines.append("• "+label)
  lines.append("")
  lines.append(wildlife.report())
+ if vast_world:
+  lines.append(rivers.report())
+  lines.append(cave.report()+" · premi C")
+ lines.append(districts.report())
  open_dialog("ATLANTE NATURALE","\n".join(lines))
 
 func test_player_experience()->bool:
@@ -5332,4 +5398,60 @@ func test_frontier_origins()->bool:
  if origins.active or sim.people.size()<4:return false
  if not legend.genealogy(int(sim.people[0].id)).contains(str(sim.people[0].name)):return false
  print("FRONTIER_TEST extended_path=true districts=true origins=true genealogy=true")
+ return true
+
+
+func test_world_depth()->bool:
+ new_world(47,0,true,true,true)
+ if sim.population_limit!=640 or sim.housing_limit!=100:return false
+ sim.villages[0].era=4
+ sim.villages[0].wood=200
+ sim.villages[0].houses=12
+ districts.sync()
+ rebuild_services()
+ var stations=0
+ for service in services.values():
+  if service.has("district"):stations+=1
+ if stations<1:return false
+ if rivers.streams.size()!=2:return false
+ for i in range(80):rivers.step(.2)
+ var mass_error=absf(rivers.mass()+rivers.discharged-rivers.supplied-rivers.initial)
+ if mass_error>.01 or rivers.discharged<=0:return false
+ var kinds=wildlife.species_counts()
+ if kinds.count(0)>0:return false
+ if not cave.enter(true):return false
+ # Search the actual maze and walk each tile with collision checks.
+ var start=Vector2i(1,1)
+ var finish=Vector2i(13,9)
+ var queue=[start]
+ var came={}
+ came[start]=start
+ while not queue.is_empty():
+  var p:Vector2i=queue.pop_front()
+  if p==finish:break
+  for delta in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
+   var q=p+delta
+   if not came.has(q) and cave.tile(Vector2(q)):
+    came[q]=p
+    queue.append(q)
+ if not came.has(finish):return false
+ var path=[]
+ var current=finish
+ while current!=start:
+  path.push_front(current)
+  current=came[current]
+ for point in path:
+  var direction=(Vector2(point)-cave.position).normalized()
+  cave.move(direction,1.0/2.2)
+ if not cave.found:return false
+ cave.leave()
+ var file="user://genesis47_depth_test.json"
+ if not save_path(file,false):return false
+ new_world(47,0)
+ var ok=load_path(file)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(file+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(file+ext))
+ if not ok or not cave.found or sim.population_limit!=640 or rivers.streams.size()!=2:return false
+ if absf(rivers.mass()+rivers.discharged-rivers.supplied-rivers.initial)>.01:return false
+ print("WORLD_DEPTH_TEST cave=true river_mass_error=",mass_error," district_stations=",stations," species=4 population_capacity=640 persistence=true")
  return true
