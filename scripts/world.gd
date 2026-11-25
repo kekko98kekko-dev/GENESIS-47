@@ -4602,7 +4602,7 @@ func test_ocean_systems()->bool:
  new_world(47,0,true,true)
  var a=sim.people[0]
  var rig:Dictionary=actors[a.id].skeletal
- if rig.skeleton.get_bone_count()!=18:return false
+ if rig.skeleton.get_bone_count()!=22:return false
  CreatureRig.drive(actors[a.id],a,true,true,.1)
  var arm_index=int(rig.arm_ids[0][1])
  if absf(rig.skeleton.get_bone_pose_rotation(arm_index).x)<.01:return false
@@ -4671,7 +4671,7 @@ func test_ocean_systems()->bool:
  if fragment.get_child_count()<2 or fragment.linear_velocity.length()<=0:return false
  debris.update(6.0,false)
  if debris.count_bodies()!=0:return false
- print("OCEAN_TEST skeleton=18 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
+ print("OCEAN_TEST skeleton=22 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
  return true
 
 
@@ -4718,7 +4718,7 @@ func test_deep_simulation()->bool:
  sim.villages[0].wood=100.0
  var first=sim.people[0]
  var rig:Dictionary=actors[first.id].skeletal
- if rig.skins.size()!=6:return false
+ if rig.skins.size()!=10:return false
  var mesh:MeshInstance3D=rig.skins[0]
  var arrays=mesh.mesh.surface_get_arrays(0)
  if mesh.skin==null or arrays[Mesh.ARRAY_WEIGHTS].size()<16:return false
@@ -4799,6 +4799,13 @@ func test_industry_and_volume()->bool:
  if not market.sell(bakery,"bread",2):return false
  if absf(float(ocean.balance(port,"cash"))+market.cash_total()-total_cash)>.001:return false
  if ocean.balance(port,"bread")!=2:return false
+ if not ocean.finance.capitalize(port,10):return false
+ if not ocean.finance.lend_company(port,int(bakery.id),4):return false
+ var bank_sheet:Dictionary=ocean.finance.balance_sheet(port)
+ if absf(float(bank_sheet.assets)-float(bank_sheet.liabilities)-float(bank_sheet.equity))>.001:return false
+ var loan:Dictionary=ocean.finance.bank(port).company_loans[0]
+ ocean.finance.repay_company(port,loan,false)
+ if not ocean.finance.bank(port).company_loans.is_empty():return false
  var p:Vector3=centers[0]+Vector3.UP
  if fluid_volume.emit(p,48,Vector3(1,2,0))!=48:return false
  var initial_mass=fluid_volume.mass()
