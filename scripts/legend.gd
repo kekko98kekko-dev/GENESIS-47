@@ -12,6 +12,7 @@ var last_seen=-1
 var root:Node3D
 var visual_dirty=true
 var last_day=-1
+var pilgrims:Dictionary={}
 
 func reset(w,data={}):
  world=w
@@ -22,6 +23,7 @@ func reset(w,data={}):
  journey=0
  last_seen=-1
  last_day=-1
+ pilgrims={}
  visual_dirty=true
  if data is Dictionary:
   entries=data.get("entries",[])
@@ -33,9 +35,11 @@ func reset(w,data={}):
   journey=clampi(int(data.get("journey",0)),0,GOALS.size())
   last_seen=int(data.get("last_seen",-1))
   last_day=int(data.get("last_day",-1))
+  pilgrims=data.get("pilgrims",{})
+  for row in pilgrims.values():row.revision=-1
 
 func export_state()->Dictionary:
- return {"entries":entries,"monuments":monuments,"worship":worship,"traditions":traditions,"journey":journey,"last_seen":last_seen,"last_day":last_day}
+ return {"entries":entries,"monuments":monuments,"worship":worship,"traditions":traditions,"journey":journey,"last_seen":last_seen,"last_day":last_day,"pilgrims":pilgrims}
 
 func log_event(kind:String,clan:int,person:int,caption:String,location=Vector3.ZERO):
  entries.push_front({"day":world.sim.day,"kind":kind,"clan":clan,"person":person,"caption":caption,"x":location.x,"z":location.z})
@@ -142,24 +146,13 @@ func daily():
    row.temple=true
    visual_dirty=true
    log_event("Tempio",clan,-1,world.sim.CLANs_name(clan)+" costruisce un santuario.",temple_position(clan))
-  if row.temple and world.sim.day%7==0:
-   var position=temple_position(clan)
-   var visitors=[]
-   for a in world.sim.people:
-    if int(a.clan)!=clan or not world.actors.has(a.id):continue
-    if world.flat_dist(world.actors[a.id].node.position,position)<4.0 and float(a.faith)>35:visitors.append(a)
-   if not visitors.is_empty():
-    row.visits=int(row.visits)+visitors.size()
-    for a in visitors:
-     a.mood=minf(100,float(a.mood)+3)
-     world.sim.remember(a,"Ho partecipato a una veglia al santuario.")
-    log_event("Rituale",clan,-1,str(visitors.size())+" fedeli si riuniscono presso il santuario.",position)
-    if not world.test_mode:world.life_bubble(position,"VEGLIA DELLA COMUNITÀ",Color("e7cf9c"))
   if world.sim.day%12==0 and float(row.fear)>65:
    for a in world.sim.people:
     if int(a.clan)==clan and float(a.genes[0])>.65:
      a.faith=maxf(0,float(a.faith)-5)
      world.sim.adjust_trust(a,-3)
+ for key in pilgrims.keys():
+  if world.sim.find(int(key)).is_empty():pilgrims.erase(key)
  if visual_dirty:rebuild_visuals(root)
 
 func rebuild_visuals(parent:Node3D):
@@ -215,3 +208,59 @@ func report()->String:
  lines.append("\nSTORIA DEL MONDO")
  for row in entries.slice(0,24):lines.append("G%03d · %s\n%s"%[int(row.day),row.kind,row.caption])
  return "\n".join(lines)
+
+
+# An optional ritual is a real path to a shrine, not passive mood generation.
+# The citizen can abandon it to eat, rest, heal or flee.
+func ritual_advance(a:Dictionary,node:Node3D,dt:float)->int:
+ var key=str(int(a.id))
+ var clan=int(a.clan)
+ if not worship[clan].temple or float(a.faith)<45 or float(a.age)<14 or float(a.hunger)>60 or float(a.fatigue)>60 or float(a.health)<60:
+  pilgrims.erase(key)
+  return -1
+ if not pilgrims.has(key):
+  if posmod(world.sim.day+int(a.id),14)!=0 or int(a.get("last_ritual",-1))==world.sim.day:return -1
+  pilgrims[key]={"path":[],"index":0,"revision":-1,"remaining":2.0}
+ var job:Dictionary=pilgrims[key]
+ if int(job.revision)!=int(world.nav_version):
+  job.path=[]
+  var start:Vector2i=world.near_cell(node.position)
+  var finish:Vector2i=world.near_cell(temple_position(clan))
+  if world.nav_grid.region.has_point(start) and world.nav_grid.region.has_point(finish):
+   for cell in world.nav_grid.get_id_path(start,finish):job.path.append([cell.x,cell.y])
+  if job.path.is_empty():pilgrims.erase(key);return -1
+  job.index=0
+  job.revision=int(world.nav_version)
+ var budget=dt*2.0
+ while int(job.index)<job.path.size() and budget>0:
+  var cell=job.path[int(job.index)]
+  var target:Vector3=world.ground(float(cell[0]),float(cell[1]))
+  var delta=Vector3(target.x-node.position.x,0,target.z-node.position.z)
+  var length=delta.length()
+  if length>.01:node.rotation.y=lerp_angle(node.rotation.y,atan2(delta.x,delta.z),clampf(dt*7,0,1))
+  if length>budget:
+   var p=node.position+delta.normalized()*budget
+   node.position=world.ground(p.x,p.z)
+   budget=0
+  else:
+   node.position=target
+   budget-=length
+   job.index+=1
+ if int(job.index)<job.path.size():
+  a.activity="Va al santuario"
+  a.task_stage="In viaggio"
+  return 1
+ a["industry_action"]="social"
+ a.activity="Prega"
+ a.task_stage="In corso"
+ job.remaining=float(job.remaining)-dt
+ if float(job.remaining)>0:return 0
+ a["last_ritual"]=world.sim.day
+ worship[clan].visits=int(worship[clan].visits)+1
+ a.mood=minf(100,float(a.mood)+5)
+ a.stress=maxf(0,float(a.stress)-7)
+ world.sim.remember(a,"Ho pregato al santuario.")
+ log_event("Preghiera",clan,int(a.id),str(a.name)+" si raccoglie in preghiera.",node.position)
+ if not world.test_mode:world.life_bubble(node.position,"PREGHIERA",Color("eed5a1"))
+ pilgrims.erase(key)
+ return 0
