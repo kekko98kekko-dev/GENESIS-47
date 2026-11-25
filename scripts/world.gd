@@ -529,6 +529,7 @@ func make_terrain():
    var v=clampf((h+5.0)/20.0,0,1)
    depth_image.set_pixel(dx,dz,Color(v,v,v))
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
+ sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  expanded_world=expanded or ocean_mode
@@ -1136,7 +1137,12 @@ func _process(delta:float):
     for eye in r.get("eyes",[]):eye.scale.y=blink
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
    update_action_visual(a,r,moving)
-   CreatureRig.drive(r,a,moving,distance<35 and quality_mode>0,delta)
+   var rig_elapsed=float(r.get("rig_elapsed",0))+delta
+   var detailed=distance<35 and quality_mode>0 and flat_dist(n.position,focus)<28
+   if detailed or rig_elapsed>=.10:
+    CreatureRig.drive(r,a,moving,detailed,rig_elapsed)
+    rig_elapsed=0.0
+   r["rig_elapsed"]=rig_elapsed
    if is_instance_valid(r.get("signet")):
     r.signet.visible=distance<20 and not photo_mode and (a.favorite or a.id==selected or a.sick>0)
     r.signet.text="★" if a.favorite else "+" if a.sick>0 else "◆"
@@ -2663,6 +2669,9 @@ func play_event_sound(danger:bool):
 func apply_quality(i:int):
  quality_mode=clampi(i,0,2)
  sun.shadow_enabled=quality_mode>0
+ sun.directional_shadow_max_distance=75.0 if quality_mode==1 else 115.0
+ precipitation.amount=220 if quality_mode==0 else 420 if quality_mode==1 else 600
+ if is_instance_valid(sea):sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
  get_viewport().msaa_3d=Viewport.MSAA_4X if quality_mode==2 else Viewport.MSAA_2X if quality_mode==1 else Viewport.MSAA_DISABLED
  get_viewport().scaling_3d_scale=.85 if quality_mode==0 else 1.0
 
@@ -3136,6 +3145,9 @@ func run_benchmark():
  apply_changes()
  for i in range(2):sync_houses(i)
  var info={"version":str(ProjectSettings.get_setting("application/config/version")),"cpu":OS.get_processor_name(),"gpu":RenderingServer.get_video_adapter_name(),"driver":RenderingServer.get_video_adapter_api_version(),"window":str(DisplayServer.window_get_size()),"population":sim.people.size(),"colonies":ocean.colonies.size(),"ships":ocean.voyages.size(),"seed":47,"day":sim.day,"profiles":[]}
+ info["active_simulation"]=true
+ sim.spatial_autonomy=true
+ speed=1.0
  var names=["Prestazioni","Bilanciata","Qualita"]
  for profile in range(3):
   apply_quality(profile)
@@ -3164,7 +3176,7 @@ func run_benchmark():
   for frame in samples:total+=frame
   var mean_ms=total/samples.size()
   var p99=samples[clampi(ceili(samples.size()*.99)-1,0,samples.size()-1)]
-  info.profiles.append({"name":names[profile],"fps_average":snappedf(1000/maxf(.01,mean_ms),.1),"fps_p99_equivalent":snappedf(1000/maxf(.01,p99),.1),"frames":samples.size()})
+  info.profiles.append({"name":names[profile],"day":sim.day,"population":sim.people.size(),"fps_average":snappedf(1000/maxf(.01,mean_ms),.1),"fps_p99_equivalent":snappedf(1000/maxf(.01,p99),.1),"frames":samples.size()})
  var file=FileAccess.open("user://benchmark-genesis47.json",FileAccess.WRITE)
  if file==null:
   get_tree().quit(1)
