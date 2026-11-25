@@ -53,11 +53,11 @@ jobs:
       - name: Capture real rendered screenshot
         run: |
           set -o pipefail
-          timeout 180s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
+          timeout 240s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
           test -s preview-gameplay.png
           test -s preview-creature.png
-          for scene in frontier city river cave; do test -s "preview-$scene.png"; done
+          for scene in frontier city river cave title; do test -s "preview-$scene.png"; done
           for pose in walk farm craft eat sleep social; do test -s "preview-pose-$pose.png"; done
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
       - name: Benchmark graphical integration
