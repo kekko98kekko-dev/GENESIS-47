@@ -556,6 +556,7 @@ func reset_visuals():
    n.queue_free()
  earth=null
  sea=null
+ meadow=null
  actors.clear()
  activity_labels.clear()
  caravans.clear()
@@ -2308,6 +2309,17 @@ func capture_preview():
   await get_tree().create_timer(.4).timeout
   await RenderingServer.frame_post_draw
   get_viewport().get_texture().get_image().save_png("res://preview-creature.png")
+ new_world(47,0,true)
+ speed=0
+ hud.hide()
+ focus=Vector3.ZERO
+ distance=108
+ pitch=1.22
+ update_camera()
+ await get_tree().create_timer(.5).timeout
+ await RenderingServer.frame_post_draw
+ var region_err=get_viewport().get_texture().get_image().save_png("res://preview-archipelago.png")
+ if region_err!=OK:err=region_err
  speed=1
  await get_tree().create_timer(.7).timeout
  print("CAPTURE ",err)
@@ -4365,6 +4377,21 @@ func test_culture_and_regions()->bool:
  var clone=Sim.new()
  if not clone.import_state(JSON.parse_string(JSON.stringify(t.export_state()))):return false
  if int(clone.villages[0].culture.festivals)!=1:return false
+ var legacy=JSON.parse_string(JSON.stringify(t.export_state()))
+ for v in legacy.villages:v.erase("culture")
+ var old_copy=Sim.new()
+ if not old_copy.import_state(legacy) or old_copy.villages[0].culture.policy!="Comunità":return false
+ var village=t.villages[0]
+ village.culture.policy="Solidarietà"
+ village.culture.next_vote=100
+ village.culture.next_festival=100
+ village.food=100.0
+ village.culture.treasury=10.0
+ a.hunger=80.0
+ a.coins=0.0
+ var before_relief=int(village.culture.relief)
+ t.advance_culture()
+ if int(village.culture.relief)<=before_relief or a.hunger>=80 or float(village.food)>=100 or float(village.culture.treasury)>=10:return false
  new_world(47,0,true)
  for i in range(1,REGION_POINTS.size()):
   var pt:Vector2=REGION_POINTS[i]
@@ -4374,5 +4401,33 @@ func test_culture_and_regions()->bool:
   if not nav_grid.region.has_point(origin) or not nav_grid.region.has_point(target):return false
   if nav_grid.get_id_path(origin,target).is_empty():return false
  if discovery_sites.filter(func(row):return str(row.name) in REGION_NAMES.slice(1)).size()!=2:return false
- print("CULTURE_REGION_TEST treasury=true votes=true persistence=true connected_islands=2")
+ var explorer=sim.people[0]
+ var island:Vector2=REGION_POINTS[1]
+ discover_near(explorer,ground(island.x,island.y))
+ if not discovery_sites.any(func(row):return row.name==REGION_NAMES[1] and row.found):return false
+ var region_path="user://genesis47_region_test.json"
+ if not save_path(region_path,false):return false
+ new_world(47,0,false)
+ var restored=load_path(region_path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(region_path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(region_path+ext))
+ if not restored or not expanded_world or not discovery_sites.any(func(row):return row.name==REGION_NAMES[1] and row.found):return false
+ var location=ground(island.x,island.y)
+ sim.weather_name="Sereno"
+ start_hazard("fire",location,10.0)
+ update_hazards(1.0)
+ var dry_life=float(hazards[0].life)
+ hazards.clear()
+ sim.weather_name="Pioggia"
+ start_hazard("fire",location,10.0)
+ update_hazards(1.0)
+ if float(hazards[0].life)>=dry_life:return false
+ hazards.clear()
+ start_hazard("tornado",Vector3.ZERO,10.0)
+ update_hazards(1.0)
+ var movement=Vector2(float(hazards[0].x),float(hazards[0].z))
+ if movement.length()<.1:return false
+ hazards.clear()
+ rebuild_hazards()
+ print("CULTURE_REGION_TEST treasury=true votes=true relief=true persistence=true legacy_save=true connected_islands=2 region_save=true weather=true")
  return true
