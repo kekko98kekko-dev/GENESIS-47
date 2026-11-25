@@ -12,11 +12,12 @@ func run(w)->bool:
  var industry=industry_soak()
  var live=live_soak()
  var water=ocean_audit()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"industry_fixture":industry,"live_world":live,"ocean":water}
+ var politics=legacy_soak()
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"industry_fixture":industry,"live_world":live,"ocean":water,"living_legacy":politics}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and f!=null
+ return bool(skin.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(politics.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -224,3 +225,30 @@ func ocean_audit()->Dictionary:
  var ok=rest_ok and dynamics.finite and dynamics.minimum_depth>=.079 and dynamics.dry_speed<.0001 and max_error<.003 and runoff_error<.003 and terrain_ok and wave_diag.finite and relative<.15
  print("QA_OCEAN rest=",rest_ok," volume_error=",max_error," runoff_error=",runoff_error," wave_relative_error=",relative," ok=",ok)
  return {"ok":ok,"rest":rest_ok,"volume_error":max_error,"runoff_error":runoff_error,"terrain_displacement_error":terrain_error,"terrain_change":terrain_ok,"steps":steps,"real_terrain":dynamics,"wave_analytic":analytic,"wave_numeric":coefficient,"wave_error_over_initial_amplitude":relative,"wave_tolerance":.15,"scope":"Short standing-wave reference and mass checks, not full CFD validation"}
+
+
+func legacy_soak()->Dictionary:
+ world.new_world(81,0)
+ var count=0
+ var initial=world.sim.people.size()
+ var error=""
+ for i in range(120):
+  world.sim.daily()
+  world.apply_changes()
+  world.legend.daily()
+  world.legacy.daily()
+  count+=1
+  for clan in range(2):
+   var row:Dictionary=world.legacy.societies[clan]
+   var adults:Array=world.legacy.electorate(clan)
+   if not adults.is_empty() and world.sim.find(int(row.leader)).is_empty():error="leader missing"
+   if float(world.sim.villages[clan].wood)<-.01 or float(world.sim.villages[clan].food)<-.01:error="negative resources"
+   var unique={}
+   for item in row.inventions:
+    if unique.has(item):error="duplicated invention"
+    unique[item]=true
+  if error!="":break
+ var events=world.legacy.archive.size()
+ var ok=error=="" and count==120 and events>0 and not world.sim.people.is_empty()
+ print("QA_LEGACY days=",count," initial=",initial," population=",world.sim.people.size()," events=",events," ok=",ok)
+ return {"ok":ok,"days":count,"initial_population":initial,"population":world.sim.people.size(),"historical_events":events,"error":error,"scope":"120-day aggregate civilization and political history; not a human playtest"}
