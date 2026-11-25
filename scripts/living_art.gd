@@ -60,7 +60,9 @@ static func variant(a:Dictionary)->String:
 # separate radial road per house. Routes never bridge water visually.
 static func streets(w,st:SurfaceTool,clan:int)->int:
  var points:Array=[w.centers[clan]]
- for home in w.houses[clan]:points.append(home.node.position)
+ for home in w.houses[clan]:
+  var p:Vector3=home.node.position
+  points.append(w.ground(p.x+(w.centers[clan]-p).normalized().x*1.5,p.z+(w.centers[clan]-p).normalized().z*1.5))
  for row in w.districts.districts:
   if int(row.clan)==clan and not bool(row.ruined):points.append(w.ground(float(row.x),float(row.z)+2.2))
  var count=0
@@ -91,6 +93,9 @@ static func road(w,st:SurfaceTool,p:Vector3,q:Vector3,width:float)->int:
  for k in range(steps):
   var a=p.lerp(q,float(k)/steps)
   var b=p.lerp(q,float(k+1)/steps)
+  var curve=dir.normalized().orthogonal()*minf(.65,dir.length()*.07)
+  a+=Vector3(curve.x,0,curve.y)*sin(float(k)/steps*PI)
+  b+=Vector3(curve.x,0,curve.y)*sin(float(k+1)/steps*PI)
   var vertices=[w.ground(a.x+side.x,a.z+side.y)+Vector3.UP*.14,w.ground(a.x-side.x,a.z-side.y)+Vector3.UP*.14,w.ground(b.x+side.x,b.z+side.y)+Vector3.UP*.14,w.ground(b.x-side.x,b.z-side.y)+Vector3.UP*.14]
   if vertices.any(func(v):return v.y<w.SEA+.2):continue
   for v in [vertices[0],vertices[1],vertices[2],vertices[1],vertices[3],vertices[2]]:st.add_vertex(v)
