@@ -1,10 +1,11 @@
 extends RefCounted
+const Frontier=preload("res://scripts/frontier.gd")
 # A visible identity for the two cultures, distinct landscape palettes and eras.
 const BIOMES=["Prateria di giada","Bosco cremisi","Brughiera di pietra","Dune dell'alba","Selva della nebbia","Vetta delle nevi"]
 const PALETTES=[["456e52","a8c47b"],["655448","bd9666"],["566b69","91aaa1"],["ad8050","e5c691"],["294f4a","659d86"],["808d91","e4ebeb"]]
 static func biome(w,p:Vector3)->int:
  if w.vast_world:
-  var frontier=preload("res://scripts/frontier.gd").biome(p)
+  var frontier=Frontier.biome(p)
   if frontier>=0:return frontier
  if p.y>9.5:return 5
  if w.ocean.enabled:
