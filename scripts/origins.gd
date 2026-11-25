@@ -71,20 +71,25 @@ func draw():
 func daily():
  if not active:return
  var next=[]
- for a in lineages:
-  a.age=int(a.age)+1
-  var climate=.45 if world.sim.season=="Inverno" else .65
-  a.energy=clampf(float(a.energy)+9-absf(float(a.genes[1])-climate)*18-float(a.genes[0])*3,0,100)
-  if float(a.energy)<=0 or int(a.age)>20:continue
-  if next.size()>=48:continue
-  next.append(a)
-  if int(a.age)%4==0 and float(a.energy)>60 and next.size()<48:
-   var g:Array=a.genes.duplicate()
-   for k in range(4):g[k]=clampf(float(g[k])+rng.randf_range(-.08,.11),.02,.98)
-   # Intelligence is selected by access to increasingly complex forage.
-   g[0]=clampf(float(g[0])+.045,0,1)
-   next.append({"clan":int(a.clan),"gen":int(a.gen)+1,"age":0,"energy":55.0,"genes":g})
-   a.energy-=12
+ var climate=.45 if world.sim.season=="Inverno" else .65
+ for clan in range(2):
+  var group=lineages.filter(func(a):return int(a.clan)==clan)
+  var survivors=[]
+  var children=[]
+  for a in group:
+   a.age=int(a.age)+1
+   a.energy=clampf(float(a.energy)+9-absf(float(a.genes[1])-climate)*18-float(a.genes[0])*3,0,100)
+   if float(a.energy)<=0 or int(a.age)>20:continue
+   survivors.append(a)
+   if int(a.age)%4==0 and float(a.energy)>60:
+    var g:Array=a.genes.duplicate()
+    for k in range(4):g[k]=clampf(float(g[k])+rng.randf_range(-.08,.11),.02,.98)
+    g[0]=clampf(float(g[0])+.045,0,1)
+    children.append({"clan":clan,"gen":int(a.gen)+1,"age":0,"energy":55.0,"genes":g})
+    a.energy-=12
+  survivors.append_array(children)
+  survivors.sort_custom(func(a,b):return (float(a.energy)*.4+float(a.genes[0])*36+(1-absf(float(a.genes[1])-climate))*18+float(a.gen)*2.0)>(float(b.energy)*.4+float(b.genes[0])*36+(1-absf(float(b.genes[1])-climate))*18+float(b.gen)*2.0))
+  next.append_array(survivors.slice(0,24))
  lineages=next
  var max_gen=0
  for a in lineages:max_gen=maxi(max_gen,int(a.gen))
