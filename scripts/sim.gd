@@ -4,6 +4,9 @@ const ERAS=["Origini","Tribù","Agricoltura","Regni","Industria","Stelle","Conta
 const NAMES=["Arel","Nima","Sorin","Elya","Taro","Lumi","Kiran","Iria","Nox","Sela","Oren","Veya","Miro","Fenn","Lior","Asha"]
 const TECH=["Fuoco","Utensili","Agricoltura","Scrittura","Medicina","Architettura","Commercio","Metallurgia","Elettricità","Industria","Calcolo","Astronomia","Reti neurali","Segnale oltre il cielo"]
 const LIMIT=160
+const MAX_CITY_POPULATION=640
+var population_limit=LIMIT
+var housing_limit=25
 var rng=RandomNumberGenerator.new()
 var seed_value=47
 var day=0
@@ -48,6 +51,8 @@ const TASK_LABELS={"craft":"Fabbrica utensili","teach":"Educa un figlio","guard"
 const CRISIS_NAMES=["Siccità prolungata","Epidemia","Crisi diplomatica","Tempesta","Rinascimento culturale","Migrazione"]
 const PROJECT_NAMES=["Granai comunitari","Accademia delle scienze","Giardino della salute","Ambasciata","Osservatorio del cielo","Monumento della memoria"]
 func start(s:int,m:int):
+ population_limit=LIMIT
+ housing_limit=25
  market_mode=false
  seed_value=s
  mode=m
@@ -94,7 +99,7 @@ func start(s:int,m:int):
    birth(i,[])
  log_event("Il mondo si risveglia. Due popoli, un cielo.")
 func birth(c:int,parents:Array)->Dictionary:
- if people.size()>=LIMIT: return {}
+ if people.size()>=population_limit: return {}
  var genes=[rng.randf_range(.25,.85),rng.randf_range(.25,.85),rng.randf_range(.25,.85),rng.randf_range(.25,.85)]
  var ids=[]
  var gen=1
@@ -187,11 +192,11 @@ func daily():
    changes.append({"kind":"era","clan":i})
    v.government=["Consiglio","Anziani","Assemblea","Regno","Repubblica","Tecnocrazia","Federazione"][era]
    if era>=4:v.belief="Custodi del codice" if v.faith<50 else "Ordine della luce"
-  if not spatial_autonomy and day>=int(v.get("rebuild_after",0)) and v.wood>=22 and v.houses<mini(25,3+int(n/5)+v.era):
+  if not spatial_autonomy and day>=int(v.get("rebuild_after",0)) and v.wood>=22 and v.houses<mini(housing_limit,3+int(n/5)+v.era):
    v.wood-=22
    v.houses+=1
    changes.append({"kind":"house","clan":i})
-  if not spatial_autonomy and day%5==0 and n>1 and v.food>n*.65 and people.size()<LIMIT:
+  if not spatial_autonomy and day%5==0 and n>1 and v.food>n*.65 and people.size()<population_limit:
    var adults=people.filter(func(a):return a.clan==i and a.age>=14 and a.health>55)
    if adults.size()>1:
     var a=adults[rng.randi_range(0,adults.size()-1)]
@@ -360,12 +365,14 @@ func apply_reply(a:Dictionary,txt:String)->String:
  log_event(a.name+": «"+response+"»")
  return response
 func export_state()->Dictionary:
- return {"version":2,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history,"social_actions":social_actions,"aid_actions":aid_actions,"meet_actions":meet_actions}
+ return {"version":2,"population_limit":population_limit,"housing_limit":housing_limit,"seed":seed_value,"day":day,"mode":mode,"energy":energy,"peace":peace,"next_id":next_id,"ended":ended,"people":people,"dead":dead,"villages":villages,"events":events,"discoveries":discoveries,"signals":signals,"trades":trades,"shipments":shipments,"next_shipment":next_shipment,"lost_shipments":lost_shipments,"miracles":miracles,"rng":str(rng.state),"weather":weather_name,"season":season,"achievements":achievements,"history":history,"decisions":decisions,"diplomacy":diplomacy_state,"autonomous_decisions":autonomous_decisions,"extinction_noted":extinction_noted,"legacy_cycles":legacy_cycles,"total_deaths":total_deaths,"total_births":total_births,"projects_completed":projects_completed,"active_crisis":active_crisis,"crises_seen":crises_seen,"crisis_history":crisis_history,"social_actions":social_actions,"aid_actions":aid_actions,"meet_actions":meet_actions}
 func import_state(d:Dictionary)->bool:
  if d.get("version",0)!=2 or not d.get("people") is Array or not d.get("villages") is Array or d.villages.size()!=2:return false
  for key in ["seed","day","mode","energy","peace","next_id","ended","dead","events","discoveries","signals","trades","miracles","rng"]:
   if not d.has(key):return false
- if int(d.mode)<0 or int(d.mode)>3 or d.people.size()>LIMIT:return false
+ population_limit=clampi(int(d.get("population_limit",LIMIT)),LIMIT,MAX_CITY_POPULATION)
+ housing_limit=clampi(int(d.get("housing_limit",25)),25,100)
+ if int(d.mode)<0 or int(d.mode)>3 or d.people.size()>population_limit:return false
  for key in ["dead","events","discoveries","signals"]:
   if not d[key] is Array:return false
  var seen={}
@@ -762,7 +769,7 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
  if adult:
   scores.farm=18+maxf(0,90-float(v.food))*0.55+(18 if a.role=="Coltivatore" else 0)
   reasons.farm="Rifornire le scorte"
-  if v.wood>=22 and day>=int(v.get("rebuild_after",0)) and v.houses<mini(25,3+int(count(a.clan)/4)+v.era):
+  if v.wood>=22 and day>=int(v.get("rebuild_after",0)) and v.houses<mini(housing_limit,3+int(count(a.clan)/4)+v.era):
    scores.house=45+(25 if str(a.get("home_key",""))=="" else 0)+(12 if a.role=="Artigiano" else 0)
    reasons.house="La comunità necessita di nuove case"
   scores.gather=12+maxf(0,50-float(v.wood))*.5+(10 if a.role=="Artigiano" else 0)
@@ -1020,7 +1027,7 @@ func build_relationship(a:Dictionary,b:Dictionary):
   a.mood=minf(100,a.mood+15)
   b.mood=minf(100,b.mood+15)
   log_event(a.name+" e "+b.name+" si uniscono.")
- if a.partner==b.id and b.partner==a.id and level>=75 and day-int(a.last_child_day)>=18 and day-int(b.last_child_day)>=18 and villages[a.clan].food>=count(a.clan)*2 and people.size()<LIMIT:
+ if a.partner==b.id and b.partner==a.id and level>=75 and day-int(a.last_child_day)>=18 and day-int(b.last_child_day)>=18 and villages[a.clan].food>=count(a.clan)*2 and people.size()<population_limit:
   a.last_child_day=day
   b.last_child_day=day
   var child=birth(a.clan,[a,b])
