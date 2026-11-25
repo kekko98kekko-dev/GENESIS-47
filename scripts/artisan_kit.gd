@@ -81,11 +81,27 @@ static func cottage(w,cover:Node3D,clan:int,era:int,j:int,h:float,tint:Color):
    var awning=w.block(cover,Color("bca36d"),Vector3(0,1.34,1.43),Vector3(1.12,.09,.65))
    awning.rotation.x=-.26
  else:
+  var upper=Node3D.new()
+  cover.add_child(upper)
+  upper.position.y=h+.27
+  upper.scale=Vector3(.80,.58,.80)
+  roof(upper,tint.lightened(.12),0.0,j%2)
   for side in [-1,1]:
    for k in range(4):
     w.block(cover,Color("bec9b7"),Vector3(side*1.10,.40+k*.46,0),Vector3(.09,.11,2.13))
    w.block(cover,tint,Vector3(side*1.15,h+.22,0),Vector3(.15,.42,2.44))
   w.block(cover,Color("b7baab"),Vector3(0,.12,1.45),Vector3(1.4,.24,.55))
+  for side in [-1,1]:
+   w.block(cover,wood,Vector3(side*.88,h*.55,1.14),Vector3(.12,h*.85,.13))
+   for floor_index in range(2):
+    var y=.83+floor_index*.73
+    w.block(cover,Color("344d50"),Vector3(side*.66,y,1.13),Vector3(.42,.38,.09))
+    w.block(cover,Color("d9cda9"),Vector3(side*.66,y,1.19),Vector3(.048,.38,.045))
+    w.block(cover,Color("d9cda9"),Vector3(side*.66,y,1.19),Vector3(.42,.048,.045))
+   if j%2==0:
+    w.block(cover,wood,Vector3(side*.79,1.35,1.46),Vector3(.64,.10,.48))
+    for k in range(3):w.block(cover,wood,Vector3(side*.79+(k-1)*.22,1.52,1.66),Vector3(.05,.29,.05))
+    w.block(cover,wood,Vector3(side*.79,1.67,1.66),Vector3(.64,.06,.06))
  # A small side yard, attached to the real house and removed with it.
  for side in [-1,1]:
   for k in range(3):
