@@ -21,7 +21,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Versione del codice: 7.0.0 — Industria e materia.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 4cfe562e97c7a3392c543db09559d3ba1cc04df2.
 - Ultima versione interamente collaudata: 6.0, commit 4657fec4a9f9028231d669a0006022e1f9d83739, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45583090178 (successo build e Windows).
-- 7.0: codice scritto sul ramo upgrade-7-0-industry; pipeline da verificare dopo pubblicazione.
+- 7.0: pubblicata in main (commit a892818c112260c66bf6935d6a538e49426ad5fe). Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45584190006; stato queued, esito in attesa. Verificare prima di dichiarare stabile.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
