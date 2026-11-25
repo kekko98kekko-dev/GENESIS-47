@@ -21,7 +21,7 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Versione del codice: 8.0.0 — Mondo continuo.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: e50781894d014909560707ccb3d6ced4ccd57bbf.
 - Ultima versione interamente collaudata: 7.0, commit a892818c112260c66bf6935d6a538e49426ad5fe, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45584190006 (build e Windows riusciti, INDUSTRY_VOLUME_TEST e SELF_TEST PASS nei log).
-- 8.0: codice scritto sul ramo upgrade-8-0-continuous; pipeline da verificare dopo pubblicazione.
+- 8.0: pubblicata in main (commit 66912d7455ca79bddcaf49ee39688211cb84e057). Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45585262895; stato queued, esito in attesa. Verificare prima di dichiarare stabile.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
