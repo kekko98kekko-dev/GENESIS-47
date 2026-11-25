@@ -3,9 +3,15 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 varying vec3 wp;
 uniform float detail_strength = 1.0;
 uniform sampler2D height_map : filter_linear, repeat_disable;
+uniform sampler2D ocean_displacement : filter_linear, repeat_disable;
+uniform bool ocean_simulation = false;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float n2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 void vertex(){
+ vec2 ocean_uv=(VERTEX.xz+vec2(52.0))/104.0;
+ if(ocean_simulation && all(greaterThanEqual(ocean_uv,vec2(0.0))) && all(lessThanEqual(ocean_uv,vec2(1.0)))){
+  VERTEX.y+=texture(ocean_displacement,ocean_uv).r;
+ }
  VERTEX.y+=sin(VERTEX.x*.31+TIME*.8)*.045+cos(VERTEX.z*.42-TIME*.63)*.035;
  wp=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;
 }
