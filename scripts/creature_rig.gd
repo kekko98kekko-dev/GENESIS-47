@@ -1,6 +1,7 @@
 extends RefCounted
 const Mocap=preload("res://scripts/mocap_walk.gd")
 const Library=preload("res://scripts/mocap_library.gd")
+const ContinuousSkin=preload("res://scripts/continuous_skin.gd")
 # Articulated, bone-attached rigid stylized meshes, preserving the original species.
 # Existing gameplay animation controls drive the pose; secondary joints add gait
 # and task-specific follow-through. No imported mocap or deformable skin weights.
@@ -43,20 +44,7 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
   var toes=bone(skeleton,"Toes"+suffix,ankle,Vector3(0,-.015,.16))
   extremities.append([wrist,fingers,ankle,toes])
  skeleton.reset_bone_poses()
- var skins=[]
- for i in range(2):
-  var side=-1 if i==0 else 1
-  skins.append(limb(w,skeleton,arm_ids[i],Vector3(side*.34,.98,0),Vector3(side*.04,-.22,0),Vector3(0,-.20,0),.105,skin))
-  skins.append(limb(w,skeleton,leg_ids[i],Vector3(side*.18,.43,0),Vector3(0,-.17,0),Vector3(0,-.15,0),.114,skin.darkened(.06)))
- var torso=weighted_ellipsoid(w,skeleton,[pelvis,spine,chest],Vector3(0,.70,0),Vector3(.335,.40,.265),skin,.39,.98)
- var face=weighted_ellipsoid(w,skeleton,[chest,neck,head],Vector3(0,1.24,.025),Vector3(.385,.35,.325),skin.lightened(.07),.99,1.30)
- skins.append(torso)
- skins.append(face)
- for i in range(2):
-  var side=-1 if i==0 else 1
-  var e:Array=extremities[i]
-  skins.append(weighted_ellipsoid(w,skeleton,[e[1],e[1],e[0]],Vector3(side*.38,.54,0),Vector3(.11,.08,.11),skin.lightened(.08),.49,.60))
-  skins.append(weighted_ellipsoid(w,skeleton,[e[2],e[2],e[3]],Vector3(side*.18,.095,.08),Vector3(.13,.075,.175),skin,.04,.22,2))
+ var skins=[ContinuousSkin.build(w,skeleton,skin)]
  var head_anchor=attach(skeleton,"Head")
  var chest_anchor=attach(skeleton,"Chest")
  return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"extremities":extremities,"head_anchor":head_anchor,"chest_anchor":chest_anchor}
@@ -67,12 +55,10 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var s:Skeleton3D=rig.skeleton
  if not is_instance_valid(s):return
  var blend=clampf(dt*14,0,1)
- var task=str(a.get("task",""))
+ var task=str(a.get("industry_action",a.get("task","")))
  var clip="idle"
  if moving:clip="run" if float(a.get("stress",0))>75 else ("carry" if bool(a.get("delivery",false)) or task in ["trade","deliver"] else "walk")
- elif str(a.get("task_stage",""))=="In corso":clip=str(Library.TASKS.get(task,"idle"))
- if clip=="research":clip="gather"
- if clip=="rest":clip="sleep"
+ elif str(a.get("task_stage",""))=="In corso" or task=="industry":clip=str(Library.TASKS.get(task,"idle"))
  var phase=float(r.phase)
  var axial:Array=rig.axial
  for j in range(axial.size()):
