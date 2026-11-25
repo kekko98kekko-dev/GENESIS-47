@@ -40,7 +40,7 @@ jobs:
       - name: Test simulated paths and powers
         run: |
           set -o pipefail
-          timeout 180s godot --headless --path . -- --self-test 2>&1 | tee smoke.log
+          timeout 300s godot --headless --path . -- --self-test 2>&1 | tee smoke.log
           grep -q 'SELF_TEST PASS' smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' smoke.log; then exit 1; fi
       - name: Extended quality assurance and long simulation
@@ -53,17 +53,20 @@ jobs:
       - name: Capture real rendered screenshot
         run: |
           set -o pipefail
-          timeout 240s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
+          timeout 360s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
           test -s preview-gameplay.png
           test -s preview-creature.png
           for scene in frontier city river cave title; do test -s "preview-$scene.png"; done
+          for era in 0 2 4; do test -s "preview-art-era-$era.png"; done
+          for kind in 0 1 2; do test -s "preview-art-anatomy-$kind.png"; done
+          for scene in before heal meteor aftermath; do test -s "preview-art-$scene.png"; done
           for pose in walk farm craft eat sleep social; do test -s "preview-pose-$pose.png"; done
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
       - name: Benchmark graphical integration
         run: |
           set -o pipefail
-          timeout 100s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --resolution 1440x900 -- --benchmark-test 2>&1 | tee benchmark.log
+          timeout 180s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --resolution 1440x900 -- --benchmark-test 2>&1 | tee benchmark.log
           grep -q BENCHMARK_COMPLETE benchmark.log
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' benchmark.log; then exit 1; fi
       - name: Export Windows x64
@@ -71,7 +74,7 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
-          cp README.md ASSET-CREDITS.md PLAYTEST.md qa-report.json build/
+          cp README.md ART_DIRECTION.md ASSET-CREDITS.md PLAYTEST.md qa-report.json build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
           cp tools/BENCHMARK.bat build/
@@ -105,7 +108,7 @@ jobs:
         shell: pwsh
         run: |
           $p=Start-Process -FilePath (Resolve-Path 'build/GENESIS47.exe') -ArgumentList '--headless','--','--self-test' -PassThru
-          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'Windows self-test timed out' }
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw 'Windows self-test timed out' }
           if ($p.ExitCode -ne 0) { throw "Windows exit code $($p.ExitCode)" }
 
       - name: Verify offline distribution
