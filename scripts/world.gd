@@ -263,7 +263,7 @@ func _ready():
   call_deferred("capture_preview")
  else:
   get_tree().auto_accept_quit=false
-  open_welcome()
+  show_title_screen()
 
 func load_catalog():
  var p="res://assets/generated/catalog.json"
@@ -611,6 +611,7 @@ func make_terrain():
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
  if cave.active:cave.leave()
  vast_world=wide
+ ash_time=0
  river_saved={}
  cave_saved={}
  expanded_world=expanded or ocean_mode
@@ -1245,6 +1246,13 @@ func _process(delta:float):
  if cave.active:
   cave.tick(delta)
   return
+ if is_instance_valid(title_intro) and title_intro.visible:
+  intro_time+=delta
+  focus=centers[0].lerp(centers[1],.38+.16*sin(intro_time*.09))
+  distance=42+sin(intro_time*.13)*4
+  azimuth=-.65+intro_time*.035
+  pitch=.52
+  update_camera()
  visual_time+=delta
  living_score.update(delta)
  if impact_shake>0:
@@ -1265,7 +1273,7 @@ func _process(delta:float):
   toast_time-=delta
   if toast_time<=0 and is_instance_valid(toast_panel):toast_panel.hide()
  var focused=get_viewport().gui_get_focus_owner()
- var keyboard_ok=not (focused is LineEdit or focused is TextEdit) and not welcome_open
+ var keyboard_ok=not (focused is LineEdit or focused is TextEdit) and not welcome_open and not (is_instance_valid(title_intro) and title_intro.visible)
  var mov=Vector2(float(Input.is_physical_key_pressed(KEY_D))-float(Input.is_physical_key_pressed(KEY_A)),float(Input.is_physical_key_pressed(KEY_S))-float(Input.is_physical_key_pressed(KEY_W)))
  if keyboard_ok and mov.length()>0:
   set_tour(false)
@@ -1379,6 +1387,13 @@ func _process(delta:float):
   sky_material.sky_top_color=Color("172b51").lerp(Color("4d86b4"),daylight)
   sky_material.sky_horizon_color=Color("495478").lerp(Color("cfdfd4"),daylight)
   env.fog_light_color=Color("374f68").lerp(Color("afc8cf"),daylight)
+ if ash_time>0:
+  ash_time=maxf(0,ash_time-delta*minf(speed,2.0))
+  var haze=clampf(ash_time/8,0,1)
+  env.fog_density=.0013+.018*haze
+  env.fog_light_color=Color("74665d")
+  sun.light_energy*=1-.55*haze
+ else:env.fog_density=.0013
  if actors.has(selected):
   var n:Node3D=actors[selected].node
   cursor.show()
@@ -1427,6 +1442,7 @@ func _process(delta:float):
  if speed>0:update_hazards(delta*minf(speed,12.0))
 
 func _unhandled_input(event:InputEvent):
+ if is_instance_valid(title_intro) and title_intro.visible:return
  if cave.active:
   if event is InputEventKey and event.pressed and event.keycode in [KEY_C,KEY_ESCAPE]:cave.leave()
   return
@@ -1742,6 +1758,7 @@ func divine(p:Vector3):
    color=Color("7fc9dd")
    start_hazard("flood",p,6.0)
   "Vulcano":
+   if not test_mode:ash_time=24.0
    impact_cloud(p)
    color=Color("e67f43")
    disaster(p,"Vulcano",9.0,110.0,5.0,7.0)
@@ -1867,7 +1884,7 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47   /   MONDO VIVENTE",21)
+ title=text_label(row,"GENESIS 47   /   EREDITÀ VIVENTE",21)
  title.modulate=Color("e8ce9e")
  var sp=Control.new()
  row.add_child(sp)
@@ -2121,7 +2138,7 @@ func refresh():
   var pending=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
   signals_button.text="Segnali "+str(pending) if pending>0 else "Segnali"
  var a=sim.find(selected)
- if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else str(a.get("task_stage",""))+" · "+str(a.get("activity","Decide"))
+ if selected_status!=null:selected_status.text="Osservazione del mondo" if a.is_empty() else LivingArt.variant(a)+" · "+str(a.get("activity","Decide"))
  if status_bar!=null:
   status_bar.value=sim.energy if a.is_empty() else float(a.health)
   health_fill.bg_color=Color("e1bc78") if a.is_empty() else Color("d7796c").lerp(Color("83c8a4"),float(a.health)/100)
@@ -2352,6 +2369,7 @@ func save_path(path:String,show_hint:bool)->bool:
  d["districts"]=districts.export_state()
  d["origins"]=origins.export_state()
  d["legacy"]=legacy.export_state()
+ d["ash_time"]=ash_time
  d["cave"]=cave.export_state()
  d["rivers"]=rivers.export_state()
  d["ocean"]=ocean.export_state()
@@ -2420,6 +2438,7 @@ func load_path(p:String)->bool:
  set_tour(false)
  if cave.active:cave.leave()
  sim=candidate
+ ash_time=clampf(float(data.get("ash_time",0)),0,24)
  river_saved=data.get("rivers",{})
  cave_saved=data.get("cave",{})
  vast_world=bool(data.get("vast_world",false))
@@ -2761,6 +2780,8 @@ func populate_powers(i:int):
    power_label.text=name_value
    if hint!=null:hint.text=POWER_TIPS.get(name_value,"")
    for item in power_buttons:item.button_pressed=item.get_meta("power")==power)
+  b.icon=power_icon(name_value)
+  b.expand_icon=false
   b.toggle_mode=true
   b.set_pressed_no_signal(power==name_value)
   b.set_meta("power",name_value)
@@ -3651,6 +3672,15 @@ func task_destination(a:Dictionary)->Vector3:
     var q=ground(float(landmark.x),float(landmark.z))
     var d=flat_dist(q,c)
     if d<best and d<(120.0 if vast_world else 82.0 if expanded_world else 24.0):best=d;dest=q
+   if not test_mode:
+    if bool(a.get("separatist",false)) and legacy.societies[int(a.clan)].has("camp") and int(a.tasks_done)%3==0:
+     var camp:Array=legacy.societies[int(a.clan)].camp
+     return ground(float(camp[0]),float(camp[1]))
+    for site in legacy.sites:
+     if site.found:continue
+     var p=ground(float(site.x),float(site.z))
+     var d=flat_dist(p,c)
+     if d<best:best=d;dest=p
    return dest
  return c+offset
 
@@ -5543,3 +5573,80 @@ func test_living_legacy()->bool:
  if not ok or legacy.archive.size()!=count or not legacy.societies[clan].ban or not legacy.sites[0].found:return false
  print("LEGACY_TEST invention=true election=true revolt=true worship_ban=true relic=true morning=true persistence=true")
  return true
+
+
+# Original vector icon set for the power bar, no external fonts or images.
+var power_icons:Dictionary={}
+func power_icon(kind:String)->Texture2D:
+ if power_icons.has(kind):return power_icons[kind]
+ var glyph="M12 3 L21 12 L12 21 L3 12 Z M12 8 V16 M8 12 H16"
+ if kind in ["Vita","Nuova specie","Resurrezione","Foresta"]:glyph="M12 21 V12 M12 14 Q1 13 4 4 Q12 3 12 14 M12 12 Q13 2 21 3 Q22 11 12 12"
+ elif kind in ["Meteorite","Vulcano","Incendio","Fulmine"]:glyph="M13 2 L5 13 H11 L10 22 L20 10 H14 Z"
+ elif kind in ["Tsunami","Pioggia","Lago"]:glyph="M12 3 Q20 13 20 16 Q20 22 12 22 Q4 22 4 16 Q4 13 12 3"
+ elif kind in ["Guarigione","Provviste"]:glyph="M12 3 V21 M3 12 H21"
+ elif kind in ["Conoscenza","Profeta","Fede"]:glyph="M12 2 L16 9 L23 12 L16 15 L12 22 L8 15 L1 12 L8 9 Z"
+ elif kind in ["Montagna","Terremoto"]:glyph="M2 20 L10 5 L14 12 L17 7 L22 20 Z"
+ elif kind=="Osserva":glyph="M2 12 Q12 0 22 12 Q12 24 2 12 M12 8 A4 4 0 1 0 12 16 A4 4 0 1 0 12 8"
+ var svg='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="'+glyph+'" fill="none" stroke="#e8ce9e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+ var img=Image.new()
+ if img.load_svg_from_string(svg)!=OK:return null
+ var texture=ImageTexture.create_from_image(img)
+ power_icons[kind]=texture
+ return texture
+
+func show_title_screen():
+ speed=0
+ hud.hide()
+ var layer=CanvasLayer.new()
+ layer.layer=8
+ add_child(layer)
+ title_intro=Control.new()
+ layer.add_child(title_intro)
+ title_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ var shade=ColorRect.new()
+ title_intro.add_child(shade)
+ shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ shade.color=Color(.025,.055,.065,.63)
+ shade.mouse_filter=Control.MOUSE_FILTER_IGNORE
+ var box=VBoxContainer.new()
+ title_intro.add_child(box)
+ box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+ box.position=Vector2(70,190)
+ box.custom_minimum_size=Vector2(650,430)
+ box.add_theme_constant_override("separation",18)
+ var mark=TextureRect.new()
+ mark.texture=power_icon("Fede")
+ mark.custom_minimum_size=Vector2(78,78)
+ mark.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
+ mark.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+ box.add_child(mark)
+ var brand=Label.new()
+ box.add_child(brand)
+ brand.text="GENESIS 47"
+ brand.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+ brand.add_theme_font_size_override("font_size",70)
+ brand.modulate=Color("f1d6a3")
+ var tagline=Label.new()
+ box.add_child(tagline)
+ tagline.text="EREDITÀ VIVENTE\nLa vita ricorda. Il mondo sceglie."
+ tagline.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+ tagline.add_theme_font_size_override("font_size",23)
+ tagline.modulate=Color("d1dfcf")
+ var launch=Button.new()
+ launch.text="ENTRA NEL MONDO"
+ launch.custom_minimum_size=Vector2(420,58)
+ launch.size_flags_horizontal=Control.SIZE_SHRINK_CENTER
+ launch.add_theme_font_size_override("font_size",21)
+ box.add_child(launch)
+ launch.pressed.connect(func():
+  title_intro.hide()
+  layer.queue_free()
+  hud.show()
+  open_welcome())
+ var footer=Label.new()
+ box.add_child(footer)
+ footer.text="SIMULAZIONE EVOLUTIVA  ·  OFFLINE"
+ footer.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+ footer.modulate=Color("a4beb5")
+ box.modulate.a=0
+ create_tween().tween_property(box,"modulate:a",1.0,1.1)
