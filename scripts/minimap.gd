@@ -23,6 +23,12 @@ func _draw():
  draw_texture_rect(cache,Rect2(Vector2.ZERO,size),false)
  for i in range(world.trade_route.size()-1):
   draw_line(to_map(world.trade_route[i]),to_map(world.trade_route[i+1]),Color("d2af79"),1.2,true)
+ if world.expanded_world:
+  for link in world.REGION_BRIDGES:
+   draw_line(to_map(Vector3(link[0].x,0,link[0].y)),to_map(Vector3(link[1].x,0,link[1].y)),Color("d2af79"),1.2,true)
+  for i in range(1,world.REGION_POINTS.size()):
+   var p:Vector2=world.REGION_POINTS[i]
+   draw_arc(to_map(Vector3(p.x,0,p.y)),4,0,TAU,16,Color("f5dda1"),1.0,true)
  for a in world.sim.people:
   if not world.actors.has(a.id):continue
   var p=world.actors[a.id].node.position
