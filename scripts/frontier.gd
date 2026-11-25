@@ -35,14 +35,12 @@ static func landmarks(w,parent:Node3D):
   parent.add_child(n)
   n.position=p
   if i==0:
-   # Waterfall and cave entrance are scenic landmarks, not hydraulic sources or an interior level.
-   var cliff=Node3D.new()
-   n.add_child(cliff)
-   cliff.position=Vector3(2.8,.2,1.3)
-   w.block(cliff,Color("768e91"),Vector3(0,1.5,0),Vector3(1.8,3,1.2))
-   w.block(cliff,Color("8bd2d5"),Vector3(0,1.55,.64),Vector3(.62,2.85,.08),.15)
-   w.sphere(cliff,Color("b2e3e4"),Vector3(0,.12,.9),Vector3(1.35,.23,.8))
-   w.block(n,Color("273b3c"),Vector3(-1.9,.40,1.7),Vector3(.85,.80,.08))
+   # The water channel is now rendered by RiverSystem. The arch identifies
+   # the entrance of the separately explorable cavern.
+   for side in [-1,1]:w.cone(n,Color("596c70"),Vector3(side*.65,.65,1.5),.50,1.3,.34,7)
+   w.block(n,Color("87918a"),Vector3(0,1.4,1.5),Vector3(1.8,.40,.72))
+   w.block(n,Color("233538"),Vector3(0,.55,1.64),Vector3(.80,1.1,.07))
+   w.sphere(n,Color("8ae1d0"),Vector3(0,1.72,1.5),Vector3(.17,.24,.17),.55)
    for side in [-1,1]:
     w.cone(n,Color("778a91"),Vector3(side*2,2,0),2.4,4.0,.25,6)
    w.cone(n,Color("cbdce0"),Vector3.UP*3.4,1.3,2.2,.02,7)
