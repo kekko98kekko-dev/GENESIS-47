@@ -133,6 +133,12 @@ func daily():
   var row:Dictionary=worship[clan]
   var n=int(world.sim.count(clan))
   if n<=0:continue
+  for a in world.sim.people:
+   if int(a.clan)!=clan:continue
+   for event in a.get("life_story",[]):
+    if int(event.day)!=world.sim.day or str(event.kind) not in ["Unione","Amicizia","Vocazione"]:continue
+    var position:Vector3=world.actors[a.id].node.position if world.actors.has(a.id) else world.centers[clan]
+    log_event(str(event.kind),clan,int(a.id),str(a.name)+" · "+str(event.text),position)
   var kind="Custodi della vita" if clan==0 else "Figli dell'orizzonte"
   if float(row.fear)>65:kind="Culto del timore"
   elif float(row.love)<25:kind="Liberi dal Creatore"
