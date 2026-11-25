@@ -61,6 +61,11 @@ static func build(w,body:Node3D,skin:Color,cloth:Color,kind:int=0)->Dictionary:
   var tail=bone(skeleton,"TailRoot",pelvis,Vector3(0,.05,-.49))
   var tip=bone(skeleton,"TailTip",tail,Vector3(0,-.03,-.26))
   extra.append([tail,tip])
+ var proportions=ContinuousSkin.proportions(kind)
+ for i in range(skeleton.get_bone_count()):
+  var rest=skeleton.get_bone_rest(i)
+  rest.origin*=proportions
+  skeleton.set_bone_rest(i,rest)
  skeleton.reset_bone_poses()
  var skins=[ContinuousSkin.build(w,skeleton,skin,kind)]
  var head_anchor=attach(skeleton,"Head")

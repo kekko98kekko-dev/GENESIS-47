@@ -62,9 +62,13 @@ static func streets(w,st:SurfaceTool,clan:int)->int:
  var points:Array=[w.centers[clan]]
  for home in w.houses[clan]:
   var p:Vector3=home.node.position
-  points.append(w.ground(p.x+(w.centers[clan]-p).normalized().x*1.5,p.z+(w.centers[clan]-p).normalized().z*1.5))
+  var frontage:Vector3=preload("res://scripts/reborn_urban.gd").frontage(w,clan,p)
+  var door:Vector3=p+home.node.basis.z*1.45
+  points.append(w.ground(door.x,door.z))
+  points.append(frontage)
  for row in w.districts.districts:
   if int(row.clan)==clan and not bool(row.ruined):points.append(w.ground(float(row.x),float(row.z)+2.2))
+ for q in w.farm_points[clan]:points.append(q+Vector3(0,0,1.35))
  var count=0
  for i in range(1,points.size()):
   var p:Vector3=points[i]
@@ -98,6 +102,8 @@ static func road(w,st:SurfaceTool,p:Vector3,q:Vector3,width:float)->int:
   b+=Vector3(curve.x,0,curve.y)*sin(float(k+1)/steps*PI)
   var vertices=[w.ground(a.x+side.x,a.z+side.y)+Vector3.UP*.14,w.ground(a.x-side.x,a.z-side.y)+Vector3.UP*.14,w.ground(b.x+side.x,b.z+side.y)+Vector3.UP*.14,w.ground(b.x-side.x,b.z-side.y)+Vector3.UP*.14]
   if vertices.any(func(v):return v.y<w.SEA+.2):continue
+  var middle:Vector3=(a+b)*.5
+  if preload("res://scripts/reborn_urban.gd").near_home(w,middle,1.25):continue
   for v in [vertices[0],vertices[1],vertices[2],vertices[1],vertices[3],vertices[2]]:st.add_vertex(v)
   count+=2
  return count

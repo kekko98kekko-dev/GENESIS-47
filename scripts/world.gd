@@ -25,6 +25,7 @@ const DivinePresentation=preload("res://scripts/divine_presentation.gd")
 const Colossus=preload("res://scripts/colossus.gd")
 const Experience=preload("res://scripts/living_experience.gd")
 const Reborn=preload("res://scripts/reborn_art.gd")
+const Urban=preload("res://scripts/reborn_urban.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -934,7 +935,7 @@ func far_village(p:Vector3,r:float)->bool:
 
 func make_tree(p:Vector3,h:float,i:int):
  var rotation_value=rng.randf()*TAU
- if scarred(p):return
+ if scarred(p) or Urban.near_home(self,p,1.9):return
  timber_points.append(p)
  if Reborn.tree(self,p,h,i,rotation_value):return
  if Art.biome(self,p) in [0,2,4,5] and i%3!=1:
@@ -996,9 +997,7 @@ func make_hub(i:int):
  label.modulate=Color("fff2cd")
 
 func house_location(i:int,j:int)->Vector3:
- var a=j*2.39996+i*.5
- var r=4.5+sqrt(float(j))*2.64
- return land_near(centers[i].x+cos(a)*r,centers[i].z+sin(a)*r)
+ return Urban.plot(self,i,j)
 
 func make_house(i:int,j:int,era:int):
  var site=house_sites[i][j]
@@ -1007,7 +1006,8 @@ func make_house(i:int,j:int,era:int):
  var n=Node3D.new()
  villages_root.add_child(n)
  n.position=p
- n.rotation.y=atan2(centers[i].x-p.x,centers[i].z-p.z)
+ var frontage=Urban.frontage(self,i,p)
+ n.rotation.y=atan2(frontage.x-p.x,frontage.z-p.z)
  var tint=Color("39766d") if i==0 else Color("a85f3d")
  var wall=Color("bca784") if era<4 else Color("91aaa5")
  var cover=Node3D.new()
@@ -1086,7 +1086,9 @@ func sync_houses(i:int):
  rebuild_roads()
 
 func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
- var skin=Color("399c98").lerp(Color("93d6b6"),float(a.genes[2])) if a.clan==0 else Color("a95c3f").lerp(Color("e8be78"),float(a.genes[2]))
+ var anatomy=Sim.anatomy(a)
+ var palettes=[[Color("547d63"),Color("b4bd79")],[Color("416d7a"),Color("8ec4c4")],[Color("67535c"),Color("b59a83")]] if a.clan==0 else [[Color("a06b46"),Color("d7bb79")],[Color("695384"),Color("b9a4c3")],[Color("834e40"),Color("ca9767")]]
+ var skin:Color=palettes[anatomy][0].lerp(palettes[anatomy][1],float(a.genes[2]))
  var cloth=(Color("244b59") if a.clan==0 else Color("683e4c")).lerp(Color("bba16e"),float(a.genes[1])*.55)
  var era=int(sim.villages[a.clan].era)
  if era>=4:cloth=cloth.lerp(Color("88a9be"),.45)
@@ -1109,10 +1111,14 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   var ear=sphere(body,skin.darkened(.08),Vector3(side*.39,1.42,.0),Vector3(.24,.38,.18))
   ear.rotation.z=side*-.56
   ear.scale.y*=lerpf(.75,1.30,float(a.genes[0]))
-  sphere(body,skin.lightened(.25),Vector3(side*.39,1.43,.083),Vector3(.11,.22,.05)).rotation.z=side*-.56
+  if anatomy!=0:ear.hide()
+  var inner_ear=sphere(body,skin.lightened(.25),Vector3(side*.39,1.43,.083),Vector3(.11,.22,.05))
+  inner_ear.rotation.z=side*-.56
+  if anatomy!=0:inner_ear.hide()
   var eye=Node3D.new()
   body.add_child(eye)
-  eye.position=Vector3(side*.18,1.30,.29)
+  eye.position=Vector3(side*(.21 if anatomy==1 else .18),1.30,.30)
+  eye.scale=Vector3(.88,1.0,.88) if anatomy==2 else Vector3.ONE
   sphere(eye,Color("f2e6c9"),Vector3.ZERO,Vector3(.25,.28,.15))
   sphere(eye,Color("527876").lerp(Color("ab7b3d"),float(a.genes[2])),Vector3(0,0,.07),Vector3(.16,.19,.07))
   sphere(eye,Color("263b3a"),Vector3(0,0,.107),Vector3(.107,.139,.045))
@@ -1134,6 +1140,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   sphere(body,accent,Vector3((j-1)*.10,1.55,.20),Vector3(.06,.08,.035),.5)
  var crest=cone(body,skin.lightened(.18),Vector3(0,1.68,-.08),.11,.18+float(a.genes[3])*.22,.015,7)
  crest.rotation.x=-.35
+ if anatomy!=0:crest.hide()
  if a.genes[1]>.55:
   for side in [-1,1]:sphere(body,accent,Vector3(side*.27,1.16,.28),Vector3(.09,.045,.027))
  if a.genes[0]>.65:sphere(body,accent,Vector3(0,1.70,-.05),Vector3(.19,.12,.17),.2)
@@ -1152,7 +1159,7 @@ func original_creature(parent:Node3D,a:Dictionary)->Dictionary:
   var face_part=original.y>=1.07
   var target:Node3D=skeletal.head_anchor if face_part else skeletal.chest_anchor
   child.reparent(target,false)
-  child.position=original-(Vector3(0,1.24,.025) if face_part else Vector3(0,.97,0))
+  child.position=(original-(Vector3(0,1.24,.025) if face_part else Vector3(0,.97,0)))*preload("res://scripts/continuous_skin.gd").proportions(anatomy)
  return {"body":body,"arms":arms,"legs":legs,"eyes":eyes,"brows":brows,"mouth":mouth,"skeletal":skeletal}
 
 func create_actor(a:Dictionary):
@@ -2075,6 +2082,23 @@ func rich(parent:Node,h:float)->RichTextLabel:
  parent.add_child(l)
  return l
 
+func reborn_menu_action(id:int):
+ match id:
+  0:open_welcome()
+  1:save_game(true)
+  2:load_game()
+  3,4,5:
+   slot=id-3
+   selected_slot.select(slot)
+   reborn_menu.text="Menu · S"+str(slot+1)
+  6:show_options()
+  7:show_help()
+  8:
+   audio.stream_paused=not audio.stream_paused
+   store_settings()
+  9:show_history()
+  10:show_atlas()
+
 func setup_ui():
  var layer=CanvasLayer.new()
  add_child(layer)
@@ -2135,20 +2159,7 @@ func setup_ui():
  var popup=reborn_menu.get_popup()
  for item in ["Nuovo universo","Salva partita","Carica partita","Slot 1","Slot 2","Slot 3","Opzioni","Guida","Audio on/off","Statistiche","Atlante"]:
   popup.add_item(item)
- popup.id_pressed.connect(func(id):
-  match id:
-   0:open_welcome()
-   1:save_game(true)
-   2:load_game()
-   3,4,5:
-    slot=id-3
-    selected_slot.select(slot)
-    reborn_menu.text="Menu · S"+str(slot+1)
-   6:show_options()
-   7:show_help()
-   8:audio.stream_paused=not audio.stream_paused;store_settings()
-   9:show_history()
-   10:show_atlas())
+ popup.id_pressed.connect(reborn_menu_action)
  selected_slot=OptionButton.new()
  for i in range(3):selected_slot.add_item("Slot "+str(i+1))
  row.add_child(selected_slot)
@@ -3223,8 +3234,8 @@ func rebuild_farms():
  for i in range(2):
   if sim.villages[i].era<2:continue
   for j in range(2):
-   var p=land_near(centers[i].x+(5.0 if i==0 else -5.0)+j*(2.5 if i==0 else -2.5),centers[i].z+5.8)
-   if blocked_site(p):continue
+   var p=Urban.farm(self,i,j)
+   if p.y<SEA+.7 or blocked_site(p) or Urban.near_home(self,p,2.0):continue
    farm_points[i].append(p)
    Artisan.field_plot(self,farms_root,p,i,j)
 
@@ -4278,8 +4289,9 @@ func flat_dist(a:Vector3,b:Vector3)->float:
  return Vector2(a.x-b.x,a.z-b.z).length()
 
 func occupied_site(clan:int,q:Vector3)->bool:
- for site in house_sites[clan]:
-  if Vector2(q.x-float(site.x),q.z-float(site.z)).length()<2.7:return true
+ for side in range(2):
+  for site in house_sites[side]:
+   if Vector2(q.x-float(site.x),q.z-float(site.z)).length()<2.7:return true
  return false
 
 func blocked_site(p:Vector3)->bool:
@@ -4529,7 +4541,7 @@ func rebuild_services():
   register_service("guard",i,c.lerp(centers[1-i],.47),4,"CONFINE")
   for home in houses[i]:
    var q:Vector3=home.node.position
-   var door=q+(c-q).normalized()*2.0
+   var door=q+home.node.basis.z*2.0
    var key=register_service("sleep",i,door,4,"DIMORA",false)
    if key!="":
     services[key]["home"]=site_key("home",i,q)

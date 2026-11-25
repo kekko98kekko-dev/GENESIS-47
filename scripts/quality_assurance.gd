@@ -302,6 +302,13 @@ func reborn_audit()->Dictionary:
  for r in world.actors.values():
   if r.has("reborn_face"):faces[int(r.reborn_face)]+=1
  var face_ok=not faces.has(0)
+ var plots_ok=true
+ for clan in range(2):
+  for i in range(world.house_sites[clan].size()):
+   var h=world.house_sites[clan][i]
+   for j in range(i):
+    var q=world.house_sites[clan][j]
+    if Vector2(float(h.x)-float(q.x),float(h.z)-float(q.z)).length()<2.69:plots_ok=false
  var parent=Node3D.new()
  world.add_child(parent)
  var crop_ok=preload("res://scripts/reborn_art.gd").crops(world,parent,0)
@@ -309,9 +316,9 @@ func reborn_audit()->Dictionary:
  for n in parent.get_children():
   if n is MultiMeshInstance3D and n.multimesh.instance_count==28:batch_ok=true
  parent.queue_free()
- var ok=catalog_ok and houses_ok and homes>0 and trees>0 and face_ok and crop_ok and batch_ok
+ var ok=catalog_ok and houses_ok and homes>0 and trees>0 and face_ok and crop_ok and batch_ok and plots_ok
  print("QA_REBORN catalog=",catalog_ok," homes=",homes," trees=",trees," faces=",faces," crop_batch=",batch_ok," ok=",ok)
- return {"ok":ok,"catalog":catalog_ok,"houses":homes,"trees":trees,"faces":faces,"crop_batch":batch_ok}
+ return {"ok":ok,"catalog":catalog_ok,"houses":homes,"trees":trees,"faces":faces,"crop_batch":batch_ok,"separated_plots":plots_ok}
 
 func experience_audit()->Dictionary:
  var E=preload("res://scripts/living_experience.gd")

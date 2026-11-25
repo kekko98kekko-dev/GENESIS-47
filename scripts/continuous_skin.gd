@@ -21,9 +21,16 @@ static func union(a:float,b:float,k:float)->float:
  var h=clampf(.5+.5*(b-a)/k,0,1)
  return lerpf(b,a,h)-k*h*(1-h)
 
+static func proportions(kind:int)->Vector3:
+ return [Vector3(.94,1.12,.95),Vector3(1.18,.92,1.09),Vector3(1.08,.90,1.22)][clampi(kind,0,2)]
+
 static func field(p:Vector3,kind:int=0)->float:
- var d=ellipsoid(p,Vector3(0,.70,0),Vector3(.335,.40,.265))
- d=union(d,ellipsoid(p,Vector3(0,1.24,.025),Vector3(.385,.35,.325)),.09)
+ var torso_size:Vector3=[Vector3(.30,.40,.25),Vector3(.36,.37,.27),Vector3(.31,.34,.32)][kind]
+ var head_size:Vector3=[Vector3(.30,.32,.28),Vector3(.39,.27,.33),Vector3(.34,.29,.34)][kind]
+ var d=ellipsoid(p,Vector3(0,.70,0),torso_size)
+ d=union(d,ellipsoid(p,Vector3(0,1.24,.025),head_size),.09)
+ var muzzle_size:Vector3=[Vector3(.14,.13,.16),Vector3(.26,.13,.16),Vector3(.22,.15,.18)][kind]
+ d=union(d,ellipsoid(p,Vector3(0,1.13,.31),muzzle_size),.055)
  d=union(d,capsule(p,Vector3(0,.94,0),Vector3(0,1.16,.025),.16),.07)
  for side in [-1,1]:
   d=union(d,capsule(p,Vector3(side*.29,.95,0),Vector3(side*.38,.76,0),.108),.075)
@@ -111,9 +118,11 @@ static func mesh_for(s:Skeleton3D,kind:int=0)->ArrayMesh:
  return cached[kind]
 
 static func vertex(st:SurfaceTool,p:Vector3,rests:Array,kind:int):
+ var scale_value=proportions(kind)
+ var shaped=p*scale_value
  var nearest=[]
  for i in range(rests.size()):
-  nearest.append({"id":i+1,"d":p.distance_squared_to(rests[i])})
+  nearest.append({"id":i+1,"d":shaped.distance_squared_to(rests[i])})
  nearest.sort_custom(func(a,b):return float(a.d)<float(b.d))
  var ids=PackedInt32Array()
  var weights=PackedFloat32Array()
@@ -126,9 +135,9 @@ static func vertex(st:SurfaceTool,p:Vector3,rests:Array,kind:int):
  for i in range(4):weights[i]/=sum
  st.set_bones(ids)
  st.set_weights(weights)
- st.set_normal(normal_at(p,kind))
+ st.set_normal((normal_at(p,kind)/scale_value).normalized())
  st.set_uv(Vector2(atan2(p.z,p.x)/TAU+.5,p.y/1.75))
- st.add_vertex(p)
+ st.add_vertex(shaped)
 
 static func build(w,s:Skeleton3D,tint:Color,kind:int=0)->MeshInstance3D:
  var node=MeshInstance3D.new()
