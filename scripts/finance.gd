@@ -14,6 +14,7 @@ func setup(owner):
 func bank(port:int)->Dictionary:
  var key=str(port)
  if not banks.has(key):banks[key]={"reserve":0.0,"equity":0.0,"deposits":{},"loans":[],"defaults":0}
+ if not banks[key].has("company_loans"):banks[key]["company_loans"]=[]
  return banks[key]
 
 func entry(port:int,kind:String,amount:float,account:String):
@@ -133,6 +134,8 @@ func daily():
      b.loans.erase(loan)
      entry(port,"Insolvenza",float(loan.principal),"porto")
   if ocean.balance(port,"cash")<8 and b.loans.is_empty():lend(port,10)
+  for loan in b.company_loans.duplicate():
+   if ocean.world.sim.day>=int(loan.due):repay_company(port,loan,false)
 
 func balance_sheet(port:int)->Dictionary:
  var b=bank(port)
@@ -140,6 +143,7 @@ func balance_sheet(port:int)->Dictionary:
  var loans=0.0
  for value in b.deposits.values():deposits+=float(value)
  for row in b.loans:loans+=float(row.principal)
+ for row in b.company_loans:loans+=float(row.principal)
  return {"assets":float(b.reserve)+loans,"liabilities":deposits,"equity":float(b.equity),"reserve":float(b.reserve),"loans":loans,"defaults":int(b.defaults)}
 
 func report()->String:
@@ -149,3 +153,48 @@ func report()->String:
   lines.append("%s · riserva %.1f · crediti %.1f\nDepositi %.1f · patrimonio %.1f · insolvenze %d"%[ocean.port_name(int(key)),s.reserve,s.loans,s.liabilities,s.equity,s.defaults])
  for row in ledger.slice(0,8):lines.append("G%d · %s · %s %.2f"%[int(row.day),ocean.port_name(int(row.port)),row.kind,float(row.amount)])
  return "\n".join(lines)
+
+
+func lend_company(port:int,id:int,amount:float)->bool:
+ var b=bank(port)
+ var f=ocean.industry.find(id)
+ if f.is_empty() or not f.active or amount<=0:return false
+ if b.company_loans.any(func(row):return int(row.company)==id):return false
+ var liabilities=0.0
+ for value in b.deposits.values():liabilities+=float(value)
+ if float(b.reserve)-amount<maxf(2,liabilities*.50):return false
+ b.reserve-=amount
+ f.cash+=amount
+ b.company_loans.append({"company":id,"principal":amount,"interest":amount*.06,"due":ocean.world.sim.day+12,"extensions":0})
+ entry(port,"Credito impresa",amount,str(id))
+ return true
+
+func repay_company(port:int,loan:Dictionary,liquidating:bool):
+ var b=bank(port)
+ var f=ocean.industry.find(int(loan.company))
+ var amount=0.0
+ if not f.is_empty():amount=minf(float(f.cash),float(loan.principal)+float(loan.interest))
+ if amount>0:
+  f.cash-=amount
+  b.reserve+=amount
+  var interest_paid=minf(amount,float(loan.interest))
+  loan.interest-=interest_paid
+  loan.principal=maxf(0,float(loan.principal)-amount+interest_paid)
+  b.equity+=interest_paid
+  f.cost+=interest_paid
+  entry(port,"Rata impresa",amount,str(loan.company))
+ if float(loan.principal)+float(loan.interest)<.001:
+  b.company_loans.erase(loan)
+  return
+ loan.extensions=int(loan.extensions)+1
+ loan.due=ocean.world.sim.day+5
+ if liquidating or int(loan.extensions)>=4:
+  b.equity-=float(loan.principal)
+  b.defaults+=1
+  b.company_loans.erase(loan)
+  entry(port,"Insolvenza impresa",float(loan.principal),str(loan.company))
+
+func liquidate_company(port:int,id:int):
+ var b=bank(port)
+ for loan in b.company_loans.duplicate():
+  if int(loan.company)==id:repay_company(port,loan,true)
