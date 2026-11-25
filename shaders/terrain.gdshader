@@ -9,7 +9,7 @@ void fragment(){
  float grain=noise2(wp.xz*3.0)*.14+noise2(wp.xz*13.0)*.06;
  float patches=noise2(wp.xz*.45)*.17;
  float fine=noise2(wp.xz*27.0);
- ALBEDO=COLOR.rgb*(.78+grain*.85+patches);
+ ALBEDO=COLOR.rgb*(.67+grain*.85+patches);
  ALBEDO*=mix(vec3(.96,1.03,.94),vec3(1.06,.98,.89),noise2(wp.xz*1.2));
  ALBEDO*=season_tint.rgb;
  ALBEDO*=.91+fine*.18;
