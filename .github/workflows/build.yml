@@ -53,10 +53,11 @@ jobs:
       - name: Capture real rendered screenshot
         run: |
           set -o pipefail
-          timeout 100s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
+          timeout 180s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
           test -s preview-gameplay.png
           test -s preview-creature.png
+          for scene in frontier city river cave; do test -s "preview-$scene.png"; done
           for pose in walk farm craft eat sleep social; do test -s "preview-pose-$pose.png"; done
           if grep -E 'SCRIPT ERROR|Parse Error|SHADER ERROR' render.log; then exit 1; fi
       - name: Benchmark graphical integration
@@ -70,7 +71,7 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
-          cp README.md ASSET-CREDITS.md qa-report.json build/
+          cp README.md ASSET-CREDITS.md PLAYTEST.md qa-report.json build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
           cp tools/BENCHMARK.bat build/
