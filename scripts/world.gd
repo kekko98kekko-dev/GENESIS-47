@@ -397,12 +397,12 @@ func setup_environment():
  env.ambient_light_energy=.40
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
- env.fog_density=.004
+ env.fog_density=.0013
  env.tonemap_mode=Environment.TONE_MAPPER_FILMIC
- env.tonemap_exposure=1.05
+ env.tonemap_exposure=.83
  env.adjustment_enabled=true
- env.adjustment_saturation=1.08
- env.adjustment_contrast=1.06
+ env.adjustment_saturation=1.14
+ env.adjustment_contrast=1.04
  var en=WorldEnvironment.new()
  en.environment=env
  add_child(en)
@@ -410,7 +410,7 @@ func setup_environment():
  add_child(sun)
  sun.rotation_degrees=Vector3(-53,-37,0)
  sun.light_color=Color("fff0cc")
- sun.light_energy=.90
+ sun.light_energy=.76
  sun.shadow_enabled=true
  sun.directional_shadow_max_distance=115
  sun.shadow_bias=.045
@@ -904,8 +904,8 @@ func make_house(i:int,j:int,era:int):
  villages_root.add_child(n)
  n.position=p
  n.rotation.y=atan2(centers[i].x-p.x,centers[i].z-p.z)
- var tint=Color("729fa0") if i==0 else Color("b78458")
- var wall=Color("d4c5a6") if era<4 else Color("abbfbc")
+ var tint=Color("39766d") if i==0 else Color("a85f3d")
+ var wall=Color("bca784") if era<4 else Color("91aaa5")
  var cover=Node3D.new()
  n.add_child(cover)
  n.set_meta("cover",cover)
@@ -1352,7 +1352,7 @@ func _process(delta:float):
    update_service_labels()
   var phase=fmod(float(sim.day)+tick/1.7,16.0)/16.0
   var daylight=clampf(.66+.43*sin(phase*TAU+.8),.20,1)
-  sun.light_energy=.14+daylight*.83
+  sun.light_energy=.14+daylight*.70
   sun.light_color=Color("a4baff").lerp(Color("ffe7bd"),daylight)
   sun.rotation_degrees=Vector3(-22-daylight*38,-37+sin(phase*TAU)*24,0)
   env.ambient_light_color=Color("a4bdd8").lerp(Color("e2e7d3"),daylight)
