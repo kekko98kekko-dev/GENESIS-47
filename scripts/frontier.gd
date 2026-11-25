@@ -8,9 +8,13 @@ static func terrain(w,x:float,z:float,h:float)->float:
  for i in range(4):
   var c:Vector2=POINTS[i]
   var d=p.distance_to(c)
-  if d<27:
+  if d<33:
+   var delta=p-c
+   var angle=atan2(delta.y,delta.x)
+   var radius=23.0+3.0*sin(angle*3+i*1.7)+2.5*cos(angle*5+i)+2*w.noise.get_noise_2d(x*1.5,z*1.5)
    var peak=[18.0,3.0,7.0,8.0][i]
-   var land=peak*(1-pow(d/23.0,1.65))-1.0+w.noise.get_noise_2d(x,z)*1.8
+   var land=peak*(1-pow(d/maxf(16,radius),1.65))-1.0+w.noise.get_noise_2d(x,z)*2.3
+   if i==0:land+=3.0*exp(-Vector2(x+78,z+5).length_squared()/32.0)
    h=maxf(h,land)
   var a=c.normalized()*27
   var b=c
