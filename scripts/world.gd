@@ -1832,7 +1832,9 @@ func toggle_photo():
 func refresh():
  if top==null or sim.villages.size()!=2:return
  top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,sim.people.size(),int(sim.energy),int(sim.peace)]
- if life_overlay!=null:life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
+ if life_overlay!=null:
+  life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
+  if ocean.enabled:life_overlay.text+="  ·  Colonie %d · Navi %d"%[ocean.colonies.size(),ocean.voyages.size()]
  top.text+="    ·    "+sim.season+" / "+sim.weather_name
  power_label.text=power
  if map_view!=null:map_view.queue_redraw()
@@ -3439,8 +3441,9 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
     house_sites[a.clan].append({"x":q.x,"z":q.z})
    var target_id=int(a.task_target)
    var delivering=bool(a.delivery)
+   var coins_before=float(a.coins)
    if sim.complete_task(a):
-    ocean.work_completed(int(a.clan),kind)
+    ocean.work_completed(a,kind,coins_before)
     if delivering:a.held_goods=""
     completed_visible+=1
     if kind=="explore":discover_near(a,n.position)
@@ -3625,6 +3628,7 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  for row in planted.duplicate():
   if Vector2(p.x-float(row.x),p.z-float(row.z)).length()<=radius:planted.erase(row)
  destroyed_total+=destroyed
+ ocean.damage_colonies(p,radius,damage,kind)
  if not test_mode:debris.spawn(p,clampf(damage/50.0,.6,2.0),kind)
  if terrain_radius>0:alter_ground(p,terrain_delta,terrain_radius)
  rebuild_ruins()
@@ -4553,6 +4557,15 @@ func test_ocean_systems()->bool:
  ocean.settle(pending)
  if absf(float(ocean.balance(port_id,"stone"))-cargo_before-float(pending.amount))>.001:return false
  if absf(float(ocean.balance(0,"cash"))-seller_cash-float(pending.cost))>.001:return false
+ var colony_stock=float(ocean.balance(port_id,"stone"))
+ var cash_after=float(ocean.balance(0,"cash"))
+ if not ocean.place_order(port_id,0,"stone",1.0):return false
+ var refund:Dictionary=ocean.voyages[0]
+ var population=int(ocean.colonies[0].population)
+ ocean.colonies[0].population=0
+ ocean.settle(refund)
+ ocean.colonies[0].population=population
+ if absf(float(ocean.balance(port_id,"stone"))-colony_stock)>.001 or absf(float(ocean.balance(0,"cash"))-cash_after)>.001:return false
  var old_quality=quality_mode
  quality_mode=1
  debris.spawn(centers[0],1.0,"test")
@@ -4562,5 +4575,5 @@ func test_ocean_systems()->bool:
  if fragment.get_child_count()<2 or fragment.linear_velocity.length()<=0:return false
  debris.update(6.0,false)
  if debris.count_bodies()!=0:return false
- print("OCEAN_TEST skeleton=13 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true rigid_bodies=true")
+ print("OCEAN_TEST skeleton=13 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
  return true
