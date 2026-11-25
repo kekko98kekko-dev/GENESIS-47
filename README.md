@@ -62,3 +62,5 @@ Dimore modulari con quattro letti e vista degli interni quando si segue un resid
 
 ## 4.0 — Evoluzione
 Nuove attività: utensili con usura, educazione dei figli, guardia, scontri spaziali; raccolto influenzato da clima e strumenti; risparmi personali (contatore, non mercato completo); rivalità; cantieri progressivi; avamposti produttivi; incendio, tornado, terremoto, epidemia e tsunami a impulsi; pericoli persistenti; contagio di prossimità; preavviso meteorite; corretta versione nei rapporti. Test di crafting, incendio e 1.200 passi spaziali (circa 35 giorni). Modelli e animazioni restano stilizzati; non è una simulazione fisica di fluidi né un mondo a continenti multipli. Nessun servizio a pagamento.
+
+La consegna interrotta conserva il carico personale nei salvataggi; i dialoghi AI sono accodati solo dopo incontri realmente completati, con verifica del formato a due battute e ripiego sui dialoghi offline. La qualità delle battute dipende dal piccolo modello locale. Test di parsing e persistenza del carico.

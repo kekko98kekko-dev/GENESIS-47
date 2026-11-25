@@ -78,6 +78,9 @@ var input:LineEdit
 var model:LineEdit
 var request:HTTPRequest
 var request_target=-1
+var request_partner=-1
+var ai_is_social=false
+var pending_conversations:Array=[]
 var audio:AudioStreamPlayer
 var cursor:MeshInstance3D
 var weather_timer=0.0
@@ -2030,6 +2033,8 @@ func ask_ai():
 
 func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray):
  var autonomous=ai_is_autonomous
+ var social=ai_is_social
+ ai_is_social=false
  ai_busy=false
  ai_is_autonomous=false
  if ai_button!=null:ai_button.disabled=false
@@ -2045,6 +2050,10 @@ func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
    if not choices.is_empty():reply=str(choices[0].get("message",{}).get("content","")).strip_edges().left(650)
   if reply!="":
    ai_reply_received=true
+   if social:
+    apply_generated_exchange(a,sim.find(request_partner),reply)
+    refresh()
+    return
    if autonomous:
     var intent=reply.split("|",true,1)[0].strip_edges().to_upper()
     if not intent in ["RICERCA","CIBO","CURA","PACE","ESPLORA"]:
@@ -2310,6 +2319,7 @@ func self_test():
  if not test_services():failed=true
  if not test_life_upgrade():failed=true
  if not test_integrated_upgrade():failed=true
+ if not test_exchange_and_inventory():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2378,7 +2388,7 @@ func populate_powers(i:int):
  var entries=group.duplicate()
  if not entries.has("Osserva"):entries.push_front("Osserva")
  for name_value in entries:
-  var cost=18 if name_value in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago"] else 9
+  var cost=18 if name_value in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Incendio","Terremoto","Tornado","Epidemia"] else 9
   var display=name_value if name_value=="Osserva" else name_value+"  ·  "+str(cost)
   var b=button(power_grid,display,func():
    power=name_value
@@ -2702,6 +2712,9 @@ func notify_event(heading:String,message:String):
 func reset_ai_request():
  if is_instance_valid(request):request.cancel_request()
  request_target=-1
+ request_partner=-1
+ ai_is_social=false
+ pending_conversations.clear()
  ai_busy=false
  ai_is_autonomous=false
  last_ai_day=-1
@@ -2710,6 +2723,7 @@ func reset_ai_request():
 
 func ask_autonomous():
  if sim.people.is_empty() or not is_instance_valid(request) or ai_busy:return
+ if request_social_exchange():return
  var adults=sim.people.filter(func(a):return a.age>=14 and int(a.get("intention_until",0))<=sim.day)
  if adults.is_empty():return
  var a=adults[rng.randi_range(0,adults.size()-1)]
@@ -3343,6 +3357,7 @@ func cancel_task(a:Dictionary,r:Dictionary):
  leave_interior(r)
  claims.erase(int(a.id))
  a.station_id=""
+ if a.delivery and a.cargo!="":a.held_goods=a.cargo
  a.delivery=false
  a.cargo=""
  a.last_task=a.task
@@ -3378,12 +3393,16 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  if float(r.get("retry",0))>0:
   r.retry=maxf(0,float(r.retry)-dt)
   return false
- if a.task!="" and not a.delivery and a.task not in ["eat","sleep","heal"] and (a.hunger>=91 and sim.villages[a.clan].food>=1 or a.fatigue>=94 or a.health<35):
+ if a.task!="" and a.task not in ["eat","sleep","heal"] and (a.hunger>=91 and sim.villages[a.clan].food>=1 or a.fatigue>=94 or a.health<35):
   cancel_task(a,r)
   return false
  if a.task=="":
   leave_interior(r)
-  sim.begin_task(a,sim.choose_task(a,available_actions(a,r) if sim.spatial_autonomy else {}))
+  if sim.spatial_autonomy and a.held_goods!="" and a.hunger<90 and a.fatigue<94 and a.health>=35 and nearest_service(a,"store",n.position)!="":
+   sim.begin_task(a,{"kind":"farm" if a.held_goods=="Cibo" else "gather","target":-1,"duration":1.0,"reason":"Consegna il materiale conservato"})
+   a.delivery=true
+   a.cargo=a.held_goods
+  else:sim.begin_task(a,sim.choose_task(a,available_actions(a,r) if sim.spatial_autonomy else {}))
  if sim.spatial_autonomy and a.task not in ["social","aid","teach","explore"] and not str(a.station_id).is_empty() and not services.has(str(a.station_id)):
   cancel_task(a,r)
   return false
@@ -3446,6 +3465,7 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   if sim.spatial_autonomy and a.task in ["farm","gather"] and not a.delivery:
    claims.erase(int(a.id))
    a.cargo="Cibo" if a.task=="farm" else "Legna"
+   a.held_goods=a.cargo
    a.delivery=true
    a.station_id=""
    a.task_left=1.0
@@ -3459,10 +3479,13 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
     var q:Vector3=site.get("site",site.pos)
     house_sites[a.clan].append({"x":q.x,"z":q.z})
    var target_id=int(a.task_target)
+   var delivering=bool(a.delivery)
    if sim.complete_task(a):
+    if delivering:a.held_goods=""
     completed_visible+=1
     if kind=="explore":discover_near(a,n.position)
     if kind=="social" and not test_mode:
+     if portable_ai and pending_conversations.size()<5 and target_id>=0:pending_conversations.append({"a":a.id,"b":target_id,"day":sim.day})
      life_bubble(n.position,str(a.special_memory).left(42),Color("d6edd0"))
      if actors.has(target_id):life_bubble(actors[target_id].node.position,"Ti ascolto.",Color("f2d4a4"))
     if kind=="house" and not test_mode:life_bubble(n.position,"NUOVA CASA",Color("f2d4a4"))
@@ -3775,7 +3798,7 @@ func rebuild_services():
   register_service("play",i,c+Vector3(-3.0,0,3.0),4,"PIAZZA")
   register_service("build",i,c+Vector3(3.0,0,-3.0),3,"OPERA CIVILE")
   if sim.villages[i].tech>=2:register_service("craft",i,c+Vector3(-4.5,0,0),2,"OFFICINA")
-  register_service("guard",i,c.lerp(centers[1-i],.34),4,"CONFINE")
+  register_service("guard",i,c.lerp(centers[1-i],.47),4,"CONFINE")
   for home in houses[i]:
    var q:Vector3=home.node.position
    var door=q+(c-q).normalized()*2.0
@@ -3892,7 +3915,7 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
  var marks={"craft":"OFFICINA","teach":"FAMIGLIA","guard":"GUARDIA","eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
  marker.text="FUGA!" if a.task_stage=="Fugge" else "TRASPORTO" if a.delivery else str(marks.get(active,""))
  marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
- var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else ""
+ var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else "cargo_"+str(a.held_goods) if a.held_goods!="" else ""
  if str(r.get("prop_kind",""))!=visual:
   r["prop_kind"]=visual
   for child in prop.get_children():
@@ -4223,8 +4246,8 @@ func update_hazards(dt:float):
    h.pulse=0.0
    var radius=3.0+float(h.age)*.22 if h.kind=="fire" else 3.5 if h.kind=="tornado" else minf(11.0,2.0+float(h.age)*1.8)
    var cell=site_key(str(h.kind),0,pos)
-   if not h.hit.has(cell) or h.kind=="flood":
-    h.hit.append(cell)
+   if not h.hit.has(cell) or h.kind in ["flood","fire"]:
+    if not h.hit.has(cell):h.hit.append(cell)
     disaster(pos,"Incendio" if h.kind=="fire" else "Tornado" if h.kind=="tornado" else "Tsunami",radius,28.0,0.0,0.0)
  if changed:rebuild_hazards()
 
@@ -4299,3 +4322,64 @@ func test_live_world()->bool:
  print("LIVE_WORLD_TEST days=",days," initial=",initial," living=",living," tasks=",work," houses=",houses[0].size()+houses[1].size()," food=",sim.villages[0].food+sim.villages[1].food)
  sim.spatial_autonomy=false
  return days>=30 and living>0 and work>100
+
+func request_social_exchange()->bool:
+ while not pending_conversations.is_empty():
+  var row=pending_conversations.pop_front()
+  if sim.day-int(row.day)>12:continue
+  var a=sim.find(int(row.a))
+  var b=sim.find(int(row.b))
+  if a.is_empty() or b.is_empty():continue
+  var prompt="Scrivi due battute brevi in italiano tra due creature immaginarie. %s: %s, umore %d. %s: %s, umore %d. Situazione: hanno appena parlato nel villaggio. Formato esatto: battuta della prima|risposta della seconda. Massimo 8 parole per battuta."%[a.name,a.role,int(a.mood),b.name,b.role,int(b.mood)]
+  var payload={"model":"genesis-local","messages":[{"role":"user","content":prompt}],"stream":false,"max_tokens":70,"temperature":.55}
+  var err=request.request("http://127.0.0.1:17847/v1/chat/completions",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
+  if err!=OK:return false
+  request_target=a.id
+  request_partner=b.id
+  ai_busy=true
+  ai_is_social=true
+  ai_is_autonomous=false
+  ai_cooldown=12.0
+  last_ai_day=sim.day
+  if ai_button!=null:ai_button.disabled=true
+  return true
+ return false
+
+func apply_generated_exchange(a:Dictionary,b:Dictionary,reply:String)->bool:
+ if a.is_empty() or b.is_empty():return false
+ var parts=reply.split("|",false,1)
+ if parts.size()!=2:return false
+ var first=parts[0].strip_edges().left(100)
+ var second=parts[1].strip_edges().left(100)
+ if first.is_empty() or second.is_empty():return false
+ for citizen in [a,b]:
+  sim.record_dialogue(citizen,a.name+" · AI",first)
+  sim.record_dialogue(citizen,b.name+" · AI",second)
+ a.special_memory=first
+ b.special_memory=second
+ a.special_until=sim.day+3
+ b.special_until=sim.day+3
+ if actors.has(a.id):life_bubble(actors[a.id].node.position,first.left(48),Color("b6dcf2"))
+ if actors.has(b.id):life_bubble(actors[b.id].node.position,second.left(48),Color("d6e5c0"))
+ return true
+
+func test_exchange_and_inventory()->bool:
+ new_world(47,0)
+ sim.spatial_autonomy=true
+ var a=sim.people[0]
+ var b=sim.people[1]
+ var previous=a.dialogue.size()
+ if not apply_generated_exchange(a,b,"Buon giorno.|Come stai?") or a.dialogue.size()!=previous+2:return false
+ if apply_generated_exchange(a,b,"test senza separatore"):return false
+ var r=actors[a.id]
+ a.task="farm"
+ a.cargo="Cibo"
+ a.delivery=true
+ cancel_task(a,r)
+ if a.held_goods!="Cibo" or a.delivery:return false
+ var sample=Sim.new()
+ if not sample.import_state(JSON.parse_string(JSON.stringify(sim.export_state()))):return false
+ if sample.find(int(a.id)).held_goods!="Cibo":return false
+ print("EXCHANGE_INVENTORY_TEST dialogue=true retained_cargo=true saved=true")
+ sim.spatial_autonomy=false
+ return true

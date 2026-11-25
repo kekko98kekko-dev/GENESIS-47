@@ -703,6 +703,8 @@ func init_tasks(a:Dictionary):
  a["station_id"]=str(a.get("station_id",""))
  a["delivery"]=bool(a.get("delivery",false))
  a["cargo"]=str(a.get("cargo",""))
+ a["held_goods"]=str(a.get("held_goods",""))
+ if a.held_goods not in ["","Cibo","Legna"]:a.held_goods=""
  a["stress"]=clampf(float(a.get("stress",0)),0,100)
  a["grief_until"]=int(a.get("grief_until",0))
  a["emotion"]=str(a.get("emotion","Sereno"))
