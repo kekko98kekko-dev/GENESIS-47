@@ -1768,7 +1768,7 @@ func setup_ui():
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
- button(row,"Poteri",func():left_panel.visible=not left_panel.visible)
+ button(row,"Poteri [P]",func():left_panel.visible=not left_panel.visible;refresh())
  button(row,"Vite",func():right_panel.visible=not right_panel.visible;inspector_tabs.current_tab=0)
  button(row,"Cronaca",show_legend)
  button(row,"Guida",show_help)
@@ -1785,7 +1785,7 @@ func setup_ui():
  fps_label.modulate=Color("a7d9bc")
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
- var left=panel(hud,Rect2(14,104,196,620),.94)
+ var left=panel(hud,Rect2(14,104,196,430),.94)
  left_panel=left
  var lv=VBoxContainer.new()
  left.add_child(lv)
@@ -1797,7 +1797,7 @@ func setup_ui():
  lv.add_child(power_category)
  power_category.item_selected.connect(func(i):populate_powers(i))
  var scroll=ScrollContainer.new()
- scroll.custom_minimum_size=Vector2(155,285)
+ scroll.custom_minimum_size=Vector2(155,216)
  scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
  scroll.size_flags_vertical=Control.SIZE_EXPAND_FILL
  lv.add_child(scroll)
@@ -1997,7 +1997,7 @@ func refresh():
  for colony in ocean.colonies:global_population+=int(colony.population)
  for voyage in ocean.voyages:
   if voyage.kind=="settle":global_population+=voyage.crew.size()
- if is_instance_valid(map_panel):map_panel.visible=not left_panel.visible and player_hud
+ if is_instance_valid(map_panel):map_panel.visible=player_hud
  if is_instance_valid(map_region):map_region.text=Art.BIOMES[Art.biome(self,ground(focus.x,focus.z))]
  if is_instance_valid(journey_label):journey_label.text=legend.goal_text()
  if is_instance_valid(legend_view) and inspector_tabs.current_tab==5:legend_view.text=legend.report()+"\n\n"+wildlife.report()
@@ -2530,15 +2530,24 @@ func capture_preview():
  var image=get_viewport().get_texture().get_image()
  var err=image.save_png("res://preview.png")
  hud.show()
+ left_panel.hide()
+ right_panel.hide()
  focus=centers[0]
  distance=22
  pitch=.58
  selected=sim.people[0].id if not sim.people.is_empty() else -1
+ for citizen in sim.people:
+  if actors.has(citizen.id):Art.portrait(self,actors[citizen.id],citizen)
  refresh()
  update_camera()
  await get_tree().create_timer(.4).timeout
  await RenderingServer.frame_post_draw
  get_viewport().get_texture().get_image().save_png("res://preview-gameplay.png")
+ right_panel.show()
+ refresh()
+ await get_tree().create_timer(.25).timeout
+ await RenderingServer.frame_post_draw
+ get_viewport().get_texture().get_image().save_png("res://preview-inspector.png")
  hud.hide()
  if actors.has(selected):
   focus=actors[selected].node.position
@@ -2652,7 +2661,7 @@ func toggle_compact():
  player_hud=not compact
  if is_instance_valid(left_panel):left_panel.visible=not compact
  if is_instance_valid(right_panel):right_panel.visible=not compact
- if is_instance_valid(map_panel):map_panel.visible=false
+ if is_instance_valid(map_panel):map_panel.visible=not compact
  if hint!=null:hint.text="TAB per ripristinare i pannelli" if compact else "WASD · rotella · tasto destro · F10 foto"
 
 func show_options():
@@ -3256,8 +3265,10 @@ func start_onboarding():
  show_onboarding_step()
 
 func show_onboarding_step():
- var steps=["1/5 · Sposta la vista con WASD, ruota tenendo premuto il destro e usa la rotella per avvicinarti.","2/5 · Clicca una creatura per conoscerla. Un doppio clic la segue; puoi anche usare Casuale e Segui.","3/5 · A sinistra scegli Vita o Guarigione, poi clicca sul terreno. Osserva annulla il potere.","4/5 · A destra, Mondo mostra civiltà, scoperte e segnali. Dialogo permette di parlare con un abitante.","5/5 · Usa Pausa e le velocità in basso. F5 salva, F9 carica, F6 avvia il tour. In Eternità non devi vincere."]
+ var steps=["1/5 · Sposta la vista con WASD, ruota tenendo premuto il destro e usa la rotella per avvicinarti.","2/5 · Clicca una creatura per conoscerla. Un doppio clic la segue; puoi anche usare Casuale e Segui.","3/5 · Premi P per aprire i poteri, scegli Vita o Guarigione e clicca sul terreno. Esc torna a Osserva.","4/5 · Premi L per leggere la Leggenda. Apri Vite per conoscere civiltà, scoperte e dialoghi.","5/5 · Usa Pausa e le velocità in basso. F5 salva, F9 carica, F6 avvia il tour. In Eternità non devi vincere."]
  onboarding_label.text=steps[clampi(onboarding_step,0,4)]
+ if onboarding_step==2:left_panel.show()
+ if onboarding_step==3:right_panel.show()
 
 func advance_onboarding():
  onboarding_step+=1
@@ -3563,6 +3574,11 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  if a.task=="":
   leave_interior(r)
   if sim.spatial_autonomy and a.held_goods=="":
+   if not test_mode and not ocean.industry.jobs.has(str(int(a.id))):
+    var ritual=int(legend.ritual_advance(a,n,dt))
+    if ritual>=0:
+     r.planned_task=""
+     return ritual==1
    var job=int(ocean.industry.advance(int(a.clan),a,n,dt))
    if job>=0:
     a.activity="Lavora in impresa" if job==0 else "Trasporta per impresa"
@@ -4272,14 +4288,34 @@ func rebuild_discoveries():
    for i in range(1,REGION_POINTS.size()):
     var point:Vector2=REGION_POINTS[i]
     discovery_sites.append({"x":point.x,"z":point.y,"found":false,"name":REGION_NAMES[i]})
+  if ocean.enabled:
+   for spec in [[-20,-17,"Arco dei titani"],[20,-15,"Terrazze cremisi"],[-5,24,"Fonte delle origini"],[24,15,"Cerchio degli antichi"]]:
+    var p=land_near(float(spec[0]),float(spec[1]))
+    if p.y>SEA+.4 and far_village(p,6):discovery_sites.append({"x":p.x,"z":p.z,"found":false,"name":spec[2]})
  for row in discovery_sites:
   var q=ground(float(row.x),float(row.z))
   if q.y<SEA+.3:continue
   var n=Node3D.new()
   discovery_root.add_child(n)
   n.position=q
-  cone(n,Color("777e79"),Vector3(0,.38,0),.42,.76,.15,6)
-  sphere(n,Color("a6dfc8") if row.found else Color("d5b66d"),Vector3(0,.9,0),Vector3(.23,.34,.23),.8)
+  if str(row.name)=="Arco dei titani":
+   for side in [-1,1]:cone(n,Color("8c9991"),Vector3(side*.65,1.0,0),.38,2.0,.26,6)
+   block(n,Color("aab5a5"),Vector3(0,2.02,0),Vector3(1.95,.47,.63))
+  elif str(row.name)=="Fonte delle origini":
+   cone(n,Color("748781"),Vector3(0,.12,0),1.0,.24,1.0,12)
+   cone(n,Color("61aab4"),Vector3(0,.25,0),.82,.045,.82,16,.15)
+   sphere(n,Color("d0e5d6"),Vector3(0,.55,0),Vector3(.11,.65,.11),.3)
+  elif str(row.name)=="Cerchio degli antichi":
+   for i in range(7):
+    var angle=i*TAU/7
+    cone(n,Color("9c9e8c"),Vector3(cos(angle)*1.0,.60,sin(angle)*1.0),.21,1.2,.12,6)
+   sphere(n,Color("e7cc92"),Vector3.UP*.46,Vector3(.38,.62,.38),.35)
+  elif str(row.name)=="Terrazze cremisi":
+   for i in range(3):block(n,Color("b38a62"),Vector3(0,.15+i*.27,0),Vector3(2.1-i*.48,.30,1.7-i*.38))
+   cone(n,Color("d3ae73"),Vector3.UP*1.02,.27,.55,.08,7)
+  else:
+   cone(n,Color("777e79"),Vector3(0,.38,0),.42,.76,.15,6)
+   sphere(n,Color("a6dfc8") if row.found else Color("d5b66d"),Vector3(0,.9,0),Vector3(.23,.34,.23),.8)
   if row.found:
    var tag=Label3D.new()
    n.add_child(tag)
@@ -5125,6 +5161,16 @@ func test_player_experience()->bool:
  legend.worship[0].love=80.0
  legend.daily()
  if not legend.worship[0].temple or legend_root.get_child_count()<1:return false
+ a.age=20
+ a.hunger=0
+ a.fatigue=0
+ a.health=100
+ a.faith=80
+ sim.day+=posmod(-sim.day-int(a.id),14)
+ for i in range(180):
+  legend.ritual_advance(a,actors[a.id].node,.25)
+  if int(legend.worship[0].visits)>0:break
+ if int(legend.worship[0].visits)<1:return false
  if wildlife.life.is_empty():return false
  var fauna_count=wildlife.life.size()
  var b=sim.people[1]
@@ -5140,5 +5186,5 @@ func test_player_experience()->bool:
  for ext in ["",".bak",".tmp"]:
   if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
  if not ok or legend.journey!=4 or legend.monuments.size()!=1 or not legend.worship[0].temple or wildlife.life.size()!=fauna_count:return false
- print("EXPERIENCE_TEST journey=true witnesses=true faith=true shrine=true memorial=true wildlife=true persistence=true")
+ print("EXPERIENCE_TEST journey=true witnesses=true faith=true shrine=true pilgrimage=true memorial=true wildlife=true persistence=true")
  return true
