@@ -53,11 +53,13 @@ jobs:
       - name: Capture real rendered screenshot
         run: |
           set -o pipefail
-          timeout 360s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
+          timeout 480s xvfb-run -a -s '-screen 0 1440x900x24' godot --path . --rendering-method gl_compatibility --resolution 1440x900 -- --capture 2>&1 | tee render.log
           test -s preview.png
           test -s preview-gameplay.png
           test -s preview-creature.png
           for scene in frontier city river cave title; do test -s "preview-$scene.png"; done
+          test -s growth-evidence.json
+          test -s preview-colossus.png
           for era in 0 2 4; do test -s "preview-art-era-$era.png"; done
           for kind in 0 1 2; do test -s "preview-art-anatomy-$kind.png"; done
           for scene in before heal meteor aftermath; do test -s "preview-art-$scene.png"; done
@@ -74,7 +76,7 @@ jobs:
           mkdir -p build
           godot --headless --path . --export-release "Windows Desktop" build/GENESIS47.exe
           test -s build/GENESIS47.exe
-          cp README.md ART_DIRECTION.md ASSET-CREDITS.md PLAYTEST.md qa-report.json build/
+          cp README.md ART_DIRECTION.md ASSET-CREDITS.md PLAYTEST.md qa-report.json growth-evidence.json build/
           for img in preview*.png; do if [ -f "$img" ]; then cp "$img" build/; fi; done
           cp assets/generated/catalog.json build/asset-catalog.json
           cp tools/BENCHMARK.bat build/
@@ -92,6 +94,7 @@ jobs:
           path: |
             *.log
             qa-report.json
+            growth-evidence.json
             preview*.png
             assets/generated/catalog.json
           retention-days: 7
