@@ -3,6 +3,8 @@ const Sim=preload("res://scripts/sim.gd")
 const Ocean=preload("res://scripts/ocean.gd")
 const CreatureRig=preload("res://scripts/creature_rig.gd")
 const DebrisPhysics=preload("res://scripts/debris_physics.gd")
+const Hydro=preload("res://scripts/hydrology.gd")
+const Structure=preload("res://scripts/structure.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -11,6 +13,10 @@ const SAVE_PREFIX="user://genesis47_slot"
 var sim=Sim.new()
 var ocean=Ocean.new()
 var debris=DebrisPhysics.new()
+var hydro=Hydro.new()
+var hydro_root:Node3D
+var hydro_saved={}
+var colony_selected=-1
 var ocean_root:Node3D
 var physics_root:Node3D
 var market_view:RichTextLabel
@@ -509,6 +515,13 @@ func make_terrain():
  season_material=m
  last_season=""
  add_child(earth)
+ var terrain_body=StaticBody3D.new()
+ earth.add_child(terrain_body)
+ terrain_body.collision_layer=4
+ terrain_body.collision_mask=4
+ var terrain_shape=CollisionShape3D.new()
+ terrain_shape.shape=earth.mesh.create_trimesh_shape()
+ terrain_body.add_child(terrain_shape)
  if not is_instance_valid(sea):
   sea=MeshInstance3D.new()
   var wm=PlaneMesh.new()
@@ -533,6 +546,8 @@ func make_terrain():
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  expanded_world=expanded or ocean_mode
+ hydro_saved={}
+ colony_selected=-1
  set_tour(false)
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
@@ -570,7 +585,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -623,6 +638,9 @@ func reset_visuals():
  physics_root=Node3D.new()
  add_child(physics_root)
  debris.reset(self,physics_root)
+ hydro_root=Node3D.new()
+ add_child(hydro_root)
+ hydro.reset(self,hydro_root,hydro_saved)
  rebuild_regional_bridges()
  hazard_nodes.clear()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
@@ -776,6 +794,7 @@ func house_location(i:int,j:int)->Vector3:
 
 func make_house(i:int,j:int,era:int):
  var site=house_sites[i][j]
+ Structure.normalize(site)
  var p=ground(float(site.x),float(site.z))
  var n=Node3D.new()
  villages_root.add_child(n)
@@ -814,6 +833,7 @@ func make_house(i:int,j:int,era:int):
   if era>=5:cone(cover,Color("b7e4db"),Vector3(0,h+.63,0),.25,.82,.03,8,.5)
  for side in [-1,1]:block(cover,Color("80664f"),Vector3(side*.49,.62,1.13),Vector3(.08,1.25,.10))
  interior.visible=false
+ show_structure(n,site)
  return n
 
 
@@ -986,6 +1006,9 @@ func apply_changes():
     services_dirty=true
     if selected==e.id:selected=-1
    "death":
+    if ocean.enabled:
+     ocean.finance.settle_depositor(int(e.get("clan",0)),int(e.id))
+     ocean.change(int(e.get("clan",0)),"cash",float(e.get("cash",0)))
     claims.erase(int(e.id))
     if actors.has(e.id):
      var n=actors[e.id].node
@@ -1033,6 +1056,7 @@ func step_day():
  ocean.daily()
  apply_changes()
  if sim.day%7==0:
+  repair_structures()
   rebuild_farms()
   services_dirty=true
  if sim.crises_seen>previous_crises:
@@ -1152,6 +1176,8 @@ func _process(delta:float):
    society_tick=0.0
    spatial_society()
   update_worksites()
+  ocean.life.tick(delta*minf(speed,20.0))
+  hydro.tick(delta*minf(speed,12.0))
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1303,6 +1329,7 @@ func select_at(mouse:Vector2):
  var best=28.0
  var nearest_depth=INF
  selected=-1
+ colony_selected=-1
  following=false
  for id in actors:
   var p:Vector3=actors[id].node.position+Vector3(0,.55,0)
@@ -1313,6 +1340,18 @@ func select_at(mouse:Vector2):
    best=dist
    nearest_depth=depth
    selected=id
+ for id in ocean.life.actors:
+  var p:Vector3=ocean.life.actors[id].node.position+Vector3(0,.55,0)
+  if camera.is_position_behind(p):continue
+  var dist=camera.unproject_position(p).distance_to(mouse)
+  if dist<best:
+   best=dist
+   selected=-1
+   colony_selected=int(id)
+ if colony_selected>=0:
+  var a=ocean.life.find(colony_selected)
+  if not a.is_empty():
+   open_dialog(str(a.name),colony_citizen_report(a))
  refresh()
 
 func spark(p:Vector3,c:Color,scale_value=1.0):
@@ -1500,6 +1539,7 @@ func divine(p:Vector3):
    color=Color("ceebff")
    disaster(p,"Fulmine",2.4,70.0,0.0,0.0)
   "Tsunami":
+   hydro.inject(p,18.0)
    wave(p)
    color=Color("7fc9dd")
    start_hazard("flood",p,6.0)
@@ -1837,7 +1877,11 @@ func toggle_photo():
 
 func refresh():
  if top==null or sim.villages.size()!=2:return
- top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,sim.people.size(),int(sim.energy),int(sim.peace)]
+ var global_population=sim.people.size()
+ for colony in ocean.colonies:global_population+=int(colony.population)
+ for voyage in ocean.voyages:
+  if voyage.kind=="settle":global_population+=voyage.crew.size()
+ top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,global_population,int(sim.energy),int(sim.peace)]
  if life_overlay!=null:
   life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
   if ocean.enabled:life_overlay.text+="  ·  Colonie %d · Navi %d"%[ocean.colonies.size(),ocean.voyages.size()]
@@ -2067,6 +2111,7 @@ func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["expanded_world"]=expanded_world
  d["ocean"]=ocean.export_state()
+ d["hydrology"]=hydro.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2127,6 +2172,8 @@ func load_path(p:String)->bool:
  set_tour(false)
  sim=candidate
  ocean.restore(self,data.get("ocean",{}))
+ hydro_saved=data.get("hydrology",{})
+ colony_selected=-1
  var advanced=0
  if absent_progress and not test_mode:
   advanced=sim.advance_absence(maxf(0,Time.get_unix_time_from_system()-float(data.get("saved_at",Time.get_unix_time_from_system()))))
@@ -2312,6 +2359,7 @@ func self_test():
  if not test_behavior_brain():failed=true
  if not test_culture_and_regions():failed=true
  if not test_ocean_systems():failed=true
+ if not test_deep_simulation():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -3586,6 +3634,11 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
    var dist=flat_dist(pos,p)
    if dist>radius+0.85:continue
    if kind=="Fulmine" and dist>2.4:continue
+   var site:Dictionary=house_sites[i][j]
+   var stress=damage if damage>=105 else damage*(1.0-.45*dist/maxf(.1,radius))
+   if not Structure.stress(site,p,stress,kind,int(sim.villages[i].era)):
+    show_structure(home.node,site)
+    continue
    ruins.append({"x":pos.x,"z":pos.z,"clan":i,"until":sim.day+14})
    house_sites[i].remove_at(j)
    home.node.hide()
@@ -4288,7 +4341,7 @@ func test_integrated_upgrade()->bool:
  start_hazard("fire",houses[0][0].node.position,12.0)
  if hazards.size()!=1 or hazard_nodes.is_empty():return false
  var before=destroyed_total
- update_hazards(2.1)
+ for pulse in range(3):update_hazards(2.1)
  if destroyed_total<=before:return false
  print("INTEGRATED_TEST craft=true tool_wear=true fire=true")
  sim.spatial_autonomy=false
@@ -4588,4 +4641,96 @@ func test_ocean_systems()->bool:
  debris.update(6.0,false)
  if debris.count_bodies()!=0:return false
  print("OCEAN_TEST skeleton=13 disconnected_land=true water_route=true emigration=true colony=true escrow=true save=true delivery=true refund=true rigid_bodies=true")
+ return true
+
+
+func show_structure(node:Node3D,site:Dictionary):
+ var cover:Node3D=node.get_meta("cover")
+ if not is_instance_valid(cover):return
+ var health=Structure.integrity(site)
+ cover.rotation.z=(1.0-health/100.0)*.09*(1 if float(site.supports[0])<float(site.supports[1]) else -1)
+ cover.position.y=-(1.0-health/100.0)*.10
+ for child in cover.get_children():
+  if child is MeshInstance3D:
+   child.transparency=0.0
+
+func repair_structures():
+ for clan in range(2):
+  var village=sim.villages[clan]
+  for i in range(house_sites[clan].size()):
+   var site:Dictionary=house_sites[clan][i]
+   var cost=Structure.repair(site,float(village.wood))
+   village.wood-=cost
+   if cost>0 and i<houses[clan].size():show_structure(houses[clan][i].node,site)
+
+func flood_damage(model):
+ var impacted=[]
+ for clan in range(2):
+  for home in houses[clan]:
+   var p:Vector3=home.node.position
+   var d=float(model.at(p))
+   if d>.40:impacted.append([p,minf(40,d*12)])
+ for row in impacted:
+  disaster(row[0],"Alluvione",1.1,float(row[1]),0,0)
+ for a in sim.people:
+  if actors.has(a.id):
+   var d=float(model.at(actors[a.id].node.position))
+   if d>.4:a.health=maxf(1,float(a.health)-minf(12,d*3))
+
+func colony_citizen_report(a:Dictionary)->String:
+ return "%s\nEtà: %d · Salute: %d · Fame: %d\nUmore: %d · Stanchezza: %d\nAzione: %s · %s\nRisparmi: %.1f · Attività concluse: %d\nGenitori: %s · Partner: %d\n\n%s"%[a.name,int(a.age),int(a.health),int(a.hunger),int(a.mood),int(a.fatigue),str(ocean.life.LABELS.get(a.task,"Decide")),str(a.task_stage),float(a.coins),int(a.tasks_done),str(a.parents),int(a.partner),"\n".join(a.memories)]
+
+func test_deep_simulation()->bool:
+ new_world(47,0,true,true)
+ sim.villages[0].tech=2
+ sim.villages[0].food=100.0
+ sim.villages[0].wood=100.0
+ var first=sim.people[0]
+ var rig:Dictionary=actors[first.id].skeletal
+ if rig.skins.size()!=4:return false
+ var mesh:MeshInstance3D=rig.skins[0]
+ var arrays=mesh.mesh.surface_get_arrays(0)
+ if mesh.skin==null or arrays[Mesh.ARRAY_WEIGHTS].size()<16:return false
+ var weights:PackedFloat32Array=arrays[Mesh.ARRAY_WEIGHTS]
+ for i in range(0,weights.size(),4):
+  if absf(weights[i]+weights[i+1]+weights[i+2]+weights[i+3]-1.0)>.001:return false
+ var first_id=int(first.id)
+ var cash_before=float(ocean.balance(0,"cash"))
+ if not ocean.finance.capitalize(0,20):return false
+ if not ocean.finance.deposit(0,first_id,1):return false
+ if not ocean.finance.lend(0,5):return false
+ var sheet:Dictionary=ocean.finance.balance_sheet(0)
+ if absf(float(sheet.assets)-float(sheet.liabilities)-float(sheet.equity))>.001:return false
+ if not ocean.finance.withdraw(0,first_id,1):return false
+ if absf(float(ocean.balance(0,"cash"))-cash_before+15)>.001:return false
+ if not ocean.recruit(0,1):return false
+ apply_changes()
+ var row:Dictionary=ocean.voyages[0]
+ ocean.settle(row)
+ ocean.sync_visuals()
+ var c:Dictionary=ocean.colonies[0]
+ if c.citizens.size()!=2 or not ocean.life.actors.has(first_id):return false
+ for i in range(240):ocean.life.tick(.25)
+ if int(c.completed_tasks)<=0 or c.citizens.size()!=int(c.population):return false
+ var location:Vector3=centers[0]
+ hydro.inject(location,8.0)
+ var mass_before=hydro.mass()
+ for i in range(8):hydro.step(.20)
+ if absf(hydro.mass()+hydro.drained-mass_before)>.01:return false
+ if hydro.at(location)>=mass_before:return false
+ var site={"x":location.x,"z":location.z}
+ if Structure.stress(site,location,15.0,"Terremoto",0):return false
+ if Structure.integrity(site)>=100:return false
+ for i in range(5):Structure.stress(site,location,25.0,"Terremoto",0)
+ if Structure.integrity(site)>=22:return false
+ var path="user://genesis47_deep_test.json"
+ var tasks=int(c.completed_tasks)
+ if not save_path(path,false):return false
+ new_world(47,0)
+ var loaded=load_path(path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
+ if not loaded or ocean.colonies.size()!=1 or int(ocean.colonies[0].completed_tasks)!=tasks:return false
+ if not ocean.life.actors.has(first_id) or hydro.mass()<=0 or ocean.finance.banks.is_empty():return false
+ print("DEEP_TEST skin_weights=true colony_agents=true local_jobs=true bank_balance=true flood_mass=true structural_damage=true persistence=true")
  return true
