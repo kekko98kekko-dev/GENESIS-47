@@ -2,7 +2,7 @@
 import json, pathlib, urllib.request, urllib.parse, zipfile, io, shutil, re, sys
 root=pathlib.Path("assets/generated")
 root.mkdir(parents=True,exist_ok=True)
-catalog={k:[] for k in ("tree","rock","house","industrial","future","animal","creature","prop","farm","early","cart")}
+catalog={k:[] for k in ("tree","rock","house","industrial","future","animal","creature","prop","farm","early","cart","reborn_tree","reborn_understory","reborn_home","reborn_civic","reborn_prop","reborn_crop","reborn_beast")}
 def get(url):
     req=urllib.request.Request(url,headers={"User-Agent":"GENESIS-47-asset-build"})
     with urllib.request.urlopen(req,timeout=50) as r:return r.read()
@@ -103,7 +103,48 @@ def creatures():
             target.write_text(json.dumps(obj))
             add("creature",target)
         except Exception as e:print("CREATURE WARNING",e)
+def reborn():
+    # Pinned CC0 source, selected names verified against the repository tree.
+    repo="agentkaerf/FreeModels"
+    ref="db3df04d1e4714298a09510b26fb6de6645138a2"
+    raw=f"https://raw.githubusercontent.com/{repo}/{ref}/"
+    def gltf(kind,folder,name):
+        p=pathlib.PurePosixPath(folder)/("glTF")/(name+".gltf")
+        obj=json.loads(get(raw+urllib.parse.quote(str(p),safe="/")))
+        dest=root/kind/name.lower()
+        dest.mkdir(parents=True,exist_ok=True)
+        for it in obj.get("buffers",[])+obj.get("images",[]):
+            uri=it.get("uri","")
+            if not uri or uri.startswith("data:"):continue
+            rel=pathlib.PurePosixPath(urllib.parse.unquote(uri))
+            if rel.is_absolute() or ".." in rel.parts:raise ValueError("Unsafe glTF path")
+            target=dest/pathlib.Path(*rel.parts)
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(get(raw+urllib.parse.quote(str(p.parent/rel),safe="/")))
+        target=dest/(name.lower()+".gltf")
+        target.write_text(json.dumps(obj))
+        add(kind,target)
+    nature="Ultimate Stylized Nature - May 2022"
+    for kind,names in [
+        ("reborn_tree",["BirchTree_1","BirchTree_3","MapleTree_1","MapleTree_3","MapleTree_5"]),
+        ("reborn_understory",["Bush","Bush_Flowers","Bush_Small","Flower_1_Clump","Flower_3_Clump","Grass_Large"]),
+        ("reborn_beast",["Alien","Alien_Tall","Cthulhu","Crab","Deer","Demon","Mushroom","YellowDragon"])]:
+        for name in names:gltf(kind,"Cute Animated Monsters - Aug 2020" if kind=="reborn_beast" else nature,name)
+    repo2="trebeljahr/quaternius-showcase"
+    ref2,paths2=tree(repo2)
+    groups={
+      "reborn_home":("medieval_village_pack",["House_1","House_2","House_3","House_4"]),
+      "reborn_civic":("medieval_village_pack",["Mill","Inn","Blacksmith","Bell_Tower","Sawmill","Stable","Gazebo"]),
+      "reborn_prop":("medieval_village_pack",["Fence","Bench_1","Crate","Hay","Barrel","MarketStand_1","Well","Cart"]),
+      "reborn_crop":("crops_pack",["Pumpkin_4","Wheat_3","Corn_4","Carrot_4","Lettuce_4"])}
+    for kind,(folder,names) in groups.items():
+        for name in names:
+            path=f"public/glb/{folder}/{name}.glb"
+            if path not in paths2:raise ValueError("Missing pinned asset "+path)
+            raw_model(kind,repo2,ref2,path)
+
 for f in (showcase,creatures):safe_call(f)
+reborn()
 if not catalog["tree"] or not catalog["rock"]:safe_call(kenney)
 (root/"catalog.json").write_text(json.dumps(catalog))
 print("ASSET COUNTS", {k:len(v) for k,v in catalog.items()})

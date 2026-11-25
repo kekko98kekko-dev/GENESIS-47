@@ -9,13 +9,13 @@ void fragment(){
  float grain=noise2(wp.xz*3.0)*.14+noise2(wp.xz*13.0)*.06;
  float patches=noise2(wp.xz*.45)*.17;
  float fine=noise2(wp.xz*27.0);
- ALBEDO=COLOR.rgb*(.48+grain*.80+patches);
+ ALBEDO=COLOR.rgb*(.64+grain*.65+patches);
  ALBEDO*=mix(vec3(.96,1.03,.94),vec3(1.06,.98,.89),noise2(wp.xz*1.2));
  ALBEDO*=season_tint.rgb;
  ALBEDO*=.91+fine*.18;
  float micro=noise2(wp.xz*18.0);
  float macro=noise2(wp.xz*.24);
- ALBEDO*=mix(.73,1.14,macro);
+ ALBEDO*=mix(.76,1.12,macro);
  ALBEDO*=mix(.90,1.08,micro);
  float moss=noise2(wp.xz*1.6+vec2(47.0,13.0));
  ALBEDO=mix(ALBEDO,ALBEDO*vec3(.76,.96,.77),smoothstep(.47,.79,moss)*.6);

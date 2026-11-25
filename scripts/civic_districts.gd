@@ -59,6 +59,15 @@ func sync():
      var b=world.block(n,Color("8a897a"),Vector3((j-2)*.37,.24,sin(j)*.4),Vector3(.32,.48,.42))
      b.rotation.z=float(j-2)*.16
     continue
+   if preload("res://scripts/reborn_art.gd").civic(world,n,int(row.index),era):
+    var marker=Label3D.new()
+    n.add_child(marker)
+    marker.position.y=3.6
+    marker.text=NAMES[int(row.index)]
+    marker.font_size=25
+    marker.pixel_size=.008
+    marker.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+    continue
    var tint=Color("78afa5") if clan==0 else Color("b78a60")
    var stone=Color("a9aa96") if clan==0 else Color("c7ae8b")
    var accent=Color("365f5e") if clan==0 else Color("955333")

@@ -48,3 +48,7 @@ Original database and attribution as above. The recordings are adapted to creatu
 - teach: CMU 80_14, https://raw.githubusercontent.com/una-dinosauria/cmu-mocap/master/data/080/80_14.bvh; source frames 138–1597.
 - trade: CMU 69_70, https://raw.githubusercontent.com/una-dinosauria/cmu-mocap/master/data/069/69_70.bvh; source frames 83–961.
 These 23 derived clips supersede the 7.0 library; 35_01 walking remains separately. Some fictional tasks are represented by adapted real human motions, not dedicated recordings of the fictional act. Root translation is removed and rotations constrained to the creature rig.
+
+
+## 16.0 — REBORN
+Quaternius Ultimate Stylized Nature Pack (CC0): https://quaternius.com/packs/ultimatestylizednature.html, glTF mirror agentkaerf/FreeModels pinned db3df04d1e4714298a09510b26fb6de6645138a2. Medieval Village Pack https://quaternius.com/packs/medievalvillage.html, Ultimate Crops Pack https://quaternius.com/packs/ultimatecrops.html, Cute Animated Monsters https://quaternius.com/packs/cutemonsters.html. GLB mirror trebeljahr/quaternius-showcase pinned 0128ca510d653bb04d6d1e4885bd8890b5050b4f; selected models enumerated in tools/fetch_assets.py. No assets or screenshots copied from the three reference games. No paid downloads.

@@ -29,11 +29,12 @@ func run(w)->bool:
  var politics=legacy_soak()
  var controls=map_drag_audit()
  var experience=experience_audit()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics,"map_drag":controls,"experience":experience}
+ var reborn=reborn_audit()
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics,"map_drag":controls,"experience":experience,"reborn":reborn}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and bool(controls.ok) and bool(experience.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and bool(controls.ok) and bool(experience.ok) and bool(reborn.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -277,6 +278,40 @@ func async_ocean_audit()->Dictionary:
  var ok=accepted and not stale and error<.00001 and mass_error<.003 and stale_error<.00001
  print("QA_ASYNC_OCEAN equivalence=",error," mass_error=",mass_error," stale_error=",stale_error," ok=",ok)
  return {"ok":ok,"numeric_error":error,"mass_error":mass_error,"stale_error":stale_error,"worker":ocean.performance_report()}
+
+func reborn_audit()->Dictionary:
+ world.new_world(47,0)
+ var required=["reborn_tree","reborn_understory","reborn_home","reborn_civic","reborn_prop","reborn_crop","reborn_beast"]
+ var catalog_ok=true
+ for key in required:
+  if world.art_catalog.get(key,[]).is_empty():catalog_ok=false
+ var houses_ok=true
+ var homes=0
+ for clan in range(2):
+  for home in world.houses[clan]:
+   var cover:Node3D=home.node.get_meta("cover")
+   var imported=false
+   for n in cover.get_children():
+    if n.has_meta("reborn_asset"):imported=true
+   if not imported:houses_ok=false
+   homes+=1
+ var trees=0
+ for n in world.scenery.get_children():
+  if n.has_meta("reborn_asset") and n.has_meta("vegetation"):trees+=1
+ var faces=[0,0,0]
+ for r in world.actors.values():
+  if r.has("reborn_face"):faces[int(r.reborn_face)]+=1
+ var face_ok=not faces.has(0)
+ var parent=Node3D.new()
+ world.add_child(parent)
+ var crop_ok=preload("res://scripts/reborn_art.gd").crops(world,parent,0)
+ var batch_ok=false
+ for n in parent.get_children():
+  if n is MultiMeshInstance3D and n.multimesh.instance_count==28:batch_ok=true
+ parent.queue_free()
+ var ok=catalog_ok and houses_ok and homes>0 and trees>0 and face_ok and crop_ok and batch_ok
+ print("QA_REBORN catalog=",catalog_ok," homes=",homes," trees=",trees," faces=",faces," crop_batch=",batch_ok," ok=",ok)
+ return {"ok":ok,"catalog":catalog_ok,"houses":homes,"trees":trees,"faces":faces,"crop_batch":batch_ok}
 
 func experience_audit()->Dictionary:
  var E=preload("res://scripts/living_experience.gd")

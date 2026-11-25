@@ -74,7 +74,7 @@ static func streets(w,st:SurfaceTool,clan:int)->int:
    var d=p.distance_squared_to(points[j])
    if d<best:best=d;neighbor=j
   var q:Vector3=points[neighbor]
-  count+=road(w,st,p,q,.34 if neighbor==0 else .23)
+  count+=road(w,st,p,q,.54 if neighbor==0 else .34)
   if i%4==0 and i>2:
    var second=-1
    var second_d=INF
@@ -82,7 +82,7 @@ static func streets(w,st:SurfaceTool,clan:int)->int:
     if j==neighbor:continue
     var d=p.distance_squared_to(points[j])
     if d<second_d:second_d=d;second=j
-   if second>=0 and second_d<80:count+=road(w,st,p,points[second],.22)
+   if second>=0 and second_d<80:count+=road(w,st,p,points[second],.29)
  return count
 static func road(w,st:SurfaceTool,p:Vector3,q:Vector3,width:float)->int:
  var dir=Vector2(q.x-p.x,q.z-p.z)

@@ -134,6 +134,10 @@ func sync():
   var t:Dictionary=a.traits
   var color=Color("738968").lerp(Color("b38257"),float(t.hue))
   var size=.45+float(t.size)*.35
+  if preload("res://scripts/reborn_art.gd").beast(world,n,a):
+   n.position=world.ground(float(a.x),float(a.z))
+   nodes[id]=n
+   continue
   world.sphere(n,color,Vector3.UP*.31,Vector3(size,.53,size*.78))
   world.sphere(n,color.lightened(.15),Vector3(0,.38,.28),Vector3(.38,.39,.38))
   for side in [-1,1]:

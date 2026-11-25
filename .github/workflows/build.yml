@@ -2,7 +2,7 @@ name: GENESIS 47 — Windows build and tests
 on:
   workflow_dispatch:
   push:
-    branches: [main, upgrade-14-0-performance, upgrade-15-0-living-world]
+    branches: [main, upgrade-14-0-performance, upgrade-15-0-living-world, upgrade-16-0-reborn]
     paths: ['project.godot', 'main.tscn', 'scripts/**', 'shaders/**', 'tools/**', 'assets/**', 'export_presets.cfg', '.github/workflows/build.yml']
 permissions:
   contents: read
@@ -50,6 +50,7 @@ jobs:
           grep -q 'QA_SUITE PASS' qa.log
           grep -q 'QA_ASYNC_OCEAN .*ok=true' qa.log
           grep -q 'QA_EXPERIENCE .*ok=true' qa.log
+          grep -q 'QA_REBORN .*ok=true' qa.log
           test -s qa-report.json
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SHADER ERROR' qa.log; then exit 1; fi
       - name: Capture real rendered screenshot

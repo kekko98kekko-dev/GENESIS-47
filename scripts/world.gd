@@ -24,6 +24,7 @@ const Artisan=preload("res://scripts/artisan_kit.gd")
 const DivinePresentation=preload("res://scripts/divine_presentation.gd")
 const Colossus=preload("res://scripts/colossus.gd")
 const Experience=preload("res://scripts/living_experience.gd")
+const Reborn=preload("res://scripts/reborn_art.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -451,32 +452,32 @@ func setup_environment():
  env.background_mode=Environment.BG_SKY
  var sky=Sky.new()
  sky_material=ProceduralSkyMaterial.new()
- sky_material.sky_top_color=Color("4d86b4")
- sky_material.sky_horizon_color=Color("cfdfd4")
+ sky_material.sky_top_color=Color("417fba")
+ sky_material.sky_horizon_color=Color("b9d5dd")
  sky_material.ground_bottom_color=Color("244a50")
  sky_material.ground_horizon_color=Color("becfc6")
  sky_material.sun_angle_max=14
  sky.sky_material=sky_material
  env.sky=sky
  env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
- env.ambient_light_color=Color("d2e2e7")
- env.ambient_light_energy=.30
+ env.ambient_light_color=Color("c2d6e6")
+ env.ambient_light_energy=.43
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
  env.fog_density=.0013
  env.tonemap_mode=Environment.TONE_MAPPER_FILMIC
- env.tonemap_exposure=.83
+ env.tonemap_exposure=.94
  env.adjustment_enabled=true
- env.adjustment_saturation=1.14
- env.adjustment_contrast=1.04
+ env.adjustment_saturation=1.04
+ env.adjustment_contrast=1.10
  var en=WorldEnvironment.new()
  en.environment=env
  add_child(en)
  sun=DirectionalLight3D.new()
  add_child(sun)
  sun.rotation_degrees=Vector3(-53,-37,0)
- sun.light_color=Color("fff0cc")
- sun.light_energy=.88
+ sun.light_color=Color("ffe0ae")
+ sun.light_energy=1.02
  sun.shadow_enabled=true
  sun.directional_shadow_max_distance=115
  sun.shadow_bias=.045
@@ -595,7 +596,7 @@ func terrain_color(p:Vector3)->Color:
  if p.y<SEA+.75:return Color("d9c89c").lerp(Color("b3bb79"),clampf((p.y-SEA)/.75,0,1))
  if p.y>10:return Color("a3a99e").lerp(Color("e7e7dc"),clampf((p.y-10)/4,0,1))
  if p.y>7.5:return Color("8c917c").lerp(Color("a8a69c"),clampf((p.y-7.5)/3,0,1))
- var grass=Color("315f49").lerp(Color("9db46a"),v)
+ var grass=Color("385438").lerp(Color("9aab58"),v)
  var broad=clampf(noise.get_noise_2d(p.x*.45+97,p.z*.45)*.8+.5,0,1)
  grass=grass.lerp(Color("7b9560"),broad*.24)
  if ocean.enabled:
@@ -827,8 +828,8 @@ func reset_visuals():
     var p=ground(x+forest_rng.randf_range(-5.8,5.8),z+forest_rng.randf_range(-5.8,5.8))
     if p.y<SEA+.85 or p.y>10 or not far_village(p,10) or not away_from_route(p,1.8) or scarred(p) or Art.biome(self,p)==3:continue
     if timber_points.any(func(q):return flat_dist(q,p)<1.4):continue
-    timber_points.append(p)
-    Artisan.pine(self,p,forest_rng.randf_range(2.4,5.3),cluster*13+sample)
+    make_tree(p,forest_rng.randf_range(2.4,5.3),cluster*13+sample)
+ if not test_mode:Reborn.understory(self)
  for row in planted:
   var place=ground(float(row.x),float(row.z))
   if place.y>SEA+.12:make_tree(place,float(row.h),int(row.i))
@@ -933,6 +934,7 @@ func make_tree(p:Vector3,h:float,i:int):
  var rotation_value=rng.randf()*TAU
  if scarred(p):return
  timber_points.append(p)
+ if Reborn.tree(self,p,h,i,rotation_value):return
  if Art.biome(self,p) in [0,2,4,5] and i%3!=1:
   Artisan.pine(self,p,h,i)
   return
@@ -1022,6 +1024,10 @@ func make_house(i:int,j:int,era:int):
  block(interior,Color("947759"),Vector3(0,.35,-.65),Vector3(.40,.12,.48))
  sphere(interior,Color("ffc779"),Vector3(0,.47,-.65),Vector3(.17,.18,.17),.7)
  var h=1.55 if era<2 else 1.9 if era<4 else 2.3
+ if Reborn.house(self,cover,i,era,j):
+  interior.visible=false
+  show_structure(n,site)
+  return n
  architectural_wall(block(cover,wall,Vector3(0,h*.5,-1.01),Vector3(2.15,h,.18)),wall,era)
  for side in [-1,1]:
   architectural_wall(block(cover,wall,Vector3(side*1.01,h*.5,0),Vector3(.17,h,2.1)),wall,era)
@@ -1170,6 +1176,7 @@ func create_actor(a:Dictionary):
  actors[a.id]["skeletal"]=rig.get("skeletal",{})
  Art.portrait(self,actors[a.id],a)
  LivingArt.morphology(self,actors[a.id],a)
+ Reborn.face(self,actors[a.id],a)
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -2105,7 +2112,7 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47",24)
+ title=text_label(row,"GENESIS 47 · REBORN",22)
  title.modulate=Color("e8ce9e")
  var sp=Control.new()
  row.add_child(sp)
@@ -6042,7 +6049,7 @@ func show_title_screen():
  brand.modulate=Color("f1d6a3")
  var tagline=Label.new()
  box.add_child(tagline)
- tagline.text="EREDITÀ VIVENTE\nLa vita ricorda. Il mondo sceglie."
+ tagline.text="REBORN\nOgni vita lascia un segno."
  tagline.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
  tagline.add_theme_font_size_override("font_size",23)
  tagline.modulate=Color("d1dfcf")

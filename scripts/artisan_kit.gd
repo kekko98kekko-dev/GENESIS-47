@@ -154,8 +154,10 @@ static func field_plot(w,parent:Node3D,p:Vector3,clan:int,idx:int):
  n.position=p
  n.rotation.y=float(clan)*PI*.5
  var soil=Color("755139")
+ var imported=preload("res://scripts/reborn_art.gd").crops(w,n,idx)
  for row in range(4):
   w.block(n,soil.lightened(float(row%2)*.08),Vector3(0,.04,(row-1.5)*.44),Vector3(2.2,.10,.32))
+  if imported:continue
   for k in range(6):
    var q=Vector3((k-2.5)*.34,.16,(row-1.5)*.44)
    if idx%2==0:
