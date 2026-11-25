@@ -5,6 +5,7 @@ const CreatureRig=preload("res://scripts/creature_rig.gd")
 const DebrisPhysics=preload("res://scripts/debris_physics.gd")
 const Hydro=preload("res://scripts/hydrology.gd")
 const FluidVolume=preload("res://scripts/fluid_volume.gd")
+const OceanDynamics=preload("res://scripts/ocean_dynamics.gd")
 const MotionLibrary=preload("res://scripts/mocap_library.gd")
 const Structure=preload("res://scripts/structure.gd")
 const SEA=-0.40
@@ -17,6 +18,8 @@ var ocean=Ocean.new()
 var debris=DebrisPhysics.new()
 var hydro=Hydro.new()
 var fluid_volume=FluidVolume.new()
+var ocean_dynamics=OceanDynamics.new()
+var ocean_dynamics_saved={}
 var fluid_saved={}
 var fluid_root:Node3D
 var hydro_root:Node3D
@@ -553,6 +556,7 @@ func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  expanded_world=expanded or ocean_mode
  hydro_saved={}
  fluid_saved={}
+ ocean_dynamics_saved={}
  colony_selected=-1
  set_tour(false)
  unlimited=false
@@ -650,6 +654,7 @@ func reset_visuals():
  fluid_root=Node3D.new()
  add_child(fluid_root)
  fluid_volume.reset(self,fluid_root,fluid_saved)
+ ocean_dynamics.reset(self,ocean_dynamics_saved)
  rebuild_regional_bridges()
  hazard_nodes.clear()
  for n in [scenery,villages_root,people_root,animals_root,effects_root,roads_root,farms_root,ambient_root,civic_root,route_root,settlement_root,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root]:add_child(n)
@@ -1203,6 +1208,7 @@ func _process(delta:float):
   ocean.life.tick(delta*minf(speed,20.0))
   hydro.tick(delta*minf(speed,12.0))
   fluid_volume.tick(delta*minf(speed,4.0))
+  ocean_dynamics.tick(delta*minf(speed,4.0))
   for animal in animals:
    var n:Node3D=animal.node
    if n.position.distance_to(animal.target)<.32:animal.target=random_near(animal.center,15)
@@ -1566,6 +1572,7 @@ func divine(p:Vector3):
   "Tsunami":
    var heading=Vector3(-p.x,0,-p.z).normalized()
    if heading.length_squared()<.01:heading=Vector3.FORWARD
+   ocean_dynamics.disturb(p,.65)
    var emitted=fluid_volume.emit(p,400,heading*4+Vector3.UP*2)
    if emitted<400:hydro.inject(p,(400-emitted)*FluidVolume.PARTICLE_MASS)
    wave(p)
@@ -2141,6 +2148,7 @@ func save_path(path:String,show_hint:bool)->bool:
  d["ocean"]=ocean.export_state()
  d["hydrology"]=hydro.export_state()
  d["fluid_volume"]=fluid_volume.export_state()
+ d["ocean_dynamics"]=ocean_dynamics.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2203,6 +2211,7 @@ func load_path(p:String)->bool:
  ocean.restore(self,data.get("ocean",{}))
  hydro_saved=data.get("hydrology",{})
  fluid_saved=data.get("fluid_volume",{})
+ ocean_dynamics_saved=data.get("ocean_dynamics",{})
  colony_selected=-1
  var advanced=0
  if absent_progress and not test_mode:
@@ -2391,6 +2400,7 @@ func self_test():
  if not test_ocean_systems():failed=true
  if not test_deep_simulation():failed=true
  if not test_industry_and_volume():failed=true
+ if not test_continuous_systems():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -3425,6 +3435,7 @@ func cancel_task(a:Dictionary,r:Dictionary):
 func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
  var n:Node3D=r.node
  if dt<=0:return false
+ a.erase("industry_action")
  if sim.spatial_autonomy:sim.tick_needs(a,dt)
  if float(r.get("panic",0))>0:
   r.panic=maxf(0,float(r.panic)-dt)
@@ -3450,6 +3461,12 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
   return false
  if a.task=="":
   leave_interior(r)
+  if sim.spatial_autonomy and a.held_goods=="":
+   var job=int(ocean.industry.advance(int(a.clan),a,n,dt))
+   if job>=0:
+    a.activity="Lavora in impresa" if job==0 else "Trasporta per impresa"
+    r.planned_task=""
+    return job==1
   if sim.spatial_autonomy and a.held_goods!="" and a.hunger<90 and a.fatigue<94 and a.health>=35 and nearest_service(a,"store",n.position)!="":
    sim.begin_task(a,{"kind":"farm" if a.held_goods=="Cibo" else "gather","target":-1,"duration":1.0,"reason":"Consegna il materiale conservato"})
    a.delivery=true
@@ -3967,7 +3984,7 @@ func claim_service(a:Dictionary,r:Dictionary)->bool:
  return true
 
 func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
- var active=str(a.task)
+ var active=str(a.get("industry_action",a.task))
  var marker:Label3D=r.action_marker
  var prop:Node3D=r.action_prop
  var shown=active!="" and (a.task_stage in ["In corso","Consegna"] or a.delivery)
@@ -3975,7 +3992,7 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
  var marks={"craft":"OFFICINA","teach":"FAMIGLIA","guard":"GUARDIA","eat":"CIBO","sleep":"Zzz","heal":"+","farm":"RACCOLTO","gather":"LEGNA","research":"STUDIO","build":"LAVORO","house":"CANTIERE","social":"CIAO","aid":"+","play":"SVAGO","explore":"ESPLORA"}
  marker.text="FUGA!" if a.task_stage=="Fugge" else "TRASPORTO" if a.delivery else str(marks.get(active,""))
  marker.modulate=Color("a8e1b7") if active in ["heal","aid","farm"] else Color("f1d5a1")
- var visual="cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else "cargo_"+str(a.held_goods) if a.held_goods!="" else ""
+ var visual="cargo_industrial" if active=="deliver" else ("cargo_"+str(a.cargo) if a.delivery else active if a.task_stage=="In corso" else "cargo_"+str(a.held_goods) if a.held_goods!="" else "")
  if str(r.get("prop_kind",""))!=visual:
   r["prop_kind"]=visual
   for child in prop.get_children():
@@ -3987,7 +4004,8 @@ func update_action_visual(a:Dictionary,r:Dictionary,moving:bool):
     for j in range(3):sphere(prop,Color("e4b65e"),Vector3((j-1)*.11,.12,0),Vector3(.13,.13,.13))
    "cargo_Legna":
     for j in range(3):block(prop,Color("9f774e"),Vector3(0,j*.09,0),Vector3(.48,.075,.11))
-   "gather","build","house","craft":
+   "cargo_industrial":block(prop,Color("b49a73"),Vector3.ZERO,Vector3(.35,.26,.30))
+   "gather","build","house","craft","industry":
     block(prop,Color("98704c"),Vector3(0,.08,0),Vector3(.075,.54,.075))
     block(prop,Color("a6b5b7"),Vector3(.09,.32,0),Vector3(.25,.13,.08))
    "guard":
@@ -4718,7 +4736,7 @@ func test_deep_simulation()->bool:
  sim.villages[0].wood=100.0
  var first=sim.people[0]
  var rig:Dictionary=actors[first.id].skeletal
- if rig.skins.size()!=10:return false
+ if rig.skins.size()!=1:return false
  var mesh:MeshInstance3D=rig.skins[0]
  var arrays=mesh.mesh.surface_get_arrays(0)
  if mesh.skin==null or arrays[Mesh.ARRAY_WEIGHTS].size()<16:return false
@@ -4833,4 +4851,76 @@ func test_industry_and_volume()->bool:
  fluid_volume.step(.025)
  if not fluid_volume.particles.is_empty() or absf(hydro.mass()-before-initial_mass)>.001:return false
  print("INDUSTRY_VOLUME_TEST companies=true recipes=true wages=true contracts=true cash_conservation=true skin_weights=true mocap=true 3d_particles=true transfer=true persistence=true")
+ return true
+
+
+func test_continuous_systems()->bool:
+ new_world(47,0,true,true)
+ var a=sim.people[0]
+ var rig:Dictionary=actors[a.id].skeletal
+ if rig.skins.size()!=1:return false
+ var mesh:MeshInstance3D=rig.skins[0]
+ if mesh.mesh.get_surface_count()!=1:return false
+ var arrays=mesh.mesh.surface_get_arrays(0)
+ var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX]
+ var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
+ if vertices.size()<500 or indices.size()<1500:return false
+ var adj={}
+ for i in range(0,indices.size(),3):
+  for j in range(3):
+   var u=indices[i+j]
+   var v=indices[i+(j+1)%3]
+   if not adj.has(u):adj[u]=[]
+   if not adj.has(v):adj[v]=[]
+   adj[u].append(v)
+   adj[v].append(u)
+ var seen={indices[0]:true}
+ var todo=[indices[0]]
+ while not todo.is_empty():
+  var id=int(todo.pop_back())
+  for other in adj.get(id,[]):
+   if not seen.has(other):seen[other]=true;todo.append(other)
+ if seen.size()!=vertices.size():return false
+ var market=ocean.industry
+ sim.villages[0].food=100.0
+ sim.villages[0].wood=100.0
+ if not market.create_company(0,"mill",40.0):return false
+ var firm:Dictionary=market.companies[0]
+ var worker=sim.find(int(firm.employees[0]))
+ worker.hunger=0.0
+ worker.fatigue=0.0
+ worker.health=100.0
+ var node:Node3D=actors[worker.id].node
+ var cash_before=float(ocean.balance(0,"cash"))+market.cash_total()+float(worker.coins)
+ var food_before=float(ocean.balance(0,"food"))
+ for i in range(400):
+  market.advance(0,worker,node,.25)
+  if market.delivered_units>=1:break
+ if market.produced_units<1 or market.delivered_units<1:return false
+ if absf(float(ocean.balance(0,"food"))-food_before+1.5)>.001:return false
+ if absf(float(ocean.balance(0,"cash"))+market.cash_total()+float(worker.coins)-cash_before)>.001:return false
+ var wet_cell=-1
+ for i in range(ocean_dynamics.wet.size()):
+  if ocean_dynamics.wet[i] and ocean_dynamics.bed[i]>2:
+   wet_cell=i
+   break
+ if wet_cell<0:return false
+ var pos=Vector3((wet_cell%OceanDynamics.N-26)*OceanDynamics.CELL,SEA,(int(wet_cell/OceanDynamics.N)-26)*OceanDynamics.CELL)
+ ocean_dynamics.disturb(pos,.5)
+ var volume=ocean_dynamics.displacement()
+ for i in range(6):ocean_dynamics.step(OceanDynamics.DT)
+ if absf(ocean_dynamics.displacement()-volume)>.002:return false
+ if ocean_dynamics.velocity.size()!=OceanDynamics.N*OceanDynamics.N*OceanDynamics.L:return false
+ var moving_layers=0
+ for vv in ocean_dynamics.velocity:
+  if vv.length_squared()>.000001:moving_layers+=1
+ if moving_layers<OceanDynamics.L:return false
+ var path="user://genesis47_continuous_test.json"
+ if not save_path(path,false):return false
+ new_world(47,0)
+ var ok=load_path(path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
+ if not ok or ocean.industry.delivered_units<1 or absf(ocean_dynamics.displacement()-volume)>.003:return false
+ print("CONTINUOUS_TEST connected_mesh=true vertices=",vertices.size()," physical_production=true delivery=true cash_conserved=true ocean_layers=",OceanDynamics.L," displacement_conserved=true persistence=true")
  return true
