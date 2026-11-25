@@ -28,11 +28,12 @@ func run(w)->bool:
  var async_water=async_ocean_audit()
  var politics=legacy_soak()
  var controls=map_drag_audit()
- report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics,"map_drag":controls}
+ var experience=experience_audit()
+ report={"version":ProjectSettings.get_setting("application/config/version"),"skin":skin,"anatomies":families,"contact":contact,"natural_growth":growth,"industry_fixture":industry,"live_world":live,"ocean":water,"async_ocean":async_water,"living_legacy":politics,"map_drag":controls,"experience":experience}
  var f=FileAccess.open("res://qa-report.json",FileAccess.WRITE)
  if f!=null:f.store_string(JSON.stringify(report,"  "));f.close()
  print("QA_REPORT ",JSON.stringify(report))
- return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and bool(controls.ok) and f!=null
+ return bool(skin.ok) and anatomy_ok and bool(contact.ok) and bool(growth.ok) and bool(industry.ok) and bool(live.ok) and bool(water.ok) and bool(async_water.ok) and bool(politics.ok) and bool(controls.ok) and bool(experience.ok) and f!=null
 
 static func apply_pose(r:Dictionary,source:Dictionary,action:String,phase:float):
  var a=source.duplicate(true)
@@ -276,6 +277,35 @@ func async_ocean_audit()->Dictionary:
  var ok=accepted and not stale and error<.00001 and mass_error<.003 and stale_error<.00001
  print("QA_ASYNC_OCEAN equivalence=",error," mass_error=",mass_error," stale_error=",stale_error," ok=",ok)
  return {"ok":ok,"numeric_error":error,"mass_error":mass_error,"stale_error":stale_error,"worker":ocean.performance_report()}
+
+func experience_audit()->Dictionary:
+ var E=preload("res://scripts/living_experience.gd")
+ world.new_world(47,0)
+ var a=world.sim.people[0]
+ var b=world.sim.people[1]
+ a.health=30.0
+ var opportunity=E.opportunity(world)
+ var need_ok=not opportunity.is_empty() and int(opportunity.person)==int(a.id)
+ var pos:Vector3=world.actors[a.id].node.position
+ world.legend.log_event("Scoperta",int(a.clan),int(a.id),"Evento di prova",pos)
+ world.legend.log_event("Scoperta",int(a.clan),int(a.id),"Evento di prova",pos)
+ var recent=E.recent(world)
+ var unique_ok=recent.size()==1 and int(recent[0].person)==int(a.id)
+ var child=world.sim.birth(int(a.clan),[a,b])
+ world.apply_changes()
+ var heir_ok=not child.is_empty() and E.successor(world,int(a.id))==int(child.id)
+ var fit_ok=E.fit([.5,.3,.5,.5],.3)>E.fit([.5,.8,.5,.5],.3)
+ world.story_watch_id=int(a.id)
+ var path="user://genesis47_story_test.json"
+ var saved=world.save_path(path,false)
+ world.story_watch_id=-1
+ var loaded=world.load_path(path) if saved else false
+ var persistence=loaded and world.story_watch_id==int(a.id)
+ for suffix in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+suffix):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+suffix))
+ var ok=need_ok and unique_ok and heir_ok and fit_ok and persistence
+ print("QA_EXPERIENCE need=",need_ok," dedup=",unique_ok," heir=",heir_ok," climate=",fit_ok," save=",persistence," ok=",ok)
+ return {"ok":ok,"need":need_ok,"dedup":unique_ok,"heir":heir_ok,"climate":fit_ok,"persistence":persistence}
 
 func map_drag_audit()->Dictionary:
  world.focus=Vector3.ZERO

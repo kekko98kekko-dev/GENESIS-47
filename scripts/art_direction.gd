@@ -45,7 +45,8 @@ static func tree(w,p:Vector3,h:float,i:int)->bool:
    if b==5:w.cone(n,Color("dbe9e6"),Vector3.UP*(1.53+k*.48),.74-k*.14,.74,.018,8)
  else:
   w.cone(n,bark,Vector3.UP*.9,.17,1.8,.09,8)
-  var tint=Color("ae704b") if b==1 else Color("507d56")
+  var tint=Color("a98250") if b==1 else Color("507d56")
+  tint=tint.lerp(Color("698f68") if b==0 else Color("bf995b"),float(posmod(i,5))*.09)
   for k in range(6):
    var a=k*TAU/6
    w.sphere(n,tint.lightened(float(k%3)*.12),Vector3(cos(a)*.45,2.0+float(k%2)*.32,sin(a)*.45),Vector3(1.26,1.05,1.26))

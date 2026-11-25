@@ -85,8 +85,12 @@ func miracle(kind:String,clan:int,near:Array,p:Vector3):
  for a in near:
   if world.sim.find(int(a.id)).is_empty():continue
   names.append(str(a.name))
-  if good:world.sim.remember(a,"Ho assistito a "+kind+" del Creatore.")
-  elif harmful:world.sim.remember(a,"Temo il Creatore dopo "+kind+".")
+  if good:
+   world.sim.remember(a,"Ho assistito a "+kind+" del Creatore.")
+   world.sim.milestone(a,"Miracolo","Ho visto "+kind+" con i miei occhi.")
+  elif harmful:
+   world.sim.remember(a,"Temo il Creatore dopo "+kind+".")
+   world.sim.milestone(a,"Miracolo","Non dimenticherò "+kind+".")
  log_event("Miracolo",clan,-1,kind+" · "+str(names.size())+" testimoni"+(" — "+", ".join(names.slice(0,3)) if not names.is_empty() else ""),p)
 
 func born(a:Dictionary,p:Vector3):

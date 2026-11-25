@@ -23,6 +23,7 @@ const LivingArt=preload("res://scripts/living_art.gd")
 const Artisan=preload("res://scripts/artisan_kit.gd")
 const DivinePresentation=preload("res://scripts/divine_presentation.gd")
 const Colossus=preload("res://scripts/colossus.gd")
+const Experience=preload("res://scripts/living_experience.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -50,6 +51,12 @@ var legacy_root:Node3D
 var legacy_view:RichTextLabel
 var citizen_portrait
 var title_intro:Control
+var story_watch_id:int=-1
+var story_last_key=""
+var story_line:Label
+var story_action:Button
+var story_current:Dictionary={}
+var story_window:AcceptDialog
 var intro_time=0.0
 var ash_time=0.0
 var cave=Cave.new()
@@ -661,6 +668,9 @@ func make_terrain():
 
 func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
  cancel_map_press()
+ story_watch_id=-1
+ story_last_key=""
+ story_current={}
  if cave.active:cave.leave()
  vast_world=wide
  colossus_saved={}
@@ -1276,6 +1286,7 @@ func step_day():
  var previous_crises=sim.crises_seen
  var treasury_before=[float(sim.villages[0].culture.treasury),float(sim.villages[1].culture.treasury)]
  sim.daily()
+ Experience.apply_ecology(self)
  if ocean.enabled:
   for clan in range(2):ocean.change(clan,"cash",maxf(0,float(treasury_before[clan])-float(sim.villages[clan].culture.treasury)))
  ocean.daily()
@@ -1422,6 +1433,11 @@ func _process(delta:float):
     for eye in r.get("eyes",[]):eye.scale.y=blink
    n.scale=Vector3.ONE*clampf(.50+a.age/26,.5,1)*lerpf(.89,1.11,float(a.genes[3]))
    update_action_visual(a,r,moving)
+   if float(r.get("witness_until",0))>visual_time and not moving and not r.arms.is_empty():
+    var remaining=float(r.witness_until)-visual_time
+    var weight=clampf(remaining,0,1)
+    r.body.rotation.x=lerpf(r.body.rotation.x,.48,weight)
+    for arm in r.arms:arm.rotation.x=lerpf(arm.rotation.x,-.88,weight)
    var rig_elapsed=float(r.get("rig_elapsed",0))+delta
    var detailed=distance<35 and quality_mode>0 and flat_dist(n.position,focus)<28
    var rig_interval=.05 if detailed else (.20 if quality_mode==0 else .10)
@@ -1651,6 +1667,7 @@ func _unhandled_input(event:InputEvent):
   if event.keycode==KEY_F2:start_onboarding()
   if event.keycode==KEY_TAB:toggle_compact()
   if event.keycode==KEY_L:show_legend()
+  if event.keycode==KEY_J:show_story_hub()
   if event.keycode==KEY_C and vast_world:
    if not cave.enter():
     following=false
@@ -1999,6 +2016,7 @@ func divine(p:Vector3):
   legend.miracle(power,clan,near,p)
   legacy.preserve("Miracolo",clan,-1,power+" · "+str(near.size())+" testimoni",p)
   divine_presentation.cast(p,power)
+  present_witnesses(power,near,p,clan)
  spark(p,color,1.5)
  if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
@@ -2011,8 +2029,8 @@ func panel(parent:Control,r:Rect2,opacity=.94)->PanelContainer:
  n.position=r.position
  n.size=r.size
  var s=StyleBoxFlat.new()
- s.bg_color=Color(.075,.105,.12,opacity)
- s.border_color=Color("59756d")
+ s.bg_color=Color(.052,.085,.095,opacity)
+ s.border_color=Color("907d58")
  s.set_border_width_all(1)
  s.set_corner_radius_all(12)
  s.shadow_color=Color(0,0,0,.22)
@@ -2058,9 +2076,23 @@ func setup_ui():
  var theme=Theme.new()
  theme.default_font_size=15
  theme.set_color("font_color","Button",Color("eee9d7"))
+ theme.set_color("font_hover_color","Button",Color("fff1cc"))
+ theme.set_color("font_pressed_color","Button",Color("ffe0a1"))
+ var dialog_skin=StyleBoxFlat.new()
+ dialog_skin.bg_color=Color("182a30")
+ dialog_skin.border_color=Color("ae9664")
+ dialog_skin.set_border_width_all(1)
+ dialog_skin.set_corner_radius_all(10)
+ dialog_skin.content_margin_left=18
+ dialog_skin.content_margin_right=18
+ dialog_skin.content_margin_top=14
+ dialog_skin.content_margin_bottom=14
+ theme.set_stylebox("panel","AcceptDialog",dialog_skin)
  for state in ["normal","hover","pressed","focus","disabled"]:
   var s=StyleBoxFlat.new()
-  s.bg_color=Color("253b40") if state=="normal" else Color("47645b") if state!="disabled" else Color("1d292d")
+  s.bg_color=Color("21373b") if state=="normal" else Color("47645b") if state!="disabled" else Color("1d292d")
+  s.border_color=Color("907d58") if state=="hover" or state=="focus" else Color("3c5351")
+  s.set_border_width_all(1)
   s.set_corner_radius_all(5)
   s.content_margin_left=9
   s.content_margin_right=9
@@ -2073,15 +2105,19 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47   /   EREDITÀ VIVENTE",21)
+ title=text_label(row,"GENESIS 47",24)
  title.modulate=Color("e8ce9e")
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
- button(row,"Poteri [P]",func():left_panel.visible=not left_panel.visible;refresh())
- button(row,"Vite",func():right_panel.visible=not right_panel.visible;inspector_tabs.current_tab=0)
- button(row,"Cronaca",show_legend)
- button(row,"Orion",show_colossus)
+ var powers_btn=button(row,"Poteri [P]",func():left_panel.visible=not left_panel.visible;refresh())
+ powers_btn.icon=power_icon("Fede")
+ var lives_btn=button(row,"Vite",func():right_panel.visible=not right_panel.visible;inspector_tabs.current_tab=0)
+ lives_btn.icon=power_icon("Vita")
+ var story_btn=button(row,"Storie",show_story_hub)
+ story_btn.icon=power_icon("Conoscenza")
+ var orion_btn=button(row,"Orion",show_colossus)
+ orion_btn.icon=power_icon("Profeta")
  button(row,"Guida",show_help)
  button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
@@ -2182,6 +2218,7 @@ func setup_ui():
  button(personal,"Biografia",show_biography)
  button(personal,"Famiglia",show_family)
  button(personal,"Rinomina",rename_selected)
+ button(inspect,"Custodisci questa stirpe",watch_selected_lineage)
  var archive=VBoxContainer.new()
  archive.name="Mondo"
  inspector_tabs.add_child(archive)
@@ -2246,6 +2283,7 @@ func setup_ui():
  text_label(story_tab,"STORIA DEL TUO MONDO",16)
  legend_view=rich(story_tab,330)
  legend_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ button(story_tab,"Storie del mondo",show_story_hub)
  button(story_tab,"Segui una storia",follow_story)
  button(story_tab,"Luoghi della memoria",show_story_locations)
  button(story_tab,"Genealogia",func():
@@ -2253,7 +2291,7 @@ func setup_ui():
   else:open_dialog("ALBERO DELLA VITA","Seleziona prima un abitante."))
  button(story_tab,"Esplora i biomi",show_biomes)
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
- var bottom=panel(hud,Rect2(14,746,1412,140),.87)
+ var bottom=panel(hud,Rect2(14,726,1412,160),.91)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
  bottom.add_child(bv)
@@ -2270,13 +2308,23 @@ func setup_ui():
  button(controls,"Mondo",func():set_tour(false);following=false;focus=Vector3.ZERO;distance=91;pitch=.88;update_camera())
  for i in range(2):
   button(controls,Sim.CLANS[i],func():set_tour(false);following=false;focus=centers[i];distance=24;pitch=.72;update_camera())
- hint=text_label(controls,"WASD · rotella · destro · F6 tour",13)
+ hint=text_label(controls,"Trascina sinistro · rotella · destro per ruotare",13)
  hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
- journey_label=text_label(bv,"",17)
+ var narrative_row=HBoxContainer.new()
+ bv.add_child(narrative_row)
+ journey_label=text_label(narrative_row,"",16)
  journey_label.modulate=Color("f0d5a2")
+ journey_label.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ journey_label.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+ story_action=button(narrative_row,"Vai alla storia",follow_current_story)
+ story_action.icon=power_icon("Osserva")
+ story_action.hide()
+ story_line=text_label(bv,"",14)
+ story_line.modulate=Color("a9d8bd")
+ story_line.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  objective=text_label(bv,"",13)
- chronicle=rich(bv,32)
+ chronicle=rich(bv,20)
  life_overlay=text_label(bv,"",12)
  life_overlay.modulate=Color("b9dbc8")
  chronicle.scroll_following=false
@@ -2289,7 +2337,7 @@ func setup_ui():
  onboarding=panel(hud,Rect2(415,182,610,135),.97)
  var guide=VBoxContainer.new()
  onboarding.add_child(guide)
- text_label(guide,"PRIMI PASSI DEL CREATORE",15)
+ text_label(guide,"IL TUO PRIMO INCONTRO",15)
  onboarding_label=text_label(guide,"",16)
  onboarding_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
  var actions=HBoxContainer.new()
@@ -2319,6 +2367,7 @@ func refresh():
  if is_instance_valid(map_panel):map_panel.visible=player_hud
  if is_instance_valid(map_region):map_region.text=Art.BIOMES[Art.biome(self,ground(focus.x,focus.z))]
  if is_instance_valid(journey_label):journey_label.text=legend.goal_text()
+ refresh_story_line()
  if is_instance_valid(legend_view) and inspector_tabs.current_tab==5:legend_view.text=legend.report()+"\n\n"+wildlife.report()+"\n\n"+legacy.report()
  top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,global_population,int(sim.energy),int(sim.peace)]
  if life_overlay!=null:
@@ -2390,12 +2439,13 @@ func open_welcome():
  speed=0
  var dlg=ConfirmationDialog.new()
  hud.add_child(dlg)
- dlg.title="GENESIS 47  /  La vita ti aspetta"
+ dlg.title="NUOVO UNIVERSO · Impostazioni avanzate"
  dlg.ok_button_text="Crea il mondo"
  dlg.cancel_button_text="Continua"
  var box=VBoxContainer.new()
  dlg.add_child(box)
- text_label(box,"Un mondo che vive, anche quando non intervieni.",18)
+ box.add_theme_constant_override("separation",10)
+ text_label(box,"Scegli come nascerà il tuo universo",24)
  text_label(box,"Eternità: nessun finale obbligatorio, nemmeno dopo l’estinzione.",14)
  text_label(box,"Oppure scegli una sfida narrativa facoltativa.",14)
  var option=OptionButton.new()
@@ -2559,6 +2609,7 @@ func save_game(show_hint:bool):
 
 func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
+ d["story_watch_id"]=story_watch_id
  d["expanded_world"]=expanded_world
  d["vast_world"]=vast_world
  d["districts"]=districts.export_state()
@@ -2634,6 +2685,9 @@ func load_path(p:String)->bool:
  set_tour(false)
  if cave.active:cave.leave()
  sim=candidate
+ story_watch_id=int(data.get("story_watch_id",-1))
+ story_last_key=""
+ story_current={}
  ash_time=clampf(float(data.get("ash_time",0)),0,24)
  river_saved=data.get("rivers",{})
  cave_saved=data.get("cave",{})
@@ -2993,7 +3047,7 @@ func populate_powers(i:int):
   b.tooltip_text=POWER_TIPS.get(name_value,"")
   power_buttons.append(b)
 func show_help():
- open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nC = grotta (Grande frontiera) | P = poteri | L = leggenda | G = evoca/congeda Orion | H = custode\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
+ open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nSinistro trascinato / WASD = movimento | rotella = zoom | destro = rotazione | J = Storie\nC = grotta (Grande frontiera) | P = poteri | L = leggenda | G = evoca/congeda Orion | H = custode\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
 func show_achievements():
  var entries=["Un mondo vivo","La via del commercio","Il secolo delle scoperte","La mano del Creatore","Eredità"]
  var lines=["TRAGUARDI  %d / %d"%[sim.achievements.size(),entries.size()]]
@@ -3639,7 +3693,7 @@ func start_onboarding():
  show_onboarding_step()
 
 func show_onboarding_step():
- var steps=["1/5 · Sposta la vista con WASD, ruota tenendo premuto il destro e usa la rotella per avvicinarti.","2/5 · Clicca una creatura per conoscerla. Un doppio clic la segue; puoi anche usare Casuale e Segui.","3/5 · Premi P per aprire i poteri, scegli Vita o Guarigione e clicca sul terreno. Esc torna a Osserva.","4/5 · Premi L per leggere la Leggenda. Apri Vite per conoscere civiltà, scoperte e dialoghi.","5/5 · Usa Pausa e le velocità in basso. F5 salva, F9 carica, F6 avvia il tour. In Eternità non devi vincere."]
+ var steps=["1/5 · Auralis e Nerith stanno iniziando una storia. Trascina il terreno con il sinistro e avvicinati con la rotella.","2/5 · Scegli una creatura. Cliccala o fai doppio clic per seguirla; scopri il suo nome, i bisogni e la famiglia.","3/5 · Aiuta chi ne ha bisogno: P apre i poteri, un clic breve li applica. Trascinare non li attiva.","4/5 · Apri Storie: raggiungi un evento reale, visita un luogo o custodisci una famiglia nel tempo.","5/5 · Il mondo è tuo: Pausa, 1×, 3×, 12×, 20×. F5 salva, F9 carica, G evoca Orion. Nessun finale obbligatorio."]
  onboarding_label.text=steps[clampi(onboarding_step,0,4)]
  if onboarding_step==2:left_panel.show()
  if onboarding_step==3:right_panel.show()
@@ -5567,7 +5621,7 @@ func show_story_locations():
  dlg.popup_centered(Vector2i(540,320))
 
 func show_biomes():
- var lines=["BIOMI DEL MONDO","Sei regioni climatiche con flora e colori distinti nella mappa giocabile."]
+ var lines=["BIOMI DEL MONDO","Sei regioni climatiche con flora e colori distinti nella mappa giocabile.",Experience.ecology_report(self)]
  for label in Art.BIOMES:lines.append("• "+label)
  lines.append("")
  lines.append(wildlife.report())
@@ -5803,6 +5857,155 @@ func power_icon(kind:String)->Texture2D:
  power_icons[kind]=texture
  return texture
 
+func start_quick_world():
+ world_started=true
+ speed=1.0
+ focus=centers[0]
+ distance=20.0
+ pitch=.66
+ azimuth=-.55
+ left_panel.hide()
+ right_panel.hide()
+ update_camera()
+ refresh()
+ maybe_onboard()
+
+func watch_selected_lineage():
+ if selected<0 or not actors.has(selected):return
+ story_watch_id=selected
+ var a=sim.find(selected)
+ if not a.is_empty():
+  a.favorite=true
+  notify_event("STIRPE CUSTODITA",str(a.name)+" · ritrova i suoi discendenti in Storie.")
+ refresh()
+
+func refresh_story_line():
+ if not is_instance_valid(story_line):return
+ if origins.active:
+  story_line.text="ORIGINI · "+origins.report()
+  story_action.hide()
+  return
+ var opportunity=Experience.opportunity(self)
+ var events=Experience.recent(self,3)
+ var watched=sim.find(story_watch_id) if story_watch_id>=0 else {}
+ var successor=Experience.successor(self,story_watch_id) if story_watch_id>=0 and watched.is_empty() else -1
+ if not opportunity.is_empty():story_current=opportunity
+ elif successor>=0:
+  var a=sim.find(successor)
+  story_current=Experience.target(self,a,"Eredità","La stirpe continua con "+str(a.name)+".")
+ elif not events.is_empty():story_current=events[0]
+ else:story_current={}
+ if story_current.is_empty():
+  story_line.text="La storia deve ancora nascere · osserva un abitante oppure esplora il mondo."
+  story_action.hide()
+ else:
+  story_line.text=str(story_current.kind).to_upper()+"  /  "+str(story_current.caption)
+  story_action.show()
+ if not events.is_empty():
+  var entry:Dictionary=events[0]
+  var key=Experience.event_key(entry)
+  if key!=story_last_key:
+   story_last_key=key
+   if not test_mode and world_started and toast_time<=0 and int(entry.day)==sim.day and str(entry.kind) in ["Ribellione","Secessione","Invenzione","Tempio","Era","Scoperta","Addio","Nascita","Unione"]:
+    notify_event(str(entry.kind).to_upper(),str(entry.caption))
+
+func focus_story(row:Dictionary):
+ if row.is_empty():return
+ set_tour(false)
+ follow_colossus=false
+ var id=int(row.get("person",-1))
+ if id>=0 and actors.has(id):
+  if str(row.get("kind",""))=="Eredità":story_watch_id=id
+  follow_person(id)
+ else:
+  following=false
+  power="Osserva"
+  focus=ground(float(row.get("x",0)),float(row.get("z",0)))
+  distance=16
+  pitch=.68
+  update_camera()
+  refresh()
+
+func follow_current_story():
+ focus_story(story_current.duplicate())
+
+func show_story_hub():
+ if is_instance_valid(story_window):
+  story_window.popup_centered(Vector2i(680,550))
+  return
+ var dlg=AcceptDialog.new()
+ story_window=dlg
+ hud.add_child(dlg)
+ dlg.title="STORIE DEL TUO UNIVERSO"
+ var scroll=ScrollContainer.new()
+ scroll.custom_minimum_size=Vector2(630,485)
+ scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
+ dlg.add_child(scroll)
+ var box=VBoxContainer.new()
+ box.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ box.add_theme_constant_override("separation",9)
+ scroll.add_child(box)
+ text_label(box,"Il mondo sta scrivendo la propria storia.",21)
+ var op=Experience.opportunity(self)
+ if not op.is_empty():
+  text_label(box,"ADESSO NEL MONDO",14).modulate=Color("e5c17f")
+  var live=button(box,str(op.caption),func():dlg.queue_free();focus_story(op))
+  live.tooltip_text="Raggiungi il luogo reale di questo evento o bisogno."
+ if story_watch_id>=0:
+  var a=sim.find(story_watch_id)
+  if not a.is_empty() and actors.has(a.id):
+   var saved_id=int(a.id)
+   button(box,"STIRPE · "+str(a.name),func():dlg.queue_free();follow_person(saved_id))
+  else:
+   var heir=Experience.successor(self,story_watch_id)
+   if heir>=0:
+    var child=sim.find(heir)
+    button(box,"EREDITÀ · "+str(child.name),func():story_watch_id=heir;dlg.queue_free();follow_person(heir))
+   else:text_label(box,"La stirpe custodita non ha discendenti vivi diretti.",14)
+ text_label(box,"CRONACA DEGLI EVENTI REALI",14).modulate=Color("e5c17f")
+ var entries=Experience.recent(self,8)
+ if entries.is_empty():text_label(box,"Nessun grande evento ancora. Lascia vivere il mondo.",14)
+ for event in entries:
+  var row:Dictionary=event.duplicate()
+  var b=button(box,"G%03d · %s · %s"%[int(row.day),str(row.kind),str(row.caption).substr(0,65)],func():dlg.queue_free();focus_story(row))
+  b.tooltip_text=str(row.caption)
+  b.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+ text_label(box,"ESPLORAZIONE",14).modulate=Color("e5c17f")
+ var visited=0
+ for row in discovery_sites:
+  if row.found:visited+=1
+ button(box,"Luoghi scoperti %d/%d · Esplora l'atlante"%[visited,discovery_sites.size()],func():dlg.queue_free();show_biomes())
+ for i in range(2):
+  var clan=i
+  button(box,"Visita "+Sim.CLANS[i]+" · "+Sim.ERAS[int(sim.villages[i].era)],func():
+   dlg.queue_free()
+   set_tour(false)
+   following=false
+   follow_colossus=false
+   focus=centers[clan]
+   distance=20
+   update_camera())
+ button(box,"Orion · incontra il Custode",func():dlg.queue_free();show_colossus())
+ button(box,"Cronaca completa e genealogia",func():dlg.queue_free();show_legend())
+ dlg.confirmed.connect(dlg.queue_free)
+ dlg.canceled.connect(dlg.queue_free)
+ dlg.popup_centered(Vector2i(680,550))
+
+func present_witnesses(kind:String,near:Array,p:Vector3,clan:int):
+ var good=kind in ["Guarigione","Provviste","Pace","Pioggia","Vita","Resurrezione","Foresta"]
+ var bad=kind in ["Meteorite","Tsunami","Vulcano","Carestia","Incendio","Fulmine","Terremoto","Tornado","Epidemia","Conflitto"]
+ var shown=0
+ for a in near:
+  if shown>=5:break
+  if not actors.has(a.id) or sim.find(int(a.id)).is_empty():continue
+  var r:Dictionary=actors[a.id]
+  var response="Grazie, Creatore!" if good else "Temo il Creatore!" if bad else "Un segno dal cielo!"
+  if good:r["witness_until"]=visual_time+2.5
+  if bad:a.stress=minf(100,float(a.stress)+6)
+  life_bubble(r.node.position,response,Color("d4ebbd") if good else Color("f3ad83"))
+  shown+=1
+ notify_event("SEGNO DIVINO · "+Sim.CLANS[clan],kind+" · "+str(near.size())+" testimoni vicini")
+ 
 func show_title_screen():
  speed=0
  hud.hide()
@@ -5810,6 +6013,7 @@ func show_title_screen():
  layer.layer=8
  add_child(layer)
  title_intro=Control.new()
+ title_intro.theme=hud.theme
  layer.add_child(title_intro)
  title_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  var shade=ColorRect.new()
@@ -5821,7 +6025,7 @@ func show_title_screen():
  title_intro.add_child(box)
  box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
  box.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
- box.position=Vector2(85,180)
+ box.position=Vector2(74,126)
  box.custom_minimum_size=Vector2(650,430)
  box.add_theme_constant_override("separation",18)
  var mark=TextureRect.new()
@@ -5843,7 +6047,7 @@ func show_title_screen():
  tagline.add_theme_font_size_override("font_size",23)
  tagline.modulate=Color("d1dfcf")
  var launch=Button.new()
- launch.text="ENTRA NEL MONDO"
+ launch.text="ENTRA NEL MONDO · GIOCA SUBITO"
  launch.custom_minimum_size=Vector2(420,58)
  launch.size_flags_horizontal=Control.SIZE_SHRINK_CENTER
  launch.add_theme_font_size_override("font_size",21)
@@ -5852,10 +6056,23 @@ func show_title_screen():
   title_intro.hide()
   layer.queue_free()
   hud.show()
+  start_quick_world())
+ var advanced_btn=button(box,"NUOVO UNIVERSO · SCEGLI ORIGINI E MAPPA",func():
+  title_intro.hide()
+  layer.queue_free()
+  hud.show()
   open_welcome())
+ advanced_btn.custom_minimum_size.y=40
+ if FileAccess.file_exists("user://genesis47_auto.json") or FileAccess.file_exists("user://genesis47_auto.json.bak"):
+  button(box,"CONTINUA L’ULTIMO UNIVERSO",func():
+   title_intro.hide()
+   layer.queue_free()
+   hud.show()
+   world_started=true
+   if not load_path("user://genesis47_auto.json"):open_welcome())
  var footer=Label.new()
  box.add_child(footer)
- footer.text="SIMULAZIONE EVOLUTIVA  ·  OFFLINE"
+ footer.text="OSSERVA  ·  CUSTODISCI  ·  TRASFORMA"
  footer.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
  footer.modulate=Color("a4beb5")
  box.modulate.a=0

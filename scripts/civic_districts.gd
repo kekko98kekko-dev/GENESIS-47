@@ -65,6 +65,11 @@ func sync():
    world.block(n,stone,Vector3(0,.10,0),Vector3(3.5,.20,3.5))
    for j in range(3):
     var h=1.7+maxf(0,era-2)*.8+float(j%2)*.55
+    var kind=int(row.index)
+    if kind==0 or kind==2:h*=.68
+    elif kind==1 or kind==3:h*=1.30 if j==1 else .83
+    elif kind==4:h*=1.15 if j!=1 else .75
+    elif kind==5:h*=.86
     var x=(j-1)*1.05
     var facade=world.block(n,stone,Vector3(x,h*.5,0),Vector3(.86,h,1.45))
     facade.material_override=world.architecture_material(stone,.85,0)
@@ -91,6 +96,19 @@ func sync():
      tower.material_override=world.architecture_material(stone,.85,0)
      world.cone(n,accent,Vector3(side*1.4,3.73,-.58),.51,.92,.025,10)
      for j in range(3):world.block(n,Color("4b5d5a"),Vector3(side*1.4,1.0+j*.75,-.25),Vector3(.12,.28,.05))
+   # Functional district silhouettes differ by existing service type.
+   match int(row.index):
+    0:
+     for side in [-1,1]:world.block(n,tint,Vector3(side*.85,1.15,1.4),Vector3(1.45,.12,.85))
+    1,3:
+     world.cone(n,accent,Vector3(0,3.25+maxf(0,era-2)*.65,-.4),.38,1.15,.035,8)
+    2:
+     world.cone(n,tint,Vector3(0,.28,1.3),.48,.25,.48,12)
+    4:
+     world.cone(n,stone.darkened(.25),Vector3(.9,2.45+maxf(0,era-2)*.8,-.65),.22,1.6,.20,8)
+    5:
+     world.block(n,Color("bde2d6"),Vector3(0,1.26,1.65),Vector3(.72,.16,.08),.15)
+     world.block(n,Color("bde2d6"),Vector3(0,1.26,1.65),Vector3(.16,.72,.08),.15)
    var door=Vector3(0,.1,1.4)
    for side in [-1,1]:world.block(n,tint,door+Vector3(side*1.25,.40,0),Vector3(.25,.6,.25))
    for stripe in range(5):world.block(n,tint if stripe%2==0 else Color("e7d8b7"),Vector3(-.64+stripe*.32,1.05,1.45),Vector3(.32,.11,.62))

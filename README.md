@@ -157,3 +157,11 @@ Questa versione privilegia ciò che il giocatore può vedere e vivere, mantenend
 - QA_ASYNC_OCEAN confronta il risultato sincrono e quello del worker, conserva volume e verifica che un risultato obsoleto non sovrascriva un nuovo tsunami. Aggiunto test di avvio grafico normale su Linux; Windows resta smoke test headless. CI e benchmark reale da verificare; nessun FPS garantito.
 
 - Telecamera: tieni premuto il tasto sinistro sul terreno e trascina; un clic breve mantiene selezione/potere, il doppio clic segue la creatura. Il trascinamento non attiva poteri. Anche la minimappa si può trascinare con il sinistro; rotella, destro e WASD restano invariati.
+
+
+## 15.0 — Il mondo vivente (ramo sperimentale)
+- Avvio rapido senza configurazione, ripresa del salvataggio automatico e configurazione avanzata separata. HUD con icone, nuova gerarchia, tutorial aggiornato e accesso Storie (J).
+- Storie porta in primo piano eventi registrati e bisogni effettivi, con camera sul luogo o individuo; deduplica eventi identici, non genera eventi fittizi. Custodisci una stirpe dalla scheda di un cittadino, ritrova figli diretti vivi e prosegui la storia; scelta persistente nel salvataggio. Non è un albero genealogico esteso di tutte le ramificazioni.
+- Miracoli con testimonianze nella biografia, gesti di riconoscenza dei presenti fermi, stress per interventi dannosi e messaggi contestuali limitati a cinque. Orion e i sistemi esistenti conservati.
+- Differenziazione visiva dei distretti per funzione, piccoli dettagli domestici limitati, palette degli alberi; non sostituisce un nuovo art pass completo. Atlante con adattamento e distribuzione delle tre anatomie esistenti. Clima locale e stagionale influenza la selezione delle Origini e, moderatamente, fame/fatica della popolazione spaziale; non aggiunge specie acquatiche o volanti né nuovi rig.
+- QA_EXPERIENCE verifica bisogni reali, deduplicazione, discendente diretto, fitness climatica e persistenza. Prestazioni da misurare sul PC: il codice preserva il worker oceanico e non aggiunge un nuovo loop costoso a ogni frame. Nessuna garanzia di 64 FPS o qualità commerciale; playtest umano necessario.

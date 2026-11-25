@@ -71,8 +71,8 @@ func draw():
 func daily():
  if not active:return
  var next=[]
- var climate=.45 if world.sim.season=="Inverno" else .65
  for clan in range(2):
+  var climate=preload("res://scripts/living_experience.gd").climate(world,clan)
   var group=lineages.filter(func(a):return int(a.clan)==clan)
   var survivors=[]
   var children=[]

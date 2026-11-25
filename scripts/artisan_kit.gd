@@ -77,6 +77,12 @@ static func cottage(w,cover:Node3D,clan:int,era:int,j:int,h:float,tint:Color):
   if era>=2:
    w.block(cover,stone,Vector3(.72,h+.46,-.62),Vector3(.34,1.05,.34))
    w.block(cover,stone.darkened(.18),Vector3(.72,h+1.0,-.62),Vector3(.46,.14,.46))
+  if j<18:
+   # Small readable household details, no new fictitious buildings or collision.
+   for side in [-1,1]:
+    w.block(cover,wood.lightened(.18),Vector3(side*.86,.18,1.32),Vector3(.32,.28,.30))
+    w.sphere(cover,Color("6c9164"),Vector3(side*.86,.40,1.32),Vector3(.28,.32,.27))
+    w.sphere(cover,Color("e3bd78") if clan==0 else Color("ce846a"),Vector3(side*.86,.55,1.32),Vector3(.10,.12,.10))
   if j%3==0:
    var awning=w.block(cover,Color("bca36d"),Vector3(0,1.34,1.43),Vector3(1.12,.09,.65))
    awning.rotation.x=-.26
