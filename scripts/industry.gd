@@ -268,9 +268,40 @@ func sync_visuals():
   var angle=float(id)*2.39996
   var p=w.ground(center.x+cos(angle)*4,center.z+sin(angle)*4)
   n.position=p
-  w.block(n,Color("8e7860"),Vector3(0,.55,0),Vector3(1.35,1.1,1.15))
-  w.block(n,Color("56696b"),Vector3(0,1.15,0),Vector3(1.55,.18,1.35))
-  w.block(n,Color("b69a82"),Vector3(.42,1.55,-.3),Vector3(.22,1,.22))
+  var tint=Color("729b8f") if ocean.port_clan(port)==0 else Color("b68a5c")
+  w.block(n,Color("b5a58b"),Vector3(0,.55,0),Vector3(1.35,1.1,1.15))
+  w.block(n,tint,Vector3(0,1.15,0),Vector3(1.55,.18,1.35))
+  w.block(n,Color("574c42"),Vector3(0,.37,.59),Vector3(.43,.65,.06))
+  var machine=Node3D.new()
+  n.add_child(machine)
+  machine.position=Vector3(0,.78,.67)
+  n.set_meta("machine",machine)
+  var recipe=str(f.recipe)
+  if recipe=="mill":
+   w.block(n,Color("9a8d74"),Vector3(0,1.6,0),Vector3(.72,1.1,.72))
+   machine.position=Vector3(0,1.72,.42)
+   for k in range(4):
+    var blade=w.block(machine,Color("dbcc9d"),Vector3.ZERO,Vector3(.16,1.95,.065))
+    blade.rotation.z=k*PI*.25
+  elif recipe in ["forge","kiln","bakery"]:
+   w.block(n,Color("9b7960"),Vector3(.48,1.57,-.35),Vector3(.30,1.0,.30))
+   w.cone(n,Color("5d5147"),Vector3(.48,2.07,-.35),.23,.15,.23,8)
+   var heat=w.sphere(machine,Color("ffb66b"),Vector3(0,-.21,0),Vector3(.42,.38,.13),1.1)
+   n.set_meta("heat",heat)
+  else:
+   for k in range(6):
+    var tooth=w.block(machine,Color("9aabb0"),Vector3.ZERO,Vector3(.10,.72,.07))
+    tooth.rotation.z=k*PI/6
+   w.sphere(machine,Color("53636b"),Vector3.ZERO,Vector3(.23,.23,.16))
+  var activity=Label3D.new()
+  n.add_child(activity)
+  activity.position.y=2.72
+  activity.text=""
+  activity.font_size=24
+  activity.pixel_size=.007
+  activity.modulate=Color("f6d9a2")
+  activity.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+  n.set_meta("activity",activity)
   var tag=Label3D.new()
   n.add_child(tag)
   tag.position.y=2.3
@@ -540,3 +571,22 @@ func audit()->Dictionary:
   if not is_finite(float(row.escrow)) or float(row.escrow)<0 or float(row.quantity)<=0:errors.append("invalid escrow "+str(row.id))
   if bool(row.get("physical",false)) and not jobs.values().any(func(job):return int(job.get("contract",-1))==int(row.id)):errors.append("orphan escrow "+str(row.id))
  return {"ok":errors.is_empty(),"errors":errors,"companies":companies.size(),"jobs":jobs.size(),"contracts":contracts.size(),"production":produced_units,"deliveries":delivered_units}
+
+
+func animate(dt:float):
+ for id in nodes:
+  var n:Node3D=nodes[id]
+  if not is_instance_valid(n):continue
+  var busy=false
+  for key in jobs:
+   var j=jobs[key]
+   if int(j.company)==int(id) and str(j.stage)=="work" and int(j.index)>=j.path.size():busy=true;break
+  var f=find(int(id))
+  var machine=n.get_meta("machine")
+  if busy and is_instance_valid(machine) and str(f.recipe) not in ["forge","kiln","bakery"]:machine.rotation.z+=dt*1.6
+  var heat=n.get_meta("heat",null)
+  if is_instance_valid(heat):heat.visible=busy
+  var tag=n.get_meta("activity",null)
+  if is_instance_valid(tag):
+   tag.text="IN PRODUZIONE" if busy else "Attende materiali"
+   tag.visible=ocean.world.distance<28 and ocean.world.show_world_labels
