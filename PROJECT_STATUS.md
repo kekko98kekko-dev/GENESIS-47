@@ -18,9 +18,9 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione stabile su main: 13.0.0 — Orion, il Custode; ramo upgrade-14-0-performance: 14.0.0 in collaudo.
+- Versione su main: 13.0.0 — Orion, il Custode. Ramo upgrade-14-0-performance: 14.0, CI integralmente riuscita e 64 FPS riferiti dal proprietario; ramo upgrade-15-0-living-world: 15.0 in collaudo.
 - Ultimo commit applicativo prima di questo aggiornamento del registro: 21bbc86b656cedaf8dd7c3d5d8fff580b7e8e0.
-- Ultima versione con pipeline integralmente superata: 13.0 (run 45604507360); precedente 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
+- Ultima versione con pipeline integralmente superata: 14.0 (run 45608380961); precedente 13.0 (run 45604507360) e 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
@@ -190,3 +190,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 ## 15.0 — Il mondo vivente (ramo upgrade-15-0-living-world, base 14.0 verificata)
 - Richiesta del proprietario: affrontare insieme le critiche di prima esperienza, interfaccia, legame, poteri, città, esplorazione, evoluzione e storie. Modifiche applicative in world.gd, living_experience.gd, legend.gd, origins.gd, artisan_kit.gd, civic_districts.gd, art_direction.gd; versione, QA e workflow aggiornati. Avvio rapido sul mondo già generato, opzioni separate; HUD e guida riorganizzati, Storie con eventi reali e collegamenti, bisogni e stirpe persistente, reazioni ai miracoli e biografie, silhouette distinte dei distretti e piccoli dettagli, adattamento climatico e atlante. La 14.0 resta intatta come fallback.
 - QA_EXPERIENCE verifica bisogno, deduplicazione, erede diretto, fitness e salvataggio; pipeline da verificare. Limiti: non è riprogettazione artistica completa, non introduce nuove famiglie anatomiche acquatiche/volanti o nuovi mondi, eventi derivano dai sistemi esistenti e non si garantisce divertimento o stabilità FPS. Nessuna prova umana nuova né acquisizione di asset proprietari. Priorità: CI, screenshot, benchmark reale e playtest cieco; correggere le regressioni riscontrate.
+
+- Commit applicativo 15.0: aa2bc7050f6efef9d40a78d7c37127167c3ed6a0; pipeline https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45611936709, in_progress al controllo. Nessun artifact nuovo verificato. La 14.0 rimane scaricabile dal proprio artifact e non viene sovrascritta. Non attribuire alla 15.0 i 64 FPS della 14.0.
