@@ -235,7 +235,7 @@ func daily():
  for key in jobs.keys():
   var job=jobs[key]
   var company=find(int(job.company))
-  if company.is_empty() or not company.active or ocean.finance.customer(int(company.port),int(key)).is_empty():cancel_job(key)
+  if company.is_empty() or not company.active or ocean.finance.customer(int(company.port),int(key)).is_empty() or not company.employees.has(int(key)):cancel_job(key)
  sync_visuals()
 
 func cash_total()->float:
@@ -364,7 +364,7 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
   jobs[key]=created
  var job:Dictionary=jobs[key]
  var f=find(int(job.company))
- if f.is_empty() or not f.active or int(f.port)!=port:
+ if f.is_empty() or not f.active or int(f.port)!=port or not f.employees.has(int(a.id)):
   cancel_job(key)
   return -1
  var w=ocean.world
@@ -463,6 +463,10 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
    var contract=contract_by_id(int(job.get("contract",-1)))
    if contract.is_empty():cancel_job(key);return -1
    var q=float(contract.quantity)
+   var recipient=find(int(contract.buyer))
+   if recipient.is_empty() or not recipient.active:
+    cancel_job(key)
+    return -1
    settle_contract(contract)
    delivered_units+=q
    jobs.erase(key)
@@ -505,3 +509,31 @@ func refund_contract(row:Dictionary):
   if buyer.active:buyer.cash+=float(row.escrow)
   else:ocean.change(int(buyer.port),"cash",float(row.escrow))
  contracts.erase(row)
+
+
+# Structural invariants checked throughout a long-running simulation.
+func audit()->Dictionary:
+ var errors=[]
+ var reserved={}
+ var employees={}
+ for f in companies:
+  if not is_finite(float(f.cash)) or float(f.cash)<-.001:errors.append("invalid company cash "+str(f.id))
+  for good in f.stock:
+   if not is_finite(float(f.stock[good])) or float(f.stock[good])<-.001:errors.append("invalid stock "+str(f.id)+"/"+str(good))
+  if not f.active:continue
+  for id in f.employees:
+   if employees.has(int(id)):errors.append("duplicate employee "+str(id))
+   employees[int(id)]=int(f.id)
+ for key in jobs:
+  var job=jobs[key]
+  var firm=find(int(job.company))
+  if firm.is_empty() or not firm.active:errors.append("orphan job "+str(key))
+  if reserved.has(int(job.company)):errors.append("duplicate company reservation "+str(job.company))
+  reserved[int(job.company)]=true
+  for good in job.get("cargo",{}):
+   if not is_finite(float(job.cargo[good])) or float(job.cargo[good])<0:errors.append("invalid cargo "+str(key))
+  if job.has("contract") and contract_by_id(int(job.contract)).is_empty():errors.append("orphan contract courier "+str(key))
+ for row in contracts:
+  if not is_finite(float(row.escrow)) or float(row.escrow)<0 or float(row.quantity)<=0:errors.append("invalid escrow "+str(row.id))
+  if bool(row.get("physical",false)) and not jobs.values().any(func(job):return int(job.get("contract",-1))==int(row.id)):errors.append("orphan escrow "+str(row.id))
+ return {"ok":errors.is_empty(),"errors":errors,"companies":companies.size(),"jobs":jobs.size(),"contracts":contracts.size(),"production":produced_units,"deliveries":delivered_units}
