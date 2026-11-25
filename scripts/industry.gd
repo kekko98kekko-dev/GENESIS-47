@@ -60,12 +60,16 @@ func population(port:int)->Array:
  if port<2:return ocean.world.sim.people.filter(func(a):return int(a.clan)==port)
  return ocean.colony(port).get("citizens",[])
 
-func create_company(port:int,recipe:String,capital:float)->bool:
- if not ocean.enabled or not RECIPES.has(recipe) or capital<12 or ocean.balance(port,"cash")<capital:return false
+func create_company(port:int,recipe:String,capital:float,founder:int=-1)->bool:
+ if not ocean.enabled or not RECIPES.has(recipe) or capital<12:return false
+ var owner=ocean.finance.customer(port,founder) if founder>=0 else {}
+ if founder>=0 and (owner.is_empty() or float(owner.coins)<capital):return false
+ if founder<0 and ocean.balance(port,"cash")<capital:return false
  if ocean.port_population(port)<2:return false
  if companies.any(func(f):return int(f.port)==port and f.recipe==recipe and f.active):return false
- ocean.change(port,"cash",-capital)
- var f={"id":next_id,"port":port,"recipe":recipe,"name":str(RECIPES[recipe].label)+" "+str(next_id),"cash":capital,"stock":{},"employees":[],"labor":0.0,"active":true,"batches":0,"revenue":0.0,"cost":0.0,"tax":0.0,"wages":0.0,"idle_days":0,"founded":ocean.world.sim.day}
+ if founder>=0:owner.coins-=capital
+ else:ocean.change(port,"cash",-capital)
+ var f={"id":next_id,"port":port,"recipe":recipe,"name":str(RECIPES[recipe].label)+" "+str(next_id),"cash":capital,"stock":{},"employees":[],"labor":0.0,"active":true,"batches":0,"revenue":0.0,"cost":0.0,"tax":0.0,"wages":0.0,"idle_days":0,"founded":ocean.world.sim.day,"owner":founder,"capital":capital,"dividends":0.0}
  next_id+=1
  companies.append(f)
  log_entry(f,"Capitale",capital)
@@ -180,12 +184,15 @@ func settle_contract(row:Dictionary):
  contracts.erase(row)
 
 func close(f:Dictionary):
+ ocean.finance.liquidate_company(int(f.port),int(f.id))
  f.active=false
  for row in contracts.duplicate():
   if int(row.seller)==int(f.id) or int(row.buyer)==int(f.id):settle_contract(row)
  for good in f.stock:ocean.change(int(f.port),good,float(f.stock[good]))
  f.stock={}
- ocean.change(int(f.port),"cash",float(f.cash))
+ var owner=ocean.finance.customer(int(f.port),int(f.get("owner",-1)))
+ if owner.is_empty():ocean.change(int(f.port),"cash",float(f.cash))
+ else:owner.coins+=float(f.cash)
  f.cash=0.0
  f.employees=[]
  log_entry(f,"Liquidazione",0.0)
@@ -202,7 +209,10 @@ func daily():
    for recipe in RECIPES:
     if ocean.balance(port,"cash")<36:break
     if int(ocean.world.sim.villages[ocean.port_clan(port)].tech)<(4 if recipe in ["forge","mechanics"] else 2):continue
-    if create_company(port,recipe,18.0):break
+    var founder=-1
+   for a in population(port):
+    if float(a.age)>=18 and float(a.coins)>=30:founder=int(a.id);break
+   if create_company(port,recipe,18.0,founder):break
  for f in companies:
   if not f.active:continue
   if ocean.world.sim.day%7==0:hire(f)
@@ -218,6 +228,8 @@ func daily():
    var q=minf(available,maxf(0,float(needs[good])*2-float(other.stock.get(good,0))))
    if q>=1 and make_contract(int(f.id),int(other.id),good,q):available-=q
   if available>0 and ocean.balance(int(f.port),good)<ocean.target(int(f.port),good)*2:sell(f,good,minf(available,4))
+  if float(f.cash)<5 and int(f.idle_days)>5:ocean.finance.lend_company(int(f.port),int(f.id),8)
+  if ocean.world.sim.day%15==0:pay_dividend(f)
   if int(f.idle_days)>30 and float(f.cash)<1 and f.stock.values().all(func(q):return float(q)<.1):close(f)
  sync_visuals()
 
@@ -263,5 +275,18 @@ func sync_visuals():
 func report()->String:
  var lines=["IMPRESE E FILIERE","Lotti %d · Salari %.1f · Imposte %.1f · Contratti aperti %d"%[batches,wages,taxes,contracts.size()]]
  for f in companies:
-  lines.append("%s · %s · %s\nCassa %.1f · Dipendenti %d · Ricavi %.1f · Costi %.1f\nScorte %s"%[f.name,ocean.port_name(int(f.port)),"Attiva" if f.active else "Liquidata",float(f.cash),f.employees.size(),float(f.revenue),float(f.cost),str(f.stock)])
+  var owner=ocean.finance.customer(int(f.port),int(f.get("owner",-1)))
+  lines.append("%s · %s · %s\nProprietà %s · Cassa %.1f · Dipendenti %d\nRicavi %.1f · Costi %.1f · Dividendi %.1f\nScorte %s"%[f.name,ocean.port_name(int(f.port)),"Attiva" if f.active else "Liquidata",str(owner.get("name","Comunità")),float(f.cash),f.employees.size(),float(f.revenue),float(f.cost),float(f.get("dividends",0)),str(f.stock)])
  return "\n".join(lines)
+
+
+func pay_dividend(f:Dictionary):
+ var profit=float(f.revenue)-float(f.cost)-float(f.tax)-float(f.get("dividends",0))
+ var amount=minf(maxf(0,profit*.2),maxf(0,float(f.cash)-20))
+ if amount<.1:return
+ var owner=ocean.finance.customer(int(f.port),int(f.get("owner",-1)))
+ f.cash-=amount
+ if owner.is_empty():ocean.change(int(f.port),"cash",amount)
+ else:owner.coins+=amount
+ f["dividends"]=float(f.get("dividends",0))+amount
+ log_entry(f,"Dividendo",amount)
