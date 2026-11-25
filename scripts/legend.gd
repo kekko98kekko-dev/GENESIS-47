@@ -8,6 +8,7 @@ var monuments:Array=[]
 var worship:Array=[]
 var traditions:Array=[]
 var journey=0
+var milestones:Dictionary={}
 var last_seen=-1
 var root:Node3D
 var visual_dirty=true
@@ -21,6 +22,7 @@ func reset(w,data={}):
  worship=[{"love":55.0,"fear":0.0,"temple":false,"visits":0,"last":-1},{"love":55.0,"fear":0.0,"temple":false,"visits":0,"last":-1}]
  traditions=[{"kind":"Custodi della vita","memory":0,"era":0},{"kind":"Figli dell'orizzonte","memory":0,"era":0}]
  journey=0
+ milestones={}
  last_seen=-1
  last_day=-1
  pilgrims={}
@@ -33,23 +35,26 @@ func reset(w,data={}):
   saved=data.get("traditions",[])
   if saved is Array and saved.size()==2:traditions=saved
   journey=clampi(int(data.get("journey",0)),0,GOALS.size())
+  milestones=data.get("milestones",{})
+  for i in range(journey):milestones[str(i)]=true
   last_seen=int(data.get("last_seen",-1))
   last_day=int(data.get("last_day",-1))
   pilgrims=data.get("pilgrims",{})
   for row in pilgrims.values():row.revision=-1
 
 func export_state()->Dictionary:
- return {"entries":entries,"monuments":monuments,"worship":worship,"traditions":traditions,"journey":journey,"last_seen":last_seen,"last_day":last_day,"pilgrims":pilgrims}
+ return {"entries":entries,"monuments":monuments,"worship":worship,"traditions":traditions,"journey":journey,"milestones":milestones,"last_seen":last_seen,"last_day":last_day,"pilgrims":pilgrims}
 
 func log_event(kind:String,clan:int,person:int,caption:String,location=Vector3.ZERO):
  entries.push_front({"day":world.sim.day,"kind":kind,"clan":clan,"person":person,"caption":caption,"x":location.x,"z":location.z})
  if entries.size()>1200:entries.pop_back()
 
 func advance_goal(index:int):
- if journey!=index:return
- journey+=1
+ if index<0 or index>=GOALS.size() or milestones.has(str(index)):return
+ milestones[str(index)]=true
  world.sim.energy=minf(100,float(world.sim.energy)+8)
  log_event("Traguardo",-1,-1,"Il Creatore ha completato: "+GOALS[index])
+ while journey<GOALS.size() and milestones.has(str(journey)):journey+=1
  if not world.test_mode:world.notify_event("UN NUOVO CAPITOLO",GOALS[index])
 
 func meet(id:int,followed:bool):
@@ -214,7 +219,12 @@ func label(n:Node3D,value:String,height:float):
  tag.modulate=Color("f4e8cd")
 
 func goal_text()->String:
- return "CAPITOLO %d/%d · %s"%[journey+1,GOALS.size(),GOALS[journey]] if journey<GOALS.size() else "ETERNITÀ · La storia continua"
+ if journey<GOALS.size():return "CAPITOLO %d/%d · %s"%[journey+1,GOALS.size(),GOALS[journey]]
+ if world.sim.people.is_empty():return "ETERNITÀ · Riporta la vita nel mondo"
+ if world.sim.peace<40:return "ETERNITÀ · Una pace da ricostruire"
+ if world.ocean.enabled and world.ocean.colonies.is_empty():return "ETERNITÀ · Oltre il mare"
+ if world.sim.people.any(func(a):return float(a.health)<45):return "ETERNITÀ · Proteggi i più fragili"
+ return "ETERNITÀ · La storia continua"
 
 func report()->String:
  var lines=["LA TUA LEGGENDA",goal_text()]
