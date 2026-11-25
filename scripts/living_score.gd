@@ -132,7 +132,7 @@ func ambient(city:bool)->AudioStreamWAV:
   bytes.encode_s16(i*2,int(clampf(sample_value*edge,-1,1)*26000))
  return wav(bytes,rate,frames)
 
-func chirp(id:int,trait:float)->AudioStreamWAV:
+func chirp(id:int,voice_trait:float)->AudioStreamWAV:
  var rate=12000
  var frames=int(rate*.65)
  var bytes=PackedByteArray()
@@ -140,7 +140,7 @@ func chirp(id:int,trait:float)->AudioStreamWAV:
  for i in range(frames):
   var t=float(i)/rate
   var beat=fposmod(t,.21)
-  var f=270+trait*240+float(posmod(id+int(t/.21),4))*45
+  var f=270+voice_trait*240+float(posmod(id+int(t/.21),4))*45
   var envelope=sin(PI*minf(1.0,beat/.18)) if beat<.18 else 0.0
   var sample_value=(sin(TAU*f*beat)+sin(TAU*f*2.05*beat)*.23)*envelope*.10
   bytes.encode_s16(i*2,int(sample_value*28000))
