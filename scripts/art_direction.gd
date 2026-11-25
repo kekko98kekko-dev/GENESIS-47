@@ -63,6 +63,12 @@ static func house(w,cover:Node3D,clan:int,era:int,j:int,h:float):
   w.block(cover,Color("f3d49a"),Vector3(side*.76,h*.66,1.20),Vector3(.25,.28,.04),.27)
   w.block(cover,trim,Vector3(side*.76,h*.66,1.23),Vector3(.035,.28,.04))
   if era>=1:w.block(cover,accent,Vector3(side*.78,.18,1.20),Vector3(.42,.13,.35))
+ for side in [-1,1]:
+  var box_pos=Vector3(side*.82,.14,1.5)
+  w.block(cover,trim,box_pos,Vector3(.48,.25,.35))
+  for k in range(3):
+   w.sphere(cover,Color("709259"),box_pos+Vector3((k-1)*.13,.20,0),Vector3(.22,.32,.20))
+   w.sphere(cover,accent.lightened(.22),box_pos+Vector3((k-1)*.13,.37,0),Vector3(.09,.10,.09))
  if era<=1:
   for k in range(4):w.block(cover,trim,Vector3(0,.35+k*.28,-1.12),Vector3(2.05,.055,.04))
   if clan==1:w.cone(cover,Color("ae8258"),Vector3(0,h+.62,0),.95,.86,.03,8)
@@ -128,6 +134,8 @@ static func portrait(w,r:Dictionary,a:Dictionary):
  else:
   w.block(b,cloth,Vector3(.18,-.21,-.29),Vector3(.30,.42,.20))
   w.block(b,accent,Vector3(.18,-.08,-.40),Vector3(.26,.12,.035))
+ if age>=14 and not leader and int(a.id)%3==0:
+  for k in range(3):w.sphere(h,accent.darkened(.12),Vector3(-.25+k*.045,-.10,.32),Vector3(.036,.036,.022))
  if int(a.get("scars",0))>0:
   var scar=w.block(h,Color("89665a"),Vector3(.22,-.02,.29),Vector3(.035,.15,.025))
   scar.rotation.z=.48
