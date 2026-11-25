@@ -35,6 +35,14 @@ static func landmarks(w,parent:Node3D):
   parent.add_child(n)
   n.position=p
   if i==0:
+   # Waterfall and cave entrance are scenic landmarks, not hydraulic sources or an interior level.
+   var cliff=Node3D.new()
+   n.add_child(cliff)
+   cliff.position=Vector3(2.8,.2,1.3)
+   w.block(cliff,Color("768e91"),Vector3(0,1.5,0),Vector3(1.8,3,1.2))
+   w.block(cliff,Color("8bd2d5"),Vector3(0,1.55,.64),Vector3(.62,2.85,.08),.15)
+   w.sphere(cliff,Color("b2e3e4"),Vector3(0,.12,.9),Vector3(1.35,.23,.8))
+   w.block(n,Color("273b3c"),Vector3(-1.9,.40,1.7),Vector3(.85,.80,.08))
    for side in [-1,1]:
     w.cone(n,Color("778a91"),Vector3(side*2,2,0),2.4,4.0,.25,6)
    w.cone(n,Color("cbdce0"),Vector3.UP*3.4,1.3,2.2,.02,7)
@@ -45,6 +53,11 @@ static func landmarks(w,parent:Node3D):
     w.sphere(n,Color("679b83"),Vector3(cos(a)*2,.3,sin(a)*2),Vector3(1.0,.13,1.0))
    w.cone(n,Color("537e84"),Vector3.UP*.06,1.6,.12,1.6,16,.13)
   elif i==2:
+   var volcano=Node3D.new()
+   n.add_child(volcano)
+   volcano.position=Vector3(5,0,-4)
+   w.cone(volcano,Color("705649"),Vector3.UP*2,2.8,4.0,.70,12)
+   w.cone(volcano,Color("dd8450"),Vector3.UP*4.02,.65,.08,.65,12,.6)
    for k in range(3):
     var tier=w.piece(n,PrismMesh.new(),Color("c6a36a"),Vector3(0,.5+k*.62,0),Vector3(4.6-k*1.2,1.4,3.1-k*.8))
     tier.rotation.y=PI*.5
