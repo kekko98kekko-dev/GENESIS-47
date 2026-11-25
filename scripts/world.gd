@@ -1591,6 +1591,9 @@ func alter_ground(p:Vector3,amount:float,r:float):
  rebuild_meadow()
 
 func divine(p:Vector3):
+ if vast_world and maxf(absf(p.x),absf(p.z))>51 and power=="Tsunami":
+  hint.text="Lo tsunami agisce nel bacino oceanico centrale."
+  return
  if origins.active:
   hint.text="Durante le Origini osserva l’evoluzione delle forme primitive."
   return
@@ -1976,6 +1979,9 @@ func setup_ui():
  legend_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
  button(story_tab,"Segui una storia",follow_story)
  button(story_tab,"Luoghi della memoria",show_story_locations)
+ button(story_tab,"Genealogia",func():
+  if selected>=0:open_dialog("ALBERO DELLA VITA",legend.genealogy(selected))
+  else:open_dialog("ALBERO DELLA VITA","Seleziona prima un abitante."))
  button(story_tab,"Esplora i biomi",show_biomes)
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
  var bottom=panel(hud,Rect2(14,746,1412,140),.87)
@@ -2628,6 +2634,30 @@ func capture_preview():
  if region_err!=OK:err=region_err
  var pose_err=await capture_pose_gallery()
  if pose_err!=OK:err=pose_err
+ new_world(47,0,true,true,true)
+ speed=0
+ hud.hide()
+ for clan in range(2):
+  sim.villages[clan].era=4
+  sim.villages[clan].houses=12
+  sync_houses(clan)
+ districts.sync()
+ focus=Vector3.ZERO
+ distance=215
+ pitch=1.42
+ update_camera()
+ await get_tree().create_timer(.5).timeout
+ await RenderingServer.frame_post_draw
+ var frontier_err=get_viewport().get_texture().get_image().save_png("res://preview-frontier.png")
+ if frontier_err!=OK:err=frontier_err
+ focus=centers[0]
+ distance=20
+ pitch=.66
+ update_camera()
+ await get_tree().create_timer(.4).timeout
+ await RenderingServer.frame_post_draw
+ var city_err=get_viewport().get_texture().get_image().save_png("res://preview-city.png")
+ if city_err!=OK:err=city_err
  speed=1
  await get_tree().create_timer(.7).timeout
  print("CAPTURE ",err)
@@ -3979,6 +4009,10 @@ func register_service(kind:String,clan:int,p:Vector3,capacity:int,caption:String
   var tint=Color("7bbcb1") if clan==0 else Color("dcac76")
   match kind:
    "eat","store":
+    for side in [-1,1]:
+     block(node,Color("92704e"),Vector3(-.6+side*.52,.70,-.35),Vector3(.07,1.4,.07))
+     block(node,Color("92704e"),Vector3(-.6+side*.52,.70,.35),Vector3(.07,1.4,.07))
+    for stripe in range(5):block(node,tint if stripe%2==0 else Color("e9d9b3"),Vector3(-1.05+stripe*.22,1.44,0),Vector3(.23,.075,.92))
     block(node,Color("876748"),Vector3(-.6,.25,0),Vector3(.9,.5,.72))
     for j in range(3):
      sphere(node,Color("e6b962") if kind=="eat" else Color("a38460"),Vector3(-.8+j*.22,.57,0),Vector3(.18,.18,.18))
