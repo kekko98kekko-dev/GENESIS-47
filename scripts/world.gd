@@ -9,6 +9,10 @@ const OceanDynamics=preload("res://scripts/ocean_dynamics.gd")
 const QualityAssurance=preload("res://scripts/quality_assurance.gd")
 const MotionLibrary=preload("res://scripts/mocap_library.gd")
 const Structure=preload("res://scripts/structure.gd")
+const Art=preload("res://scripts/art_direction.gd")
+const Legend=preload("res://scripts/legend.gd")
+const Wildlife=preload("res://scripts/wildlife.gd")
+const LivingScore=preload("res://scripts/living_score.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -23,6 +27,18 @@ var ocean_dynamics=OceanDynamics.new()
 var ocean_dynamics_saved={}
 var fluid_saved={}
 var fluid_root:Node3D
+var legend=Legend.new()
+var wildlife=Wildlife.new()
+var living_score=LivingScore.new()
+var legend_root:Node3D
+var wildlife_root:Node3D
+var legend_view:RichTextLabel
+var journey_label:Label
+var map_panel:PanelContainer
+var map_region:Label
+var player_hud=true
+var impact_shake=0.0
+var impact_flash:ColorRect
 var hydro_root:Node3D
 var hydro_saved={}
 var colony_selected=-1
@@ -364,7 +380,12 @@ func setup_environment():
  env.ambient_light_energy=.40
  env.fog_enabled=true
  env.fog_light_color=Color("afc8cf")
- env.fog_density=.0025
+ env.fog_density=.004
+ env.tonemap_mode=Environment.TONE_MAPPER_FILMIC
+ env.tonemap_exposure=1.05
+ env.adjustment_enabled=true
+ env.adjustment_saturation=1.08
+ env.adjustment_contrast=1.06
  var en=WorldEnvironment.new()
  en.environment=env
  add_child(en)
@@ -413,6 +434,7 @@ func setup_environment():
  event_player.volume_db=-18
  if not test_mode and not "--capture" in OS.get_cmdline_user_args():
   create_soundscape()
+  living_score.setup(self)
 
 func create_soundscape():
  var rate=16000
@@ -496,7 +518,7 @@ func terrain_color(p:Vector3)->Color:
  for c in centers:
   if Vector2(p.x-c.x,p.z-c.z).length()<6:
    grass=grass.lerp(Color("b0a280"),.35)
- return grass
+ return Art.ground_color(self,p,grass)
 
 func make_terrain():
  terrain_revision+=1
@@ -580,6 +602,8 @@ func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  world_centers.clear()
  destroyed_total=0
  sim.start(seed_value,which)
+ legend.reset(self)
+ wildlife.reset(self)
  ocean.reset(self,ocean_mode)
  sim.spatial_autonomy=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
  last_auto_day=-1
@@ -598,7 +622,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -710,6 +734,12 @@ func reset_visuals():
  rebuild_outposts()
  rebuild_hazards()
  ocean.rebuild_visuals(ocean_root)
+ legend_root=Node3D.new()
+ add_child(legend_root)
+ legend.rebuild_visuals(legend_root)
+ wildlife_root=Node3D.new()
+ add_child(wildlife_root)
+ wildlife.build(wildlife_root)
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -750,6 +780,7 @@ func make_tree(p:Vector3,h:float,i:int):
  var rotation_value=rng.randf()*TAU
  if scarred(p):return
  timber_points.append(p)
+ if Art.tree(self,p,h,i):return
  var n=asset(scenery,"tree",i,p,h,rotation_value)
  if n!=null:
   n.set_meta("vegetation",true)
@@ -849,6 +880,7 @@ func make_house(i:int,j:int,era:int):
   for k in range(3):block(cover,Color("375e68"),Vector3(-.56+k*.56,h+.25,0),Vector3(.48,.06,.85),.25 if era>=5 else 0.0)
   if era>=5:cone(cover,Color("b7e4db"),Vector3(0,h+.63,0),.25,.82,.03,8,.5)
  for side in [-1,1]:block(cover,Color("80664f"),Vector3(side*.49,.62,1.13),Vector3(.08,1.25,.10))
+ Art.house(self,cover,i,era,j,h)
  interior.visible=false
  show_structure(n,site)
  return n
@@ -979,6 +1011,7 @@ func create_actor(a:Dictionary):
  actors[a.id]["brows"]=rig.get("brows",[])
  actors[a.id]["mouth"]=rig.get("mouth")
  actors[a.id]["skeletal"]=rig.get("skeletal",{})
+ Art.portrait(self,actors[a.id],a)
  parent.scale=Vector3.ONE*clampf(.5+a.age/26,.5,1)
  var name_tag=Label3D.new()
  parent.add_child(name_tag)
@@ -1025,6 +1058,7 @@ func apply_changes():
      if sim.spatial_autonomy:
       if not a.parents.is_empty() and actors.has(int(a.parents[0])):actors[a.id].node.position=actors[int(a.parents[0])].node.position+Vector3(.5,0,0)
       life_bubble(actors[a.id].node.position,"NUOVA VITA",Color("f4d1a0"))
+     if not test_mode and legend!=null:legend.born(a,actors[a.id].node.position)
     services_dirty=true
    "emigration":
     claims.erase(int(e.id))
@@ -1041,6 +1075,7 @@ func apply_changes():
     claims.erase(int(e.id))
     if actors.has(e.id):
      var n=actors[e.id].node
+     if not test_mode:legend.death(int(e.id),n.position)
      spark(n.position+Vector3(0,.6,0),Color("b8dad0"),.55)
      if sim.spatial_autonomy:life_bubble(n.position,"ADDIO",Color("c0d2e3"))
      n.queue_free()
@@ -1049,6 +1084,7 @@ func apply_changes():
     services_dirty=true
     if selected==e.id:selected=-1
    "house","era":
+    if e.kind=="era" and not test_mode:legend.era(int(e.clan))
     sync_houses(int(e.clan))
     nav_dirty=true
     rebuild_farms()
@@ -1087,6 +1123,9 @@ func step_day():
   for clan in range(2):ocean.change(clan,"cash",maxf(0,float(treasury_before[clan])-float(sim.villages[clan].culture.treasury)))
  ocean.daily()
  apply_changes()
+ if not test_mode:
+  legend.daily()
+  wildlife.daily()
  if sim.day%7==0:
   repair_structures()
   rebuild_farms()
@@ -1123,6 +1162,16 @@ func update_camera():
 func _process(delta:float):
  if camera==null or centers.size()!=2 or test_mode:return
  visual_time+=delta
+ living_score.update(delta)
+ if impact_shake>0:
+  impact_shake=maxf(0,impact_shake-delta*1.4)
+  camera.h_offset=sin(visual_time*46)*impact_shake*.18
+  camera.v_offset=cos(visual_time*53)*impact_shake*.12
+  if is_instance_valid(impact_flash):impact_flash.color=Color(1,.72,.36,impact_shake*.12)
+ else:
+  camera.h_offset=0
+  camera.v_offset=0
+  if is_instance_valid(impact_flash):impact_flash.color=Color(1,1,1,0)
  fps_clock+=delta
  if fps_clock>=1.0:
   fps_clock=0.0
@@ -1197,6 +1246,7 @@ func _process(delta:float):
    var detailed=distance<35 and quality_mode>0 and flat_dist(n.position,focus)<28
    if detailed or rig_elapsed>=.10:
     CreatureRig.drive(r,a,moving,detailed,rig_elapsed)
+    if detailed:Art.portrait(self,r,a)
     rig_elapsed=0.0
    r["rig_elapsed"]=rig_elapsed
    if is_instance_valid(r.get("signet")):
@@ -1209,6 +1259,7 @@ func _process(delta:float):
    spatial_society()
   update_worksites()
   ocean.life.tick(delta*minf(speed,20.0))
+  wildlife.tick(delta*minf(speed,20.0))
   hydro.tick(delta*minf(speed,12.0))
   fluid_volume.tick(delta*minf(speed,4.0))
   ocean_dynamics.tick(delta*minf(speed,4.0))
@@ -1294,6 +1345,8 @@ func _unhandled_input(event:InputEvent):
   if event.keycode==KEY_F1:show_help()
   if event.keycode==KEY_F2:start_onboarding()
   if event.keycode==KEY_TAB:toggle_compact()
+  if event.keycode==KEY_L:show_legend()
+  if event.keycode==KEY_P:left_panel.visible=not left_panel.visible;refresh()
   if event.keycode==KEY_F6:set_tour(not tour)
   if event.keycode==KEY_HOME:
    following=false
@@ -1382,6 +1435,9 @@ func select_at(mouse:Vector2):
    best=dist
    selected=-1
    colony_selected=int(id)
+ if selected>=0:
+  if not test_mode:legend.meet(selected,false)
+  if player_hud:right_panel.show();inspector_tabs.current_tab=0
  if colony_selected>=0:
   var a=ocean.life.find(colony_selected)
   if not a.is_empty():
@@ -1632,6 +1688,7 @@ func divine(p:Vector3):
   if sim.find(int(a.id)).is_empty():continue
   if power in ["Guarigione","Provviste","Pace","Pioggia"]:sim.adjust_trust(a,5)
   elif power in ["Meteorite","Fulmine","Tsunami","Vulcano","Carestia"]:sim.adjust_trust(a,-12)
+ if not test_mode:legend.miracle(power,clan,near,p)
  spark(p,color,1.5)
  if not test_mode:play_event_sound(power in ["Meteorite","Fulmine","Vulcano","Tsunami"])
  sim.log_event("Intervento divino: "+power+" su "+Sim.CLANS[clan]+".")
@@ -1644,10 +1701,12 @@ func panel(parent:Control,r:Rect2,opacity=.94)->PanelContainer:
  n.position=r.position
  n.size=r.size
  var s=StyleBoxFlat.new()
- s.bg_color=Color(.055,.115,.125,opacity)
- s.border_color=Color("42665f")
+ s.bg_color=Color(.075,.105,.12,opacity)
+ s.border_color=Color("59756d")
  s.set_border_width_all(1)
- s.set_corner_radius_all(10)
+ s.set_corner_radius_all(12)
+ s.shadow_color=Color(0,0,0,.22)
+ s.shadow_size=5
  s.content_margin_left=13
  s.content_margin_right=13
  s.content_margin_top=10
@@ -1687,11 +1746,11 @@ func setup_ui():
  hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  hud.mouse_filter=Control.MOUSE_FILTER_IGNORE
  var theme=Theme.new()
- theme.default_font_size=14
- theme.set_color("font_color","Button",Color("e5f0e8"))
+ theme.default_font_size=15
+ theme.set_color("font_color","Button",Color("eee9d7"))
  for state in ["normal","hover","pressed","focus","disabled"]:
   var s=StyleBoxFlat.new()
-  s.bg_color=Color("26443f") if state=="normal" else Color("3f6660") if state!="disabled" else Color("1d3331")
+  s.bg_color=Color("253b40") if state=="normal" else Color("47645b") if state!="disabled" else Color("1d292d")
   s.set_corner_radius_all(5)
   s.content_margin_left=9
   s.content_margin_right=9
@@ -1704,12 +1763,15 @@ func setup_ui():
  header.add_child(col)
  var row=HBoxContainer.new()
  col.add_child(row)
- title=text_label(row,"GENESIS 47  /  EVOLUZIONE",22)
+ title=text_label(row,"GENESIS 47   /   MONDO VIVENTE",21)
+ title.modulate=Color("e8ce9e")
  var sp=Control.new()
  row.add_child(sp)
  sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+ button(row,"Poteri",func():left_panel.visible=not left_panel.visible)
+ button(row,"Vite",func():right_panel.visible=not right_panel.visible;inspector_tabs.current_tab=0)
+ button(row,"Cronaca",show_legend)
  button(row,"Guida",show_help)
- button(row,"Pannelli [TAB]",toggle_compact)
  button(row,"Opzioni",show_options)
  button(row,"Nuovo",open_welcome)
  selected_slot=OptionButton.new()
@@ -1723,7 +1785,7 @@ func setup_ui():
  fps_label.modulate=Color("a7d9bc")
  button(row,"Audio",func():audio.stream_paused=not audio.stream_paused;store_settings())
  top=text_label(col,"",16)
- var left=panel(hud,Rect2(14,104,180,650),.90)
+ var left=panel(hud,Rect2(14,104,196,620),.94)
  left_panel=left
  var lv=VBoxContainer.new()
  left.add_child(lv)
@@ -1744,16 +1806,20 @@ func setup_ui():
  power_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
  populate_powers(0)
  button(lv,"Osserva il mondo",func():power="Osserva";selected=-1;following=false;refresh();populate_powers(power_category.selected))
- text_label(lv,"MAPPA DEL MONDO",13)
+ map_panel=panel(hud,Rect2(14,550,196,174),.86)
+ var mv=VBoxContainer.new()
+ map_panel.add_child(mv)
+ map_region=text_label(mv,"ATLANTE",12)
+ map_region.modulate=Color("e8ce9e")
  map_view=preload("res://scripts/minimap.gd").new()
  map_view.world=self
  map_view.custom_minimum_size=Vector2(155,135)
- lv.add_child(map_view)
+ mv.add_child(map_view)
  unlimited_toggle=CheckButton.new()
  unlimited_toggle.text="Energia infinita"
  unlimited_toggle.toggled.connect(func(on):unlimited=on)
  lv.add_child(unlimited_toggle)
- var right=panel(hud,Rect2(1140,104,286,650),.90)
+ var right=panel(hud,Rect2(1108,104,318,620),.95)
  right_panel=right
  var rv=VBoxContainer.new()
  right.add_child(rv)
@@ -1788,13 +1854,7 @@ func setup_ui():
  details.size_flags_vertical=Control.SIZE_EXPAND_FILL
  var line=HBoxContainer.new()
  inspect.add_child(line)
- button(line,"Segui",func():
-  if actors.has(selected):
-   following=true
-   focus=actors[selected].node.position
-   distance=3.6
-   pitch=.36
-   update_camera())
+ button(line,"Segui",func():follow_person(selected))
  button(line,"Casuale",func():
   if not sim.people.is_empty():
    selected=sim.people[rng.randi_range(0,sim.people.size()-1)].id
@@ -1865,8 +1925,16 @@ func setup_ui():
  button(market_tab,"Atlante colonie",show_regions)
  button(market_tab,"Spedizione Auralis",func():request_expedition(0))
  button(market_tab,"Spedizione Nerith",func():request_expedition(1))
+ var story_tab=VBoxContainer.new()
+ story_tab.name="Leggenda"
+ inspector_tabs.add_child(story_tab)
+ text_label(story_tab,"STORIA DEL TUO MONDO",16)
+ legend_view=rich(story_tab,330)
+ legend_view.size_flags_vertical=Control.SIZE_EXPAND_FILL
+ button(story_tab,"Segui una storia",follow_story)
+ button(story_tab,"Esplora i biomi",show_biomes)
  inspector_tabs.tab_changed.connect(func(_tab):refresh())
- var bottom=panel(hud,Rect2(14,769,1412,117),.91)
+ var bottom=panel(hud,Rect2(14,746,1412,140),.87)
  bottom_panel=bottom
  var bv=VBoxContainer.new()
  bottom.add_child(bv)
@@ -1886,7 +1954,9 @@ func setup_ui():
  hint=text_label(controls,"WASD · rotella · destro · F6 tour",13)
  hint.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
  hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
- objective=text_label(bv,"",14)
+ journey_label=text_label(bv,"",17)
+ journey_label.modulate=Color("f0d5a2")
+ objective=text_label(bv,"",13)
  chronicle=rich(bv,32)
  life_overlay=text_label(bv,"",12)
  life_overlay.modulate=Color("b9dbc8")
@@ -1908,6 +1978,14 @@ func setup_ui():
  button(actions,"Avanti",advance_onboarding)
  button(actions,"Salta guida",finish_onboarding)
  onboarding.hide()
+ impact_flash=ColorRect.new()
+ hud.add_child(impact_flash)
+ impact_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ impact_flash.color=Color(1,1,1,0)
+ impact_flash.mouse_filter=Control.MOUSE_FILTER_IGNORE
+ left_panel.hide()
+ right_panel.hide()
+ map_panel.show()
 
 func toggle_photo():
  photo_mode=not photo_mode
@@ -1919,6 +1997,10 @@ func refresh():
  for colony in ocean.colonies:global_population+=int(colony.population)
  for voyage in ocean.voyages:
   if voyage.kind=="settle":global_population+=voyage.crew.size()
+ if is_instance_valid(map_panel):map_panel.visible=not left_panel.visible and player_hud
+ if is_instance_valid(map_region):map_region.text=Art.BIOMES[Art.biome(self,ground(focus.x,focus.z))]
+ if is_instance_valid(journey_label):journey_label.text=legend.goal_text()
+ if is_instance_valid(legend_view) and inspector_tabs.current_tab==5:legend_view.text=legend.report()+"\n\n"+wildlife.report()
  top.text="GIORNO %03d  ·  %d ABITANTI  ·  ENERGIA %d%%  ·  PACE %d%%"%[sim.day,global_population,int(sim.energy),int(sim.peace)]
  if life_overlay!=null:
   life_overlay.text="Attività concluse: %d  ·  Luoghi scoperti: %d  ·  TAB: osservazione libera"%[completed_visible,discovery_sites.filter(func(q):return q.found).size()]
@@ -1968,12 +2050,13 @@ func refresh():
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nPRIORITÀ PERSONALE: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.mode==0:
+  if legend.journey<Legend.GOALS.size():objective.text=Legend.HELP[legend.journey]
   if sim.people.is_empty():objective.text="ETERNITÀ — Mondo disabitato. Usa Vita per ricominciare."
   elif sim.legacy_cycles>0:objective.text+="  ·  Cicli del futuro: "+str(sim.legacy_cycles)
  if sim.mode==0 and not sim.active_crisis.is_empty():
   objective.text=Sim.CRISIS_NAMES[int(sim.active_crisis.kind)]+" · "+Sim.CLANS[int(sim.active_crisis.clan)]+" · fino al giorno "+str(sim.active_crisis.until)
  if sim.ended!="":objective.text=sim.ended
- chronicle.text="\n".join(sim.events.slice(0,2))
+ chronicle.text=str(legend.entries[0].caption) if not legend.entries.is_empty() else "\n".join(sim.events.slice(0,1))
  if inspector_tabs!=null:
   var unread=sim.signals.filter(func(q):return not q.answered and not sim.find(int(q.id)).is_empty()).size()
   inspector_tabs.set_tab_title(1,"Mondo"+(" · "+str(unread) if unread>0 else ""))
@@ -1984,12 +2067,13 @@ func open_welcome():
  speed=0
  var dlg=ConfirmationDialog.new()
  hud.add_child(dlg)
- dlg.title="GENESIS 47  /  Crea l'universo"
+ dlg.title="GENESIS 47  /  La vita ti aspetta"
  dlg.ok_button_text="Crea il mondo"
  dlg.cancel_button_text="Continua"
  var box=VBoxContainer.new()
  dlg.add_child(box)
- text_label(box,"Eternità: nessun finale obbligatorio, nemmeno dopo l’estinzione.",16)
+ text_label(box,"Un mondo che vive, anche quando non intervieni.",18)
+ text_label(box,"Eternità: nessun finale obbligatorio, nemmeno dopo l’estinzione.",14)
  text_label(box,"Oppure scegli una sfida narrativa facoltativa.",14)
  var option=OptionButton.new()
  for s in ["Eternità — mondo infinito","L'alleanza — pace","Oltre il cielo — contatto","L'ultima scintilla — sopravvivenza"]:option.add_item(s)
@@ -2015,6 +2099,8 @@ func open_welcome():
   deformation.clear()
   new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.selected>0,world_choice.selected==2)
   dlg.queue_free()
+  left_panel.hide()
+  right_panel.hide()
   if onboarding_enabled:start_onboarding())
  dlg.canceled.connect(func():welcome_open=false;world_started=true;speed=1;update_time_buttons();dlg.queue_free();maybe_onboard())
  dlg.popup_centered(Vector2i(620,220))
@@ -2152,6 +2238,8 @@ func save_path(path:String,show_hint:bool)->bool:
  d["hydrology"]=hydro.export_state()
  d["fluid_volume"]=fluid_volume.export_state()
  d["ocean_dynamics"]=ocean_dynamics.export_state()
+ d["legend"]=legend.export_state()
+ d["wildlife"]=wildlife.export_state()
  d["deformation"]=deformation
  d["planted"]=planted
  d["house_sites"]=house_sites
@@ -2211,6 +2299,8 @@ func load_path(p:String)->bool:
    return false
  set_tour(false)
  sim=candidate
+ legend.reset(self,data.get("legend",{}))
+ wildlife.reset(self,data.get("wildlife",{}))
  ocean.restore(self,data.get("ocean",{}))
  hydro_saved=data.get("hydrology",{})
  fluid_saved=data.get("fluid_volume",{})
@@ -2404,6 +2494,7 @@ func self_test():
  if not test_deep_simulation():failed=true
  if not test_industry_and_volume():failed=true
  if not test_continuous_systems():failed=true
+ if not test_player_experience():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2558,8 +2649,10 @@ func update_time_buttons():
 
 func toggle_compact():
  compact=not compact
+ player_hud=not compact
  if is_instance_valid(left_panel):left_panel.visible=not compact
  if is_instance_valid(right_panel):right_panel.visible=not compact
+ if is_instance_valid(map_panel):map_panel.visible=false
  if hint!=null:hint.text="TAB per ripristinare i pannelli" if compact else "WASD · rotella · tasto destro · F10 foto"
 
 func show_options():
@@ -2976,6 +3069,8 @@ func follow_person(id:int):
  distance=4.2
  pitch=.43
  if is_instance_valid(inspector_tabs):inspector_tabs.current_tab=0
+ if not test_mode:legend.meet(id,true)
+ if player_hud:right_panel.show()
  update_camera()
  refresh()
 
@@ -3758,6 +3853,9 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  services_dirty=true
  rebuild_navigation()
  rebuild_services()
+ if not test_mode:
+  legend.log_event("Catastrofe",-1,-1,"%s: %d edifici perduti, %d vittime."%[kind,destroyed,dead_count],p)
+  if flat_dist(p,focus)<35 and damage>=65:impact_shake=minf(1.0,damage/110.0)
  sim.log_event("%s: %d edifici distrutti, %d vittime."%[kind,destroyed,dead_count])
  apply_changes()
  refresh()
@@ -4209,6 +4307,7 @@ func discover_near(a:Dictionary,p:Vector3):
   a.special_until=sim.day+6
   sim.milestone(a,"Esplorazione",a.special_memory)
   sim.log_event(a.name+" scopre "+str(row.name)+".")
+  if not test_mode:legend.discovered(a,str(row.name),p)
   rebuild_discoveries()
   life_bubble(p,"SCOPERTA!",Color("b2e5ca"))
   break
@@ -4983,3 +5082,63 @@ func _exit_tree():
  if fluid_volume!=null:fluid_volume.world=null
  if ocean_dynamics!=null:ocean_dynamics.world=null
  if debris!=null:debris.world=null
+ if legend!=null:legend.world=null
+ if wildlife!=null:wildlife.world=null
+ if living_score!=null:living_score.world=null
+
+
+func show_legend():
+ right_panel.show()
+ inspector_tabs.current_tab=5
+ refresh()
+
+func follow_story():
+ var person={}
+ for row in legend.entries:
+  var a=sim.find(int(row.person))
+  if not a.is_empty() and actors.has(a.id):person=a;break
+ if person.is_empty() and not sim.people.is_empty():person=sim.people[0]
+ if not person.is_empty():follow_person(int(person.id))
+
+func show_biomes():
+ var lines=["BIOMI DEL MONDO","Sei regioni climatiche con flora e colori distinti nella mappa giocabile."]
+ for label in Art.BIOMES:lines.append("• "+label)
+ lines.append("")
+ lines.append(wildlife.report())
+ open_dialog("ATLANTE NATURALE","\n".join(lines))
+
+func test_player_experience()->bool:
+ new_world(47,0,true,true)
+ var a=sim.people[0]
+ legend.meet(int(a.id),false)
+ legend.meet(int(a.id),true)
+ if legend.journey!=2:return false
+ legend.miracle("Provviste",0,[a],centers[0])
+ if legend.journey!=3 or float(legend.worship[0].love)<=55:return false
+ legend.miracle("Pace",0,[a],centers[0])
+ legend.miracle("Meteorite",0,[a],centers[0])
+ if float(legend.worship[0].fear)<=0:return false
+ legend.discovered(a,"test",centers[0])
+ if legend.journey!=4:return false
+ sim.villages[0].era=1
+ sim.villages[0].wood=100
+ legend.worship[0].love=80.0
+ legend.daily()
+ if not legend.worship[0].temple or legend_root.get_child_count()<1:return false
+ if wildlife.life.is_empty():return false
+ var fauna_count=wildlife.life.size()
+ var b=sim.people[1]
+ var victim_id=int(b.id)
+ sim.die(b,"test")
+ legend.death(victim_id,actors[victim_id].node.position)
+ apply_changes()
+ if legend.monuments.is_empty():return false
+ var path="user://genesis47_experience_test.json"
+ if not save_path(path,false):return false
+ new_world(47,0)
+ var ok=load_path(path)
+ for ext in ["",".bak",".tmp"]:
+  if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
+ if not ok or legend.journey!=4 or legend.monuments.size()!=1 or not legend.worship[0].temple or wildlife.life.size()!=fauna_count:return false
+ print("EXPERIENCE_TEST journey=true witnesses=true faith=true shrine=true memorial=true wildlife=true persistence=true")
+ return true
