@@ -40,7 +40,7 @@ var origins=Origins.new()
 var legacy=Legacy.new()
 var legacy_root:Node3D
 var legacy_view:RichTextLabel
-var citizen_portrait:Control
+var citizen_portrait
 var title_intro:Control
 var intro_time=0.0
 var ash_time=0.0
@@ -5624,7 +5624,8 @@ func show_title_screen():
  var box=VBoxContainer.new()
  title_intro.add_child(box)
  box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
- box.position=Vector2(70,190)
+ box.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+ box.position=Vector2(85,180)
  box.custom_minimum_size=Vector2(650,430)
  box.add_theme_constant_override("separation",18)
  var mark=TextureRect.new()
