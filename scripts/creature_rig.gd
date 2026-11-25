@@ -28,6 +28,7 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
  var head=bone(skeleton,"Head",neck,Vector3(0,.11,.025))
  var arm_ids=[]
  var leg_ids=[]
+ var extremities=[]
  for side in [-1,1]:
   var suffix="L" if side<0 else "R"
   var shoulder=bone(skeleton,"Shoulder"+suffix,chest,Vector3(side*.34,.01,0))
@@ -38,10 +39,9 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
   var ankle=bone(skeleton,"Ankle"+suffix,knee,Vector3(0,-.15,0))
   arm_ids.append([shoulder,elbow,wrist])
   leg_ids.append([hip,knee,ankle])
-  var hand=attach(skeleton,"Wrist"+suffix)
-  w.sphere(hand,skin.lightened(.08),Vector3(0,-.02,0),Vector3(.22,.16,.22))
-  var foot=attach(skeleton,"Ankle"+suffix)
-  w.sphere(foot,skin,Vector3(0,-.015,.08),Vector3(.26,.15,.35))
+  var fingers=bone(skeleton,"Fingers"+suffix,wrist,Vector3(0,-.065,0))
+  var toes=bone(skeleton,"Toes"+suffix,ankle,Vector3(0,-.015,.16))
+  extremities.append([wrist,fingers,ankle,toes])
  skeleton.reset_bone_poses()
  var skins=[]
  for i in range(2):
@@ -52,9 +52,14 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
  var face=weighted_ellipsoid(w,skeleton,[chest,neck,head],Vector3(0,1.24,.025),Vector3(.385,.35,.325),skin.lightened(.07),.99,1.30)
  skins.append(torso)
  skins.append(face)
+ for i in range(2):
+  var side=-1 if i==0 else 1
+  var e:Array=extremities[i]
+  skins.append(weighted_ellipsoid(w,skeleton,[e[1],e[1],e[0]],Vector3(side*.38,.54,0),Vector3(.11,.08,.11),skin.lightened(.08),.49,.60))
+  skins.append(weighted_ellipsoid(w,skeleton,[e[2],e[2],e[3]],Vector3(side*.18,.095,.08),Vector3(.13,.075,.175),skin,.04,.22,2))
  var head_anchor=attach(skeleton,"Head")
  var chest_anchor=attach(skeleton,"Chest")
- return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"head_anchor":head_anchor,"chest_anchor":chest_anchor}
+ return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"extremities":extremities,"head_anchor":head_anchor,"chest_anchor":chest_anchor}
 
 static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var rig=r.get("skeletal",{})
@@ -108,6 +113,9 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
    for j in range(6):offsets[j]+=Library.sample(clip,phase,i*6+j)*.65
   var ids=ai+li
   for j in range(6):pose(s,int(ids[j]),offsets[j],blend)
+  var e:Array=rig.extremities[i]
+  pose(s,int(e[1]),Vector3(-.18 if task in ["gather","craft","eat","farm","mine","build"] else -.04,0,0),blend)
+  pose(s,int(e[3]),Vector3(maxf(0,sin(cycle))*.24 if moving else 0,0,0),blend)
 
 static func pose(s:Skeleton3D,i:int,euler:Vector3,weight:float):
  var desired=Quaternion.from_euler(euler)
@@ -147,7 +155,7 @@ static func limb(w,s:Skeleton3D,ids:Array,origin:Vector3,first:Vector3,second:Ve
  node.material_override=w.material(tint)
  return node
 
-static func weighted_ellipsoid(w,s:Skeleton3D,ids:Array,center:Vector3,radius:Vector3,tint:Color,low:float,high:float)->MeshInstance3D:
+static func weighted_ellipsoid(w,s:Skeleton3D,ids:Array,center:Vector3,radius:Vector3,tint:Color,low:float,high:float,axis:int=1)->MeshInstance3D:
  var st=SurfaceTool.new()
  st.begin(Mesh.PRIMITIVE_TRIANGLES)
  var rings=20
@@ -159,7 +167,7 @@ static func weighted_ellipsoid(w,s:Skeleton3D,ids:Array,center:Vector3,radius:Ve
     var phi=float(pair.y)/sides*TAU
     var unit=Vector3(sin(theta)*cos(phi),cos(theta),sin(theta)*sin(phi))
     var p=center+unit*radius
-    var t=clampf((p.y-low)/maxf(.01,high-low),0,1)
+    var t=clampf((p[axis]-low)/maxf(.01,high-low),0,1)
     var top=smoothstep(.48,1.0,t)
     var mid=smoothstep(0.0,.65,t)
     st.set_bones(PackedInt32Array([int(ids[0]),int(ids[1]),int(ids[2]),0]))
