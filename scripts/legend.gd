@@ -161,7 +161,7 @@ func daily():
   if traditions[clan].kind!=kind:
    traditions[clan].kind=kind
    log_event("Fede",clan,-1,world.sim.CLANs_name(clan)+" diventa "+kind+".",world.centers[clan])
-  if not row.temple and int(v.era)>=1 and float(v.wood)>=18 and float(row.love)>60:
+  if not row.temple and not bool(world.legacy.societies[clan].ban) and int(v.era)>=1 and float(v.wood)>=18 and float(row.love)>60:
    v.wood-=18
    row.temple=true
    visual_dirty=true
@@ -244,7 +244,7 @@ func report()->String:
 func ritual_advance(a:Dictionary,node:Node3D,dt:float)->int:
  var key=str(int(a.id))
  var clan=int(a.clan)
- if not worship[clan].temple or bool(a.get("dissident",false)) or float(a.faith)<45 or float(a.age)<14 or float(a.hunger)>60 or float(a.fatigue)>60 or float(a.health)<60:
+ if not worship[clan].temple or bool(world.legacy.societies[clan].ban) or bool(a.get("dissident",false)) or float(a.faith)<45 or float(a.age)<14 or float(a.hunger)>60 or float(a.fatigue)>60 or float(a.health)<60:
   pilgrims.erase(key)
   return -1
  if not pilgrims.has(key):
