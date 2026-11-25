@@ -105,6 +105,7 @@ func birth(c:int,parents:Array)->Dictionary:
  var a={"id":next_id,"name":NAMES[rng.randi_range(0,NAMES.size()-1)]+" "+str(next_id),"clan":c,"age":0.0 if ids.size()==2 else rng.randf_range(17,32),"gen":gen,"health":100.0,"hunger":rng.randf_range(0,25),"faith":55.0,"mood":75.0,"genes":genes,"parents":ids,"partner":-1,"friend":-1,"role":"Esploratore","goal":"Conoscere il mondo","memories":["Ho visto la luce del mondo."],"favorite":false,"sick":0,"prophet":false,"activity":"Esplora","intention":"","intention_until":0,"trust":50.0,"life_story":[],"dialogue":[],"social_need":35.0,"skill":0.0,"social_target":-1}
  next_id+=1
  init_tasks(a)
+ if market_mode and not parents.is_empty():a.coins=0.0
  people.append(a)
  milestone(a,"Nascita","Sono venuto al mondo.")
  total_births+=1
@@ -140,7 +141,7 @@ func die(a:Dictionary,why:String):
  total_deaths+=1
  dead.append({"id":a.id,"name":a.name,"gen":a.gen,"day":day,"reason":why,"clan":a.clan,"parents":a.parents.duplicate()})
  if dead.size()>3000:dead.pop_front()
- changes.append({"kind":"death","id":a.id})
+ changes.append({"kind":"death","id":a.id,"clan":a.clan,"cash":float(a.get("coins",0))})
  people.erase(a)
 func count(c:int)->int:
  var n=0
@@ -956,8 +957,8 @@ func complete_task(a:Dictionary)->bool:
   a.last_task=a.task
   a.work_history[action]=int(a.work_history.get(action,0))+1
   if action in ["farm","gather","build","house","research","craft","guard"]:
-   a.coins=minf(999,a.coins+1.5)
-   if spatial_autonomy:
+   if not market_mode:a.coins=minf(999,a.coins+1.5)
+   if spatial_autonomy and not market_mode:
     var contribution=minf(.25,float(a.coins))
     a.coins-=contribution
     v.culture.treasury=minf(2000,float(v.culture.treasury)+contribution)
