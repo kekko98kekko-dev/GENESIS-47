@@ -1,5 +1,6 @@
 extends RefCounted
 const Mocap=preload("res://scripts/mocap_walk.gd")
+const Library=preload("res://scripts/mocap_library.gd")
 # Articulated, bone-attached rigid stylized meshes, preserving the original species.
 # Existing gameplay animation controls drive the pose; secondary joints add gait
 # and task-specific follow-through. No imported mocap or deformable skin weights.
@@ -20,14 +21,19 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
  var skeleton=Skeleton3D.new()
  body.add_child(skeleton)
  var base=bone(skeleton,"Root",-1,Vector3.ZERO)
+ var pelvis=bone(skeleton,"Pelvis",base,Vector3(0,.43,0))
+ var spine=bone(skeleton,"Spine",pelvis,Vector3(0,.24,0))
+ var chest=bone(skeleton,"Chest",spine,Vector3(0,.30,0))
+ var neck=bone(skeleton,"Neck",chest,Vector3(0,.16,0))
+ var head=bone(skeleton,"Head",neck,Vector3(0,.11,.025))
  var arm_ids=[]
  var leg_ids=[]
  for side in [-1,1]:
   var suffix="L" if side<0 else "R"
-  var shoulder=bone(skeleton,"Shoulder"+suffix,base,Vector3(side*.34,.98,0))
+  var shoulder=bone(skeleton,"Shoulder"+suffix,chest,Vector3(side*.34,.01,0))
   var elbow=bone(skeleton,"Elbow"+suffix,shoulder,Vector3(side*.04,-.22,0))
   var wrist=bone(skeleton,"Wrist"+suffix,elbow,Vector3(0,-.20,0))
-  var hip=bone(skeleton,"Hip"+suffix,base,Vector3(side*.18,.43,0))
+  var hip=bone(skeleton,"Hip"+suffix,pelvis,Vector3(side*.18,0,0))
   var knee=bone(skeleton,"Knee"+suffix,hip,Vector3(0,-.17,0))
   var ankle=bone(skeleton,"Ankle"+suffix,knee,Vector3(0,-.15,0))
   arm_ids.append([shoulder,elbow,wrist])
@@ -42,7 +48,13 @@ static func build(w,body:Node3D,skin:Color,cloth:Color)->Dictionary:
   var side=-1 if i==0 else 1
   skins.append(limb(w,skeleton,arm_ids[i],Vector3(side*.34,.98,0),Vector3(side*.04,-.22,0),Vector3(0,-.20,0),.105,skin))
   skins.append(limb(w,skeleton,leg_ids[i],Vector3(side*.18,.43,0),Vector3(0,-.17,0),Vector3(0,-.15,0),.114,skin.darkened(.06)))
- return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins}
+ var torso=weighted_ellipsoid(w,skeleton,[pelvis,spine,chest],Vector3(0,.70,0),Vector3(.335,.40,.265),skin,.39,.98)
+ var face=weighted_ellipsoid(w,skeleton,[chest,neck,head],Vector3(0,1.24,.025),Vector3(.385,.35,.325),skin.lightened(.07),.99,1.30)
+ skins.append(torso)
+ skins.append(face)
+ var head_anchor=attach(skeleton,"Head")
+ var chest_anchor=attach(skeleton,"Chest")
+ return {"skeleton":skeleton,"arm_ids":arm_ids,"leg_ids":leg_ids,"skins":skins,"axial":[pelvis,spine,chest,neck,head],"head_anchor":head_anchor,"chest_anchor":chest_anchor}
 
 static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var rig=r.get("skeletal",{})
@@ -50,6 +62,17 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
  var s:Skeleton3D=rig.skeleton
  if not is_instance_valid(s):return
  var blend=clampf(dt*14,0,1)
+ var task=str(a.get("task",""))
+ var clip="idle"
+ if moving:clip="run" if float(a.get("stress",0))>75 else ("carry" if bool(a.get("delivery",false)) or task in ["trade","deliver"] else "walk")
+ elif str(a.get("task_stage",""))=="In corso":clip=str(Library.TASKS.get(task,"idle"))
+ if clip=="research":clip="gather"
+ if clip=="rest":clip="sleep"
+ var phase=float(r.phase)
+ var axial:Array=rig.axial
+ for j in range(axial.size()):
+  var pose_vec=Library.sample(clip,phase,mini(15,12+j))*.60 if clip!="walk" else Vector3(sin(phase)*.04,cos(phase)*.06,0)
+  pose(s,int(axial[j]),pose_vec,blend)
  for i in range(2):
   var cycle=float(r.phase)+i*PI
   var ar=r.arms[i].rotation
@@ -69,7 +92,7 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
     "social","aid":elbow=-.45;wrist=.22*sin(float(r.phase)*3+i)
     "sleep":elbow=-.30;knee=.34;ankle=-.10
     "play":knee=.32+.22*absf(sin(float(r.phase)*4))
-  if moving and detail:
+  if moving and detail and clip=="walk":
    var offset=i*6
    var sample_phase=float(r.phase)
    ar.x=lerpf(ar.x,Mocap.sample(sample_phase,offset),.75)
@@ -80,12 +103,11 @@ static func drive(r:Dictionary,a:Dictionary,moving:bool,detail:bool,dt:float):
    ankle=Mocap.sample(sample_phase,offset+5)
   var ai:Array=rig.arm_ids[i]
   var li:Array=rig.leg_ids[i]
-  pose(s,int(ai[0]),Vector3(ar.x,ar.y,ar.z),blend)
-  pose(s,int(ai[1]),Vector3(elbow,0,0),blend)
-  pose(s,int(ai[2]),Vector3(wrist,0,0),blend)
-  pose(s,int(li[0]),Vector3(lr.x,lr.y,lr.z),blend)
-  pose(s,int(li[1]),Vector3(knee,0,0),blend)
-  pose(s,int(li[2]),Vector3(ankle,0,0),blend)
+  var offsets=[Vector3(ar.x,ar.y,ar.z),Vector3(elbow,0,0),Vector3(wrist,0,0),Vector3(lr.x,lr.y,lr.z),Vector3(knee,0,0),Vector3(ankle,0,0)]
+  if clip!="walk" and detail:
+   for j in range(6):offsets[j]+=Library.sample(clip,phase,i*6+j)*.65
+  var ids=ai+li
+  for j in range(6):pose(s,int(ids[j]),offsets[j],blend)
 
 static func pose(s:Skeleton3D,i:int,euler:Vector3,weight:float):
  var desired=Quaternion.from_euler(euler)
@@ -120,6 +142,34 @@ static func limb(w,s:Skeleton3D,ids:Array,origin:Vector3,first:Vector3,second:Ve
  var node=MeshInstance3D.new()
  s.add_child(node)
  node.mesh=mesh
+ node.skeleton=NodePath("..")
+ node.skin=s.create_skin_from_rest_transforms()
+ node.material_override=w.material(tint)
+ return node
+
+static func weighted_ellipsoid(w,s:Skeleton3D,ids:Array,center:Vector3,radius:Vector3,tint:Color,low:float,high:float)->MeshInstance3D:
+ var st=SurfaceTool.new()
+ st.begin(Mesh.PRIMITIVE_TRIANGLES)
+ var rings=20
+ var sides=24
+ for row in range(rings):
+  for col in range(sides):
+   for pair in [Vector2i(row,col),Vector2i(row+1,col),Vector2i(row,col+1),Vector2i(row,col+1),Vector2i(row+1,col),Vector2i(row+1,col+1)]:
+    var theta=float(pair.x)/rings*PI
+    var phi=float(pair.y)/sides*TAU
+    var unit=Vector3(sin(theta)*cos(phi),cos(theta),sin(theta)*sin(phi))
+    var p=center+unit*radius
+    var t=clampf((p.y-low)/maxf(.01,high-low),0,1)
+    var top=smoothstep(.48,1.0,t)
+    var mid=smoothstep(0.0,.65,t)
+    st.set_bones(PackedInt32Array([int(ids[0]),int(ids[1]),int(ids[2]),0]))
+    st.set_weights(PackedFloat32Array([(1-mid)*(1-top),mid*(1-top),top,0.0]))
+    st.set_normal((unit/radius).normalized())
+    st.set_uv(Vector2(float(pair.y)/sides,float(pair.x)/rings))
+    st.add_vertex(p)
+ var node=MeshInstance3D.new()
+ s.add_child(node)
+ node.mesh=st.commit()
  node.skeleton=NodePath("..")
  node.skin=s.create_skin_from_rest_transforms()
  node.material_override=w.material(tint)
