@@ -18,14 +18,15 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 12.0.0 — Arte vivente.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: 8920179b2b3368c899caa06dac0eb667c3d3a690.
-- Ultima versione interamente collaudata: 11.0, commit bd3fba81e7a220ba3e5d0d186820853482189d61, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
+- Versione del codice: 13.0.0 — Orion, il Custode.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: 21bbc86b656cedaf8dd7c3d5d8fff580b7e8e0.
+- Ultima versione interamente collaudata: 12.0, commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860 (build e Windows riusciti).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
 - 11.0: pipeline interamente riuscita. LEGACY_TEST PASS; QA_LEGACY 120 giorni, 28→76 cittadini, 14 eventi, ok=true. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642/artifacts/15012212401.
-- 12.0: pubblicata in main (commit 8bbb1bc3a82587ee784f18ce2845b3b5765fa738); run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860. Importazione, test standard e QA estesa riusciti; rendering in corso. Windows non ancora confermato.
+- 12.0: pipeline integralmente riuscita, artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860/artifacts/15012529864.
+- 13.0: sviluppata nel ramo upgrade-13-0-colossus, CI da verificare.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -117,8 +118,16 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - scripts/divine_presentation.gd: puntatore astrale, onde a strati, particelle e luce transitoria, associati alle azioni divine esistenti. Non è un nuovo avatar colossale autonomo. Effetti rimossi alla fine/reset; danni e guarigione restano reali.
 - ARTISAN_TEST verifica tre mesh connesse, ossa aggiuntive, pesi, articolazione e rimozione degli effetti. QA_ANATOMIES estende la verifica numerica a 30 pose per famiglia. CI richiede dieci nuove catture reali: tre ere in fixture controllata (impostazioni di era/numero case, non crescita spontanea), tre anatomie, prima/durante/dopo poteri. Test e resa artistica della 12.0 ancora da verificare. Funzionamento offline, nessuna AI esterna. Nessuna promessa di qualità commerciale prima delle prove visive e umane.
 
+
+## 13.0 — Orion, il Custode
+- 12.0 verificata integralmente: run 45595814860, import/test standard/QA/render/benchmark/export e Windows riusciti; 90 pose delle tre famiglie ok. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45595814860/artifacts/15012529864. Catture reali esaminate: case avanzate ancora squadrate, un ritratto coperto da edificio e meteorite fotografato troppo presto. 
+- Orion (scripts/colossus.gd): avatar originale articolato alto circa 6,5 m, evocabile/congedabile con G (25 energia alla chiamata); H o pulsante Orion apre rapporto, addestramento tramite incentivi a misericordia/severità, camera di inseguimento. Sceglie automaticamente bersagli in base a salute, fame, fede e distanza; usa navigazione A*, cure/rifornimenti/ammonimenti con effetti reali, costo 8 energia, cooldown, contatori, memoria storica e persistenza. Non è un LLM, non impara modelli, non replica il gigante di Black & White. Limiti: ingombro fisico del gigante non rappresentato nella griglia A*; modello originale stilizzato, non animazione cinematografica professionale.
+- Rig: arti extra riutilizzano i campioni mocap esistenti con retargeting e offset di fase; correzione CCD a due giunti per presa di oggetti e contatto zampe posteriori con terreno. Non è una nuova registrazione motion capture fisica di arti non umani; le traiettorie sono sintetizzate, non una soluzione biomeccanica completa. QA_CONTACT verifica riduzione errore di raggiungimento su entrambe le anatomie.
+- Crescita: catture era 0/2/4 ottenute da una sola simulazione giornaliera aggregata, senza impostare artificialmente era, case, abitanti o risorse. growth-evidence.json registra giorni, popolazione, case, legna; QA_NATURAL_GROWTH testa sviluppo indipendente. Non equivale a partita spaziale prolungata con ogni lavoratore osservato. Ritratti isolati in piattaforma temporanea e posizione restaurata; meteorite ripreso in volo e impatto su una casa vera. Cattura aggiuntiva Orion. Case avanzate con tetti sovrapposti, balconi e finestre. Qualità commerciale non dimostrata finché nuove catture e playtest non sono valutati.
+- COLOSSUS_TEST verifica scelta autonoma, cura, costo, cooldown, modifica indole e salvataggio. CI 13.0 da verificare.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 12.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: verificare esito finale CI 13.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
 - P0: prova umana di gioco con la 11.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
@@ -162,3 +171,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Priorità 11.0: benchmark artistico del proprietario in ART_DIRECTION.md. Catture 11.0 esaminate, divario evidente rispetto ai riferimenti: costruzioni geometriche, vegetazione rada, biologia con rig comune, scala divina modesta. Prossima iterazione: area verticale di qualità, kit originali o licenziati e verifiche visive; non aggiungere complessità invisibile. Playtest umano non eseguito.
 
 - Priorità 12.0: verificare ARTISAN_TEST e QA_ANATOMIES, analizzare dieci catture reali, correggere eventuali regressioni e svolgere PLAYTEST.md. Limiti espliciti: qualità grafica commerciale non dimostrata, animazioni extra procedurali, nessun avatar gigante autonomo, crescita urbana spontanea non documentata con time-lapse.
+
+- Priorità 13.0: verificare CI, growth-evidence, QA_CONTACT, Orion, catture effettive e playtest umano. Non dichiarare equivalenza artistica commerciale.
