@@ -10,7 +10,7 @@ Ramo principale: main.
 2. Riprendere dal codice esistente; non ricominciare il gioco da zero, non eliminare funzionalità già collaudate. Usare un ramo di lavoro per cambiamenti importanti e pubblicare solo modifiche deliberate.
 3. Dopo ogni intervento significativo, aggiornare questo file nello stesso insieme di modifiche: funzionalità aggiunte/corrette, file, commit, test eseguiti/esiti effettivi, problemi aperti, prossimo passo. Distinguere codice scritto, test superato e prova umana. Se CI è in corso, registrare il run e segnare "in attesa"; verificarlo al successivo intervento.
 4. Non chiamare "completato" ciò che è soltanto una base tecnica o una simulazione semplificata. Non dichiarare FPS reali sul PC senza rapporto benchmark reale.
-5. Mantenere gioco offline, italiano, nessun LLM o servizio esterno obbligatorio, compatibilità dei salvataggi precedenti ove possibile, Godot 4.4.1 GL Compatibility e profili grafici.
+5. Mantenere gioco offline, italiano, nessun LLM o servizio esterno obbligatorio, compatibilità dei salvataggi precedenti facoltativa (autorizzato nuovo mondo da zero), Godot 4.4.1 GL Compatibility e profili grafici.
 6. Preferenza del proprietario: implementazioni sostanziali in una sessione, non solo roadmap; verificare e correggere gli errori trovati. Se la chat raggiunge il limite, nella nuova chat basta indicare il repository e chiedere di leggere questo file.
 
 ## Visione del prodotto
@@ -18,10 +18,11 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 9.0.0 — Mondo vivente.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: f73acf07bddf865f91b4192615449ab3f8488bb9.
+- Versione del codice: 10.0.0 — Eredità del Creatore.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: a2b808c4bfff0c9753e12c8e918c74092032f667.
 - Ultima versione interamente collaudata: 8.1, commit b1b8d293ebc6744a1c143f37e0a14f3c410a0bfe, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45586224131 (build e Windows riusciti, QA_SUITE PASS: 30 pose, 90 giorni filiera 157 unità/156 consegne, 90 giorni mondo autonomo 232 unità/207 consegne, errore onda 3,7357% dell'ampiezza iniziale).
-- 9.0: pubblicata in main (commit 31cd48aa079cc32d3a518f9287c7a036499df728). Run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640; stato queued, esito in attesa. Verificare SELF_TEST, QA e nuove catture prima di dichiarare stabile.
+- 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
+- 10.0: codice sviluppato nel ramo upgrade-10-0-legacy; verificare nuova CI.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -77,9 +78,18 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - scripts/living_score.gd: score originale procedurale, crisi e meteo. scripts/industry.gd: macchinari visibili in attività reale. Catastrofi con feedback camera. Nuove catture HUD e ispettore.
 - EXPERIENCE_TEST: capitoli, fede, testimonianze, santuario, pellegrinaggio, memoriali, fauna e persistenza. Esito CI da verificare. Non dichiarare la grafica o il coinvolgimento "professionali" senza prove umane.
 
+
+## 10.0 — Eredità del Creatore
+- Corretto l'errore di compilazione 9.0 (identificatore riservato signal in living_score.gd); CI 9.0 fallita all'importazione, non considerata stabile.
+- Grande frontiera opzionale e predefinita nel menu: dominio del terreno circa 192×192 rispetto a 106×106, A* 189×189, minimappa, camera, quattro regioni percorribili aggiuntive, flora e punti di interesse. Le regioni periferiche sono collegate via terra. Cascata, grotta (ingresso scenografico) e vulcano sono landmark visivi; il solver idrico/oceanico resta nel bacino centrale precedente, non nell'intera frontiera.
+- Origini opzionale in Eternità: popolazioni primitive visibili, sopravvivenza e selezione climatica, mutazioni, due linee evolutive con capacità separate, passaggio a fondatori intelligenti quando le caratteristiche genetiche e generazionali soddisfano le soglie. È un modello accelerato e orientato al gioco, non una simulazione scientifica della speciazione. Il test forza linee mature per verificare la transizione, non garantisce evoluzione naturale su ogni seme.
+- Quartieri civici persistenti con costo in legna e crescita per abitazioni/era; skyline e rovine. Non sono ancora metropoli di migliaia di abitanti né servizi urbani indipendenti per tutti gli edifici del distretto.
+- Cultura con identità che pesa sulle scelte delle attività; dissenso religioso e dialoghi, aiuto prioritario ai familiari, conforto durante il lutto, cicatrici. Genealogie consultabili, cronaca ampliata e obiettivi registrati anche fuori ordine. Mercati con tende, suoni originali di natura/città e vocalizzazioni sintetiche durante interazioni reali. Non certificati artisticamente o mediante playtest umano.
+- FRONTIER_TEST per percorso ampliato, quartieri, transizione evolutiva e genealogia; nuove catture preview-frontier.png e preview-city.png. I test standard e QA estesa restano attivi. Nessun modello AI esterno. Compatibilità dei vecchi salvataggi non è più un vincolo richiesto dal proprietario; nessuna cancellazione fisica di file personali, i nuovi mondi mantengono salvataggio/caricamento.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 9.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
-- P0: prova umana di gioco con la 9.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
+- P0: verificare esito finale CI 10.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: prova umana di gioco con la 10.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
 - P1: verificare visivamente la mesh connessa 8.0 e le animazioni; retarget professionale, IK e motion capture originale per i gesti specifici non equivalenti a registrazioni umane analoghe.
@@ -116,3 +126,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 
 ## Frase per riprendere in una nuova chat
 "Alfred, riprendiamo GENESIS 47. Leggi AGENTS.md e PROJECT_STATUS.md nel repository kekko98kekko-dev/GENESIS-47, controlla gli ultimi commit e GitHub Actions, poi riparti dal backlog aggiornato senza rifare le cose già completate."
+
+- Priorità residua 10.0: verificare errori CI e screenshot reali; prova umana continuativa. Limiti: bacino idrico centrale, cave senza interno, evoluzione accelerata, quartieri scenografici oltre le case realmente simulate, popolazione ancora limitata, qualità artistica e coinvolgimento non dimostrati.
