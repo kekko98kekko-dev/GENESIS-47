@@ -119,5 +119,5 @@ static func build(w,s:Skeleton3D,tint:Color)->MeshInstance3D:
  node.mesh=mesh_for(s)
  node.skeleton=NodePath("..")
  node.skin=s.create_skin_from_rest_transforms()
- node.material_override=w.material(tint)
+ node.material_override=w.creature_skin(tint)
  return node
