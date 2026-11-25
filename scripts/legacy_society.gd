@@ -182,7 +182,7 @@ func daily():
     for a in rebels:
      a["separatist"]=true
      row.members.append(int(a.id))
-    world.outposts.append({"x":p.x,"z":p.z,"clan":clan})
+    world.outposts.append({"x":p.x,"z":p.z,"clan":clan,"autonomist":true})
     world.rebuild_outposts()
     world.services_dirty=true
     record("Secessione",clan,int(row.leader),"Un gruppo dissidente fonda un avamposto autonomista.",p)
@@ -199,7 +199,7 @@ func report()->String:
  var lines=["EREDITÀ DEL CREATORE · anno "+str(1+int(world.sim.day/120))]
  for i in range(2):
   var row:Dictionary=societies[i]
-  lines.append("%s · %s · legittimità %d%%"%( [world.sim.CLANs_name(i),row.system,int(row.legitimacy)] ))
+  lines.append("%s · %s · legittimità %d%%"%[world.sim.CLANs_name(i),row.system,int(row.legitimacy)])
   lines.append("Opposizione %d%% · rivolte %d · culto %s"%[int(row.opposition),int(row.revolutions),"proibito" if row.ban else "libero"])
   if row.secession:lines.append("Avamposto autonomista · "+str(row.get("members",[]).filter(func(id):return not world.sim.find(int(id)).is_empty()).size())+" dissidenti vivi")
   var leader=world.sim.find(int(row.leader))
