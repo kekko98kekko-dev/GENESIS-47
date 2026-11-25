@@ -13,6 +13,9 @@ const Art=preload("res://scripts/art_direction.gd")
 const Legend=preload("res://scripts/legend.gd")
 const Wildlife=preload("res://scripts/wildlife.gd")
 const LivingScore=preload("res://scripts/living_score.gd")
+const Frontier=preload("res://scripts/frontier.gd")
+const Districts=preload("res://scripts/civic_districts.gd")
+const Origins=preload("res://scripts/origins.gd")
 const SEA=-0.40
 const GRID=116
 const STEP=0.912
@@ -28,6 +31,12 @@ var ocean_dynamics_saved={}
 var fluid_saved={}
 var fluid_root:Node3D
 var legend=Legend.new()
+var districts=Districts.new()
+var origins=Origins.new()
+var vast_world=false
+var frontier_root:Node3D
+var district_root:Node3D
+var origin_root:Node3D
 var wildlife=Wildlife.new()
 var living_score=LivingScore.new()
 var legend_root:Node3D
@@ -402,7 +411,7 @@ func setup_environment():
  add_child(camera)
  camera.current=true
  camera.fov=45
- camera.far=300
+ camera.far=450
  camera.near=.07
  precipitation=CPUParticles3D.new()
  add_child(precipitation)
@@ -480,6 +489,7 @@ func height_at(x:float,z:float)->float:
   for link in REGION_BRIDGES:
    var anchor_dist=Vector2(x,z).distance_to(link[0])
    if anchor_dist<4.0:h=maxf(h,1.2-anchor_dist*.35)
+ if vast_world:h=Frontier.terrain(self,x,z,h)
  for q in deformation:
   var dd=Vector2(x-float(q.x),z-float(q.z)).length()
   if dd<float(q.r):
@@ -527,10 +537,11 @@ func make_terrain():
   earth.queue_free()
  var st=SurfaceTool.new()
  st.begin(Mesh.PRIMITIVE_TRIANGLES)
- for iz in range(GRID):
-  for ix in range(GRID):
-   var x=(ix-GRID*.5)*STEP
-   var z=(iz-GRID*.5)*STEP
+ var grid=ceili(192.0/STEP) if vast_world else GRID
+ for iz in range(grid):
+  for ix in range(grid):
+   var x=(ix-grid*.5)*STEP
+   var z=(iz-grid*.5)*STEP
    var a=ground(x,z)
    var b=ground(x+STEP,z)
    var c=ground(x,z+STEP)
@@ -558,7 +569,7 @@ func make_terrain():
  if not is_instance_valid(sea):
   sea=MeshInstance3D.new()
   var wm=PlaneMesh.new()
-  wm.size=Vector2(230,230)
+  wm.size=Vector2(390,390) if vast_world else Vector2(230,230)
   wm.subdivide_width=100
   wm.subdivide_depth=100
   sea.mesh=wm
@@ -577,7 +588,8 @@ func make_terrain():
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
  sea.material_override.set_shader_parameter("detail_strength",.25 if quality_mode==0 else .70 if quality_mode==1 else 1.0)
 
-func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
+func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false,wide=false,primordial=false):
+ vast_world=wide
  expanded_world=expanded or ocean_mode
  hydro_saved={}
  fluid_saved={}
@@ -604,10 +616,13 @@ func new_world(seed_value:int,which:int,expanded=false,ocean_mode=false):
  sim.start(seed_value,which)
  legend.reset(self)
  wildlife.reset(self)
+ districts.reset(self)
+ origins.reset(self)
  ocean.reset(self,ocean_mode)
  sim.spatial_autonomy=not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args()
  last_auto_day=-1
  reset_visuals()
+ if primordial:origins.begin()
  tick=0
  selected=-1
  following=false
@@ -622,7 +637,7 @@ func reset_visuals():
  services.clear()
  claims.clear()
  timber_points.clear()
- for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root]:
+ for n in [earth,sea,scenery,villages_root,people_root,animals_root,effects_root,cursor,roads_root,farms_root,hover_ring,ambient_root,civic_root,route_root,selected_marker,settlement_root,meadow,landmark_root,ruin_root,service_root,discovery_root,hazard_root,outpost_root,regional_root,ocean_root,physics_root,hydro_root,fluid_root,legend_root,wildlife_root,frontier_root,district_root,origin_root]:
   if is_instance_valid(n):
    remove_child(n)
    n.queue_free()
@@ -701,6 +716,12 @@ func reset_visuals():
   var p=ground(rng.randf_range(-45,45),rng.randf_range(-42,42))
   if p.y>SEA+.85 and p.y<8.5 and far_village(p,9) and away_from_route(p,1.65):
    make_tree(p,rng.randf_range(2.3,4.8),i)
+ if vast_world:
+  for i in range(220):
+   var p=ground(rng.randf_range(-91,91),rng.randf_range(-91,91))
+   if maxf(absf(p.x),absf(p.z))<53 or p.y<SEA+.7 or p.y>12:continue
+   if Frontier.biome(p)==3 and i%3!=0:continue
+   make_tree(p,rng.randf_range(2.5,5.4),i)
  for row in planted:
   var place=ground(float(row.x),float(row.z))
   if place.y>SEA+.12:make_tree(place,float(row.h),int(row.i))
@@ -740,6 +761,15 @@ func reset_visuals():
  wildlife_root=Node3D.new()
  add_child(wildlife_root)
  wildlife.build(wildlife_root)
+ frontier_root=Node3D.new()
+ add_child(frontier_root)
+ if vast_world:Frontier.landmarks(self,frontier_root)
+ district_root=Node3D.new()
+ add_child(district_root)
+ districts.build(district_root)
+ origin_root=Node3D.new()
+ add_child(origin_root)
+ origins.build(origin_root)
  for shipment in sim.shipments:spawn_caravan(int(shipment.id))
  sim.changes.clear()
  cursor=MeshInstance3D.new()
@@ -1115,6 +1145,12 @@ func apply_changes():
  sim.changes.clear()
 
 func step_day():
+ if origins.active:
+  sim.day+=1
+  sim.season=["Primavera","Estate","Autunno","Inverno"][int(sim.day/30)%4]
+  origins.daily()
+  refresh()
+  return
  var old_tech=sim.discoveries.size()
  var previous_projects=sim.projects_completed
  var previous_crises=sim.crises_seen
@@ -1127,6 +1163,7 @@ func step_day():
  if not test_mode:
   legend.daily()
   wildlife.daily()
+  districts.sync()
  if sim.day%7==0:
   repair_structures()
   rebuild_farms()
@@ -1190,8 +1227,8 @@ func _process(delta:float):
   var right=Vector3(cos(azimuth),0,-sin(azimuth))
   var back=Vector3(sin(azimuth),0,cos(azimuth))
   focus+=(right*mov.x+back*mov.y)*delta*distance*.40
-  focus.x=clampf(focus.x,-50,50)
-  focus.z=clampf(focus.z,-50,50)
+  focus.x=clampf(focus.x,-94 if vast_world else -50,94 if vast_world else 50)
+  focus.z=clampf(focus.z,-94 if vast_world else -50,94 if vast_world else 50)
   update_camera()
  if is_instance_valid(meadow):
   meadow.visible=quality_mode>0 and distance<82
@@ -1372,8 +1409,8 @@ func _unhandled_input(event:InputEvent):
   var back=Vector3(sin(azimuth),0,cos(azimuth))
   focus-=right*event.relative.x*distance*.0018
   focus-=back*event.relative.y*distance*.0018
-  focus.x=clampf(focus.x,-50,50)
-  focus.z=clampf(focus.z,-50,50)
+  focus.x=clampf(focus.x,-94 if vast_world else -50,94 if vast_world else 50)
+  focus.z=clampf(focus.z,-94 if vast_world else -50,94 if vast_world else 50)
   update_camera()
  if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
   set_tour(false)
@@ -1385,7 +1422,7 @@ func _unhandled_input(event:InputEvent):
    distance=maxf(3.7,distance*.86)
    update_camera()
   elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN:
-   distance=minf(125,distance*1.16)
+   distance=minf(220 if vast_world else 125,distance*1.16)
    update_camera()
   elif event.button_index==MOUSE_BUTTON_LEFT:
    set_tour(false)
@@ -1395,13 +1432,13 @@ func _unhandled_input(event:InputEvent):
     if event.double_click and actors.has(selected):follow_person(selected)
    else:
     var p=ground_at(event.position)
-    if p.y>SEA-.5 and absf(p.x)<51 and absf(p.z)<51:divine(p)
+    if p.y>SEA-.5 and absf(p.x)<(94 if vast_world else 51) and absf(p.z)<(94 if vast_world else 51):divine(p)
 
 func ground_at(mouse:Vector2)->Vector3:
  var origin=camera.project_ray_origin(mouse)
  var dir=camera.project_ray_normal(mouse)
  var previous=origin
- for i in range(600):
+ for i in range(1000):
   var p=origin+dir*i*.35
   if p.y<=height_at(p.x,p.z):
    var lo=previous
@@ -1553,6 +1590,9 @@ func alter_ground(p:Vector3,amount:float,r:float):
  rebuild_meadow()
 
 func divine(p:Vector3):
+ if origins.active:
+  hint.text="Durante le Origini osserva l’evoluzione delle forme primitive."
+  return
  if power=="Osserva":return
  var cost=18.0 if power in ["Meteorite","Tsunami","Vulcano","Resurrezione","Montagna","Lago","Incendio","Terremoto","Tornado","Epidemia"] else 9.0
  if power in ["Vita","Nuova specie","Resurrezione"] and sim.people.size()>=Sim.LIMIT:
@@ -2052,7 +2092,10 @@ func refresh():
   if int(a.get("social_target",-1))>=0:details.text+="\nIncontro: "+family_names([a.social_target])
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
  if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nPRIORITÀ PERSONALE: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
- if sim.mode==0:
+ if origins.active:
+  journey_label.text=origins.report()
+  objective.text="Osserva le generazioni primitive: la vita intelligente deve emergere."
+ elif sim.mode==0:
   if legend.journey<Legend.GOALS.size():objective.text=Legend.HELP[legend.journey]
   if sim.people.is_empty():objective.text="ETERNITÀ — Mondo disabitato. Usa Vita per ricominciare."
   elif sim.legacy_cycles>0:objective.text+="  ·  Cicli del futuro: "+str(sim.legacy_cycles)
@@ -2086,9 +2129,12 @@ func open_welcome():
  box.add_child(seed_input)
  text_label(box,"Seme del mondo · cambia il numero per creare una nuova mappa",13)
  var world_choice=OptionButton.new()
- for label in ["Isola classica","Arcipelago con ponti","Continenti separati · oceano e colonie"]:world_choice.add_item(label)
- world_choice.select(2)
+ for label in ["Isola classica","Arcipelago con ponti","Continenti separati · oceano e colonie","Grande frontiera · quattro regioni aggiuntive"]:world_choice.add_item(label)
+ world_choice.select(3)
  box.add_child(world_choice)
+ var primordial=CheckButton.new()
+ primordial.text="Origini · inizia dalle forme primitive"
+ box.add_child(primordial)
  button(box,"Seme casuale",func():seed_input.text=str(rng.randi_range(1,999999)))
  text_label(box,"Clicca per osservare · F6 tour · F1 guida · F10 cinema",13)
  for i in range(3):
@@ -2100,7 +2146,7 @@ func open_welcome():
   welcome_open=false
   world_started=true
   deformation.clear()
-  new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.selected>0,world_choice.selected==2)
+  new_world(maxi(1,abs(int(seed_input.text))),option.selected,world_choice.selected>0,world_choice.selected>=2,world_choice.selected==3,primordial.button_pressed and option.selected==0)
   dlg.queue_free()
   left_panel.hide()
   right_panel.hide()
@@ -2237,6 +2283,9 @@ func save_game(show_hint:bool):
 func save_path(path:String,show_hint:bool)->bool:
  var d=sim.export_state()
  d["expanded_world"]=expanded_world
+ d["vast_world"]=vast_world
+ d["districts"]=districts.export_state()
+ d["origins"]=origins.export_state()
  d["ocean"]=ocean.export_state()
  d["hydrology"]=hydro.export_state()
  d["fluid_volume"]=fluid_volume.export_state()
@@ -2302,6 +2351,9 @@ func load_path(p:String)->bool:
    return false
  set_tour(false)
  sim=candidate
+ vast_world=bool(data.get("vast_world",false))
+ districts.reset(self,data.get("districts",{}))
+ origins.reset(self,data.get("origins",{}))
  legend.reset(self,data.get("legend",{}))
  wildlife.reset(self,data.get("wildlife",{}))
  ocean.restore(self,data.get("ocean",{}))
@@ -2338,7 +2390,7 @@ func load_path(p:String)->bool:
   focus=Vector3(float(cam[0]),0,float(cam[1]))
   azimuth=float(cam[2])
   pitch=clampf(float(cam[3]),.24,1.48)
-  distance=clampf(float(cam[4]),3.0,125.0)
+  distance=clampf(float(cam[4]),3.0,220.0 if vast_world else 125.0)
   update_camera()
  for id in actors:
   var pos=data.get("positions",{}).get(str(id),[])
@@ -2498,6 +2550,7 @@ func self_test():
  if not test_industry_and_volume():failed=true
  if not test_continuous_systems():failed=true
  if not test_player_experience():failed=true
+ if not test_frontier_origins():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -3437,13 +3490,14 @@ func walking_height(x:float,z:float)->float:
  return h
 
 func rebuild_navigation():
- nav_grid.region=Rect2i(-50,-50,101,101)
+ var extent=94 if vast_world else 50
+ nav_grid.region=Rect2i(-extent,-extent,extent*2+1,extent*2+1)
  nav_grid.cell_size=Vector2.ONE
  nav_grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
  nav_grid.update()
  nav_grid.fill_solid_region(nav_grid.region,false)
- for z in range(-50,51):
-  for x in range(-50,51):
+ for z in range(-extent,extent+1):
+  for x in range(-extent,extent+1):
    var h=walking_height(x,z)
    if h<SEA+.18:
     nav_grid.set_point_solid(Vector2i(x,z))
@@ -3504,7 +3558,7 @@ func task_destination(a:Dictionary)->Vector3:
     if landmark.found or (ocean.enabled and str(landmark.name) in REGION_NAMES.slice(1)):continue
     var q=ground(float(landmark.x),float(landmark.z))
     var d=flat_dist(q,c)
-    if d<best and d<(82.0 if expanded_world else 24.0):best=d;dest=q
+    if d<best and d<(120.0 if vast_world else 82.0 if expanded_world else 24.0):best=d;dest=q
    return dest
  return c+offset
 
@@ -4291,6 +4345,10 @@ func rebuild_discoveries():
    for i in range(1,REGION_POINTS.size()):
     var point:Vector2=REGION_POINTS[i]
     discovery_sites.append({"x":point.x,"z":point.y,"found":false,"name":REGION_NAMES[i]})
+  if vast_world:
+   for i in range(Frontier.POINTS.size()):
+    var p:Vector2=Frontier.POINTS[i]
+    discovery_sites.append({"x":p.x,"z":p.y,"found":false,"name":Frontier.NAMES[i]})
   if ocean.enabled:
    for spec in [[-20,-17,"Arco dei titani"],[20,-15,"Terrazze cremisi"],[-5,24,"Fonte delle origini"],[24,15,"Cerchio degli antichi"]]:
     var p=land_near(float(spec[0]),float(spec[1]))
@@ -5124,6 +5182,8 @@ func _exit_tree():
  if legend!=null:legend.world=null
  if wildlife!=null:wildlife.world=null
  if living_score!=null:living_score.world=null
+ if districts!=null:districts.world=null
+ if origins!=null:origins.world=null
 
 
 func show_legend():
@@ -5212,4 +5272,26 @@ func test_player_experience()->bool:
   if FileAccess.file_exists(path+ext):DirAccess.remove_absolute(ProjectSettings.globalize_path(path+ext))
  if not ok or legend.journey!=4 or legend.monuments.size()!=1 or not legend.worship[0].temple or wildlife.life.size()!=fauna_count:return false
  print("EXPERIENCE_TEST journey=true witnesses=true faith=true shrine=true pilgrimage=true memorial=true wildlife=true persistence=true")
+ return true
+
+
+func test_frontier_origins()->bool:
+ new_world(47,0,true,true,true)
+ if nav_grid.region.size.x!=189:return false
+ var point:Vector2=Frontier.POINTS[0]
+ var destination=near_cell(ground(point.x,point.y))
+ var start=near_cell(centers[0])
+ if not nav_grid.region.has_point(destination) or nav_grid.get_id_path(start,destination).is_empty():return false
+ sim.villages[0].era=4
+ sim.villages[0].houses=9
+ districts.sync()
+ if districts.districts.size()<3:return false
+ new_world(47,0,false,false,false,true)
+ if not origins.active or not sim.people.is_empty():return false
+ origins.lineages=[]
+ for clan in range(2):
+  for i in range(3):origins.lineages.append({"clan":clan,"gen":6,"age":3,"energy":90.0,"genes":[.8,.55,.5,.6]})
+ origins.daily()
+ if origins.active or sim.people.size()<4:return false
+ print("FRONTIER_TEST extended_path=true districts=true origins=true")
  return true
