@@ -90,8 +90,8 @@ static func portrait(w,r:Dictionary,a:Dictionary):
  var key=role+str(int(age/12))+str(leader)+str(int(w.sim.villages[clan].era))+str(int(a.get("sick",0)>0))
  if r.get("identity_key","")==key:return
  r["identity_key"]=key
- if is_instance_valid(r.get("identity_head")):r.identity_head.queue_free()
- if is_instance_valid(r.get("identity_body")):r.identity_body.queue_free()
+ if is_instance_valid(r.get("identity_head")):r.identity_head.hide();r.identity_head.queue_free()
+ if is_instance_valid(r.get("identity_body")):r.identity_body.hide();r.identity_body.queue_free()
  var h=Node3D.new()
  var b=Node3D.new()
  rig.head_anchor.add_child(h)
