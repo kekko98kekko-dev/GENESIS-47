@@ -6,6 +6,7 @@ const DebrisPhysics=preload("res://scripts/debris_physics.gd")
 const Hydro=preload("res://scripts/hydrology.gd")
 const FluidVolume=preload("res://scripts/fluid_volume.gd")
 const OceanDynamics=preload("res://scripts/ocean_dynamics.gd")
+const QualityAssurance=preload("res://scripts/quality_assurance.gd")
 const MotionLibrary=preload("res://scripts/mocap_library.gd")
 const Structure=preload("res://scripts/structure.gd")
 const SEA=-0.40
@@ -204,13 +205,15 @@ const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"C
 
 func _ready():
  benchmark_mode="--benchmark" in OS.get_cmdline_user_args() or "--benchmark-test" in OS.get_cmdline_user_args()
- test_mode="--self-test" in OS.get_cmdline_user_args()
+ test_mode="--self-test" in OS.get_cmdline_user_args() or "--qa-test" in OS.get_cmdline_user_args()
  load_catalog()
  setup_environment()
  setup_ui()
  if not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
  new_world(47,0)
- if test_mode:
+ if "--qa-test" in OS.get_cmdline_user_args():
+  call_deferred("run_quality_assurance")
+ elif test_mode:
   call_deferred("self_test")
  elif benchmark_mode:
   autosave_enabled=false
@@ -2465,6 +2468,8 @@ func capture_preview():
  await RenderingServer.frame_post_draw
  var region_err=get_viewport().get_texture().get_image().save_png("res://preview-archipelago.png")
  if region_err!=OK:err=region_err
+ var pose_err=await capture_pose_gallery()
+ if pose_err!=OK:err=pose_err
  speed=1
  await get_tree().create_timer(.7).timeout
  print("CAPTURE ",err)
@@ -4934,3 +4939,32 @@ func test_continuous_systems()->bool:
  if not ok or ocean.industry.delivered_units<1 or absf(ocean_dynamics.displacement()-volume)>.003:return false
  print("CONTINUOUS_TEST connected_mesh=true vertices=",vertices.size()," physical_production=true delivery=true cash_conserved=true ocean_layers=",OceanDynamics.L," displacement_conserved=true persistence=true")
  return true
+
+
+func run_quality_assurance():
+ autosave_enabled=false
+ var suite=QualityAssurance.new()
+ var ok=suite.run(self)
+ print("QA_SUITE ","PASS" if ok else "FAIL")
+ get_tree().quit(0 if ok else 1)
+
+func capture_pose_gallery()->int:
+ speed=0
+ hud.hide()
+ if sim.people.is_empty():return ERR_DOES_NOT_EXIST
+ var a=sim.people[0]
+ var r:Dictionary=actors[a.id]
+ var actor:Node3D=r.node
+ actor.scale=Vector3.ONE
+ actor.rotation=Vector3.ZERO
+ var center=actor.position+Vector3.UP*.59
+ for action in ["walk","farm","craft","eat","sleep","social"]:
+  QualityAssurance.apply_pose(r,a,action,PI*.5)
+  camera.position=center+Vector3(1.5,.45,2.15)
+  camera.look_at(center,Vector3.UP)
+  await get_tree().create_timer(.25).timeout
+  await RenderingServer.frame_post_draw
+  var img=get_viewport().get_texture().get_image()
+  var result=img.save_png("res://preview-pose-"+action+".png")
+  if result!=OK:return result
+ return OK
