@@ -1,6 +1,6 @@
 extends RefCounted
 # Whole playable ocean: layered 3D velocities, hydrostatic free surface,
-# horizontal pressure projection and vertical mixing. Local splashes use
+# hydrostatic pressure gradients and vertical mixing. Local splashes use
 # the existing particle solver. Ocean mass is measured relative to rest.
 const N=53
 const L=8
@@ -11,7 +11,6 @@ var wet=PackedByteArray()
 var bed=PackedFloat32Array()
 var eta=PackedFloat32Array()
 var velocity=PackedVector3Array()
-var pressure=PackedFloat32Array()
 var elapsed=0.0
 var revision=-1
 var clock=0.0
@@ -30,8 +29,6 @@ func reset(w,data={}):
  eta.fill(0)
  velocity.resize(N*N*L)
  velocity.fill(Vector3.ZERO)
- pressure.resize(N*N*L)
- pressure.fill(0)
  revision=-1
  elapsed=0
  clock=0
