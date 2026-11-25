@@ -793,12 +793,17 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
   scores.social=pow(float(a.social_need)/100,2)*95+float(a.genes[1])*10
   targets.social=int(friend_data.id)
   reasons.social="Desiderio di compagnia"
+  if int(a.grief_until)>day:
+   scores.social+=22
+   reasons.social="Cerca conforto dopo un lutto"
  if adult and a.genes[1]>.48 and a.health>55:
   var greatest=0.0
   for other in people:
    if other.id==a.id or other.clan!=a.clan or other.health<=0 or int(other.get("last_aid_day",-1))==day:continue
    if other.health>=80 and other.sick<=0 and other.hunger<65:continue
    var need=maxf(0,80-float(other.health))+float(other.sick)*7+maxf(0,float(other.hunger)-60)
+   var related=other.parents.has(a.id) or a.parents.has(other.id) or int(a.partner)==int(other.id)
+   if related:need*=1.6
    if need>greatest:
     greatest=need
     targets.aid=int(other.id)
@@ -814,6 +819,10 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
   if scores.has(focus_task):scores[focus_task]+=12
   var policy_task={"Sostentamento":"farm","Sapere":"research","Solidarietà":"aid","Dimore":"house","Comunità":"social"}.get(str(v.culture.policy),"")
   if scores.has(policy_task):scores[policy_task]+=10
+  var identity=str(v.get("identity",""))
+  var preference={"Pacifista":"aid","Militarista":"guard","Scientifica":"research","Mercantile":"craft","Nomade":"explore","Esploratrice":"explore","Religiosa":"social"}.get(identity,"")
+  if scores.has(preference):scores[preference]+=18
+  if identity=="Militarista" and scores.has("guard"):scores.guard+=8
   if adult and v.houses*4<count(a.clan) and day>=int(v.get("rebuild_after",0)) and a.hunger<70 and a.fatigue<70:
    a.plan_goal="house"
    if v.wood<22 and scores.has("gather"):
@@ -1044,6 +1053,9 @@ func procedural_exchange(a:Dictionary,b:Dictionary):
  elif a.partner==b.id:
   first="Come sta la nostra famiglia?"
   second="La nostra casa è importante per me."
+ elif bool(a.get("dissident",false)) or bool(b.get("dissident",false)):
+  first="Il Creatore merita davvero la nostra fede?"
+  second="Ho paura, ma voglio scegliere." if float(b.faith)<50 else "Ricordo anche i suoi doni."
  elif a.genes[0]>.65:
   first=["Cosa c'è oltre le colline?","Vorrei capire come funziona il cielo.","Possiamo inventare qualcosa di nuovo."][posmod(int(a.tasks_done)+day,3)]
   second="Proviamoci insieme." if b.genes[0]>.5 else "Prima pensiamo al villaggio."
