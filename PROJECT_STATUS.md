@@ -18,13 +18,14 @@ Gioco god-sim evolutivo in cui il mondo vive autonomamente e il Creatore osserva
 Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi. Non trasformare il progetto in una semplice demo statica.
 
 ## Stato attuale
-- Versione del codice: 11.0.0 — Eredità vivente.
-- Ultimo commit applicativo prima di questo aggiornamento del registro: 207d993e07a246b8415fc1c66c7c344f764eed69.
+- Versione del codice: 12.0.0 — Arte vivente.
+- Ultimo commit applicativo prima di questo aggiornamento del registro: 8920179b2b3368c899caa06dac0eb667c3d3a690.
 - Ultima versione interamente collaudata: 11.0, commit bd3fba81e7a220ba3e5d0d186820853482189d61, run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642 (build e Windows riusciti, SELF_TEST e QA_SUITE PASS).
 - 9.0: run https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45587563640 fallita durante importazione Godot: parola riservata signal in living_score.gd. Correzione nel ramo 10.0. Ultima versione collaudata rimane 8.1.
 - 10.0: precedente errore di importazione corretto; pipeline interamente riuscita al run 45588892853. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45588892853/artifacts/15009933282.
 - 10.1: pipeline interamente riuscita. Artifact Windows https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45589975242/artifacts/15010636738.
 - 11.0: pipeline interamente riuscita. LEGACY_TEST PASS; QA_LEGACY 120 giorni, 28→76 cittadini, 14 eventi, ok=true. Artifact Windows: https://github.com/kekko98kekko-dev/GENESIS-47/actions/runs/45593274642/artifacts/15012212401.
+- 12.0: implementata nel ramo upgrade-12-0-art; CI da verificare dopo pubblicazione.
 - Distribuzione: artifact GENESIS-47-Windows nella pagina Actions. Estrarre lo ZIP e avviare GENESIS47.exe. Nessun modello AI esterno.
 
 ## Funzionalità consolidate fino alla 4.2
@@ -108,8 +109,16 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Routine post-sonno con due fasi temporizzate e interrompibili (lavarsi e vestirsi), riutilizzano gesti della libreria esistente; non motion capture specifico né sistema di igiene completo. Catastrofi: vulcano con foschia/attenuazione della luce temporanea, protezione biologico-culturale tramite invenzioni; mantengono effetti, panico e distruzione già presenti. Nessuna guerra civile su vasta scala, sotterraneo abitato, linguaggio interamente simulato o nuovo motore evolutivo scientifico.
 - LEGACY_TEST: invenzione a costo reale, elezione, rivolta, divieto culto, reliquia, routine e salvataggio; QA_LEGACY 120 giorni di simulazione aggregata con coerenza del leader, delle risorse e delle invenzioni. Nuova cattura preview-title.png. Esiti 11.0 da verificare. Playtest umano, audio e qualità artistica non certificati. Nessun modello AI esterno.
 
+
+## 12.0 — Arte vivente
+- Base 11.0: CI completata con successo, incluso Windows, run 45593274642; LEGACY_TEST e QA_LEGACY (120 giorni, 28→76 abitanti, 14 eventi) superati. I quattro riferimenti del proprietario sono registrati in ART_DIRECTION.md, senza copiare asset proprietari.
+- scripts/artisan_kit.gd: kit originale con tetti geometrici a tegole, variazione cromatica, travi, fondamenta, cornici, cortili e campi coltivati con recinzioni, zucche e cereali; chiome conifere stratificate, irregolari, in mesh riusabili, foreste raggruppate e maggiore copertura erbosa instanziata. Colori terreno, pelle e illuminazione modificati. Case continuano a essere collegate a persone e servizi, non edifici fittizi. Distretti civici con facciate, finestre, tetti e torri; strade curve verso gli ingressi, raggio di sviluppo più compatto. Non è ancora dimostrata parità artistica con Fabledom/Foundation.
+- scripts/continuous_skin.gd, creature_rig.gd, sim.gd: tre famiglie anatomiche con isosuperfici e rig distinti (22 ossa bipede, 28 quattro braccia, 30 quattro zampe e coda). Genotipo ereditabile determina anatomia, articolazioni aggiuntive e vantaggi/costi modesti. Arti principali mantengono la libreria mocap; arti extra animati proceduralmente, senza cattura specifica. Le famiglie restano compatibili con il sistema sociale originale; non sono specie tassonomiche isolate.
+- scripts/divine_presentation.gd: puntatore astrale, onde a strati, particelle e luce transitoria, associati alle azioni divine esistenti. Non è un nuovo avatar colossale autonomo. Effetti rimossi alla fine/reset; danni e guarigione restano reali.
+- ARTISAN_TEST verifica tre mesh connesse, ossa aggiuntive, pesi, articolazione e rimozione degli effetti. QA_ANATOMIES estende la verifica numerica a 30 pose per famiglia. CI richiede dieci nuove catture reali: tre ere in fixture controllata (impostazioni di era/numero case, non crescita spontanea), tre anatomie, prima/durante/dopo poteri. Test e resa artistica della 12.0 ancora da verificare. Funzionamento offline, nessuna AI esterna. Nessuna promessa di qualità commerciale prima delle prove visive e umane.
+
 ## Backlog e limiti (ordine consigliato)
-- P0: verificare esito finale CI 11.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
+- P0: verificare esito finale CI 12.0, leggere i log e correggere eventuali errori. Verificare anche i log non fatali, il comportamento dei salvataggi, il rendering della nuova modalità e l'assenza di dipendenze AI.
 - P0: prova umana di gioco con la 11.0; osservare onboarding, scelta dei poteri, leggenda, lettura delle creature, ritmo, audio e leggibilità dell'interfaccia. Poi test sul PC reale dell'utente. BENCHMARK.bat genera benchmark-genesis47.json in user://. Richiedere il rapporto, non indovinare FPS. Il proprietario ha chiesto di non limitare lo sviluppo all’hardware attuale; nessun intervento BIOS/overclock necessario.
 - P1: parità funzionale tra coloni individuali e cittadini originari (dialoghi, fede, istruzione, politica, stazioni, famiglie più profonde), interazioni fisiche avanzate, più regioni e test su più semi. Gli agenti individuali della 6.0 hanno superato CI.
 - P1: navigazione marittima più profonda (porti fisici, imbarco/sbarco, costi e manutenzione, flotta, blocchi, ritorno a porto, rotte intercontinentali estese, salvataggi robusti e test su più semi). Oggi tre masse terrestri nello stesso spazio di simulazione, due colonie possibili, non continenti su scala globale.
@@ -151,3 +160,5 @@ Modalità Eternità senza finale obbligatorio; tre scenari narrativi facoltativi
 - Priorità residua 10.1: verificare pipeline, nuove catture e stabilità con popolazioni elevate; eseguire PLAYTEST.md. Limiti: bacino oceanico centrale separato, fiumi 1D, una grotta esplorabile, metropoli non ancora dimostrata, quattro morfotipi semplificati e qualità artistica/coinvolgimento non certificati.
 
 - Priorità 11.0: benchmark artistico del proprietario in ART_DIRECTION.md. Catture 11.0 esaminate, divario evidente rispetto ai riferimenti: costruzioni geometriche, vegetazione rada, biologia con rig comune, scala divina modesta. Prossima iterazione: area verticale di qualità, kit originali o licenziati e verifiche visive; non aggiungere complessità invisibile. Playtest umano non eseguito.
+
+- Priorità 12.0: verificare ARTISAN_TEST e QA_ANATOMIES, analizzare dieci catture reali, correggere eventuali regressioni e svolgere PLAYTEST.md. Limiti espliciti: qualità grafica commerciale non dimostrata, animazioni extra procedurali, nessun avatar gigante autonomo, crescita urbana spontanea non documentata con time-lapse.
