@@ -14,6 +14,8 @@ var accumulator=0.0
 var injected=0.0
 var transferred=0.0
 var clock=0.0
+var obstacle_revision=-1
+var obstacles:Array=[]
 
 func reset(w,parent:Node3D,data={}):
  world=w
@@ -24,6 +26,8 @@ func reset(w,parent:Node3D,data={}):
  injected=0.0
  transferred=0.0
  clock=0.0
+ obstacle_revision=-1
+ obstacles=[]
  if data is Dictionary:
   for row in data.get("particles",[]):
    if row is Array and row.size()>=7:
@@ -93,6 +97,7 @@ func neighbors(p:Vector3)->Array:
 
 func step(dt:float):
  if particles.is_empty():return
+ rebuild_obstacles()
  rebuild_hash()
  var acceleration=PackedVector3Array()
  acceleration.resize(particles.size())
@@ -131,8 +136,9 @@ func step(dt:float):
    if velocity.y<0:velocity.y*=-.17
    velocity.x*=.81
    velocity.z*=.81
-  a.p=p
-  a.v=velocity
+  var collision=collide_obstacles(p,velocity)
+  a.p=collision[0]
+  a.v=collision[1]
   a.age=float(a.age)+dt
  for i in range(particles.size()-1,-1,-1):
   var a=particles[i]
@@ -181,3 +187,34 @@ func tick(dt:float):
  rebuild_hash()
  affect_bodies(dt)
  render()
+
+
+func rebuild_obstacles():
+ if obstacle_revision==int(world.nav_version):return
+ obstacle_revision=int(world.nav_version)
+ obstacles=[]
+ for clan in range(2):
+  for row in world.houses[clan]:
+   if not is_instance_valid(row.node):continue
+   var p:Vector3=row.node.position
+   obstacles.append(AABB(p-Vector3(1.12,0,1.12),Vector3(2.24,2.0,2.24)))
+
+func collide_obstacles(p:Vector3,v:Vector3)->Array:
+ for box in obstacles:
+  if not box.has_point(p):continue
+  var end:Vector3=box.end
+  var start:Vector3=box.position
+  var distances=[p.x-start.x,end.x-p.x,end.y-p.y,p.z-start.z,end.z-p.z]
+  var index=0
+  for i in range(1,distances.size()):
+   if distances[i]<distances[index]:index=i
+  var normal=Vector3.ZERO
+  match index:
+   0:p.x=start.x-.02;normal=Vector3.LEFT
+   1:p.x=end.x+.02;normal=Vector3.RIGHT
+   2:p.y=end.y+.02;normal=Vector3.UP
+   3:p.z=start.z-.02;normal=Vector3.FORWARD
+   4:p.z=end.z+.02;normal=Vector3.BACK
+  if v.dot(normal)<0:v-=normal*v.dot(normal)*1.22
+  v*=.84
+ return [p,v]
