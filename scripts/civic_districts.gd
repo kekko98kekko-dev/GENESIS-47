@@ -32,7 +32,8 @@ func sync():
    var angle=float(i)*TAU/6+clan*.4
    var center:Vector3=world.centers[clan]
    var p=world.land_near(center.x+cos(angle)*12,center.z+sin(angle)*12)
-   if p.y<=world.SEA+.5:continue
+   if p.y<=world.SEA+.5 or float(v.wood)<6:continue
+   v.wood-=6
    districts.append({"clan":clan,"index":i,"x":p.x,"z":p.z,"era":int(v.era),"founded":world.sim.day,"ruined":false})
   for row in districts:
    if int(row.clan)!=clan:continue
