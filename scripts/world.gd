@@ -5330,5 +5330,6 @@ func test_frontier_origins()->bool:
   for i in range(3):origins.lineages.append({"clan":clan,"gen":6,"age":3,"energy":90.0,"genes":[.8,.55,.5,.6]})
  origins.daily()
  if origins.active or sim.people.size()<4:return false
- print("FRONTIER_TEST extended_path=true districts=true origins=true")
+ if not legend.genealogy(int(sim.people[0].id)).contains(str(sim.people[0].name)):return false
+ print("FRONTIER_TEST extended_path=true districts=true origins=true genealogy=true")
  return true
