@@ -3,7 +3,7 @@ extends RefCounted
 var world
 var root:Node3D
 var batches:Array=[]
-const MAX_BODIES=30
+const MAX_BODIES=160
 
 func reset(w,parent:Node3D):
  world=w
@@ -27,16 +27,10 @@ func count_bodies()->int:
 
 func spawn(p:Vector3,intensity:float,kind:String):
  if not is_instance_valid(root) or world.quality_mode==0:return
- var quantity=mini(8,MAX_BODIES-count_bodies())
+ var quantity=mini(maxi(1,roundi(8*intensity)),MAX_BODIES-count_bodies())
  if quantity<=0:return
  var batch=Node3D.new()
  root.add_child(batch)
- var floor_body=StaticBody3D.new()
- batch.add_child(floor_body)
- floor_body.position=Vector3(p.x,p.y-.20,p.z)
- floor_body.collision_layer=4
- floor_body.collision_mask=4
- add_shape(floor_body,Vector3(9,.35,9))
  var rng=RandomNumberGenerator.new()
  rng.seed=int(world.sim.seed_value)+int(world.sim.day)*37+roundi(p.x*19+p.z*11)
  var bodies=[]
