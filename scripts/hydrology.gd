@@ -113,6 +113,8 @@ func step(dt:float):
    var lost=minf(depth[i],dt*.5)
    depth[i]-=lost
    drained+=lost
+   var q=point(i)
+   world.ocean_dynamics.absorb(Vector3(q.x,world.SEA,q.y),lost)
 
 func redraw():
  if not is_instance_valid(visual):return
