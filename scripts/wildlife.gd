@@ -10,6 +10,7 @@ var births=0
 var deaths=0
 var nodes:Dictionary={}
 var rng=RandomNumberGenerator.new()
+var seeded=false
 const LIMIT=72
 
 func reset(w,data={}):
@@ -21,20 +22,24 @@ func reset(w,data={}):
  next_id=1
  births=0
  deaths=0
+ seeded=false
  if data is Dictionary and data.has("life"):
   life=data.get("life",[])
   patches=data.get("patches",[])
   next_id=int(data.get("next_id",1))
   births=int(data.get("births",0))
   deaths=int(data.get("deaths",0))
+  seeded=bool(data.get("seeded",true))
+  if data.has("rng_state"):rng.state=int(data.rng_state)
 
 func export_state()->Dictionary:
- return {"life":life,"patches":patches,"next_id":next_id,"births":births,"deaths":deaths}
+ return {"life":life,"patches":patches,"next_id":next_id,"births":births,"deaths":deaths,"seeded":seeded,"rng_state":str(rng.state)}
 
 func build(parent:Node3D):
  root=parent
  nodes.clear()
- if patches.is_empty():
+ if not seeded:
+  seeded=true
   for i in range(26):
    var p=world.land_near(rng.randf_range(-43,43),rng.randf_range(-40,40))
    if p.y<world.SEA+.7 or not world.far_village(p,7):continue
@@ -120,14 +125,14 @@ func tick(dt:float):
   var target=int(a.target)
   if target<0 or target>=patches.size():continue
   var p=patches[target]
-  var from=Vector2(float(a.x),float(a.z))
+  var origin=Vector2(float(a.x),float(a.z))
   var to=Vector2(float(p.x),float(p.z))
-  var next=from.move_toward(to,dt*(.65+float(a.traits.speed)))
+  var next=origin.move_toward(to,dt*(.65+float(a.traits.speed)))
   if world.height_at(next.x,next.y)>world.SEA+.4:
    a.x=next.x
    a.z=next.y
    n.position=world.ground(next.x,next.y)
-   var d=to-from
+   var d=to-origin
    if d.length()>.1:n.rotation.y=atan2(d.x,d.y)
   else:a.target=-1
 
