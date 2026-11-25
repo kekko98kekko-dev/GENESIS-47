@@ -290,6 +290,7 @@ func daily():
   signals.push_front({"id":a.id,"text":question,"day":day,"answered":false})
   if signals.size()>12:signals.pop_back()
   log_event(a.name+": «"+question+"»")
+ if spatial_autonomy and day%14==0:storyteller()
  if day%5==0:
   history.append({"day":day,"population":people.size(),"peace":peace})
   if history.size()>150:history.pop_front()
@@ -716,6 +717,10 @@ func init_tasks(a:Dictionary):
  a["work_history"]=a.get("work_history",{})
  if not a.work_history is Dictionary:a.work_history={}
  a["social_style"]=str(a.get("social_style","Conciliante" if a.genes[1]>.5 else "Competitivo"))
+ a["action_values"]=a.get("action_values",{})
+ if not a.action_values is Dictionary:a.action_values={}
+ a["plan_goal"]=str(a.get("plan_goal",""))
+ a["last_speech"]=str(a.get("last_speech",""))
 
 func tick_needs(a:Dictionary,dt:float):
  a.hunger=minf(100,float(a.hunger)+dt*1.65)
@@ -797,11 +802,25 @@ func choose_task(a:Dictionary,available:Dictionary={})->Dictionary:
  if int(a.intention_until)>day:
   var wanted={"RICERCA":"research","CIBO":"farm","CURA":"heal","PACE":"social","ESPLORA":"explore"}.get(a.intention,"")
   if scores.has(wanted):scores[wanted]+=28
+ if spatial_autonomy:
+  var council=str(v.get("council_focus",""))
+  var focus_task={"CIBO":"farm","CASA":"house","CURA":"heal","SOCIALE":"social","RICERCA":"research"}.get(council,"")
+  if scores.has(focus_task):scores[focus_task]+=12
+  if adult and v.houses*4<count(a.clan) and day>=int(v.get("rebuild_after",0)) and a.hunger<70 and a.fatigue<70:
+   a.plan_goal="house"
+   if v.wood<22 and scores.has("gather"):
+    scores.gather+=42
+    reasons.gather="Piano: procurare legna per una dimora"
+   elif scores.has("house"):
+    scores.house+=30
+    reasons.house="Piano: completare la dimora"
+  elif a.plan_goal=="house":a.plan_goal=""
  var best=""
  var best_score=-1.0
  for key in scores:
   if not available.is_empty() and not available.has(key):continue
   var value=float(scores[key])+float(posmod(int(a.id)*17+int(a.tasks_done)*13+str(key).hash(),9))*.6
+  if spatial_autonomy:value+=clampf(float(a.action_values.get(key,0)), -12,12)
   if key=="eat" and a.hunger>=85:value+=100
   if key=="sleep" and a.fatigue>=92:value+=65
   if available.has(key):value/=1.0+float(available[key])*.018
@@ -896,11 +915,7 @@ func complete_task(a:Dictionary)->bool:
      build_relationship(a,friend_data)
      a.stress=maxf(0,a.stress-12)
      friend_data.mood=minf(100,friend_data.mood+3)
-     var topic="Come stai?" if a.health<65 else "Il raccolto ci aiuterà." if v.food<30 else "Vorrei conoscere il mondo." if a.genes[0]>.65 else "Mi piace stare qui con te."
-     record_dialogue(a,a.name,topic)
-     record_dialogue(friend_data,a.name,topic)
-     a.special_memory=topic
-     a.special_until=day+2
+     procedural_exchange(a,friend_data)
     elif a.friend<0 and friend_data.friend<0:
      a.friend=friend_data.id
      friend_data.friend=a.id
@@ -927,7 +942,9 @@ func complete_task(a:Dictionary)->bool:
    a.boredom=maxf(0,a.boredom-(65 if a.task=="play" else 30))
    a.stress=maxf(0,a.stress-10)
    a.mood=minf(100,a.mood+3)
+ if spatial_autonomy:learn_action(a,action,3.0 if ok else -4.0)
  if ok:
+  if action=="house":a.plan_goal=""
   a.tasks_done+=1
   a.last_task=a.task
   a.work_history[action]=int(a.work_history.get(action,0))+1
@@ -990,3 +1007,70 @@ func build_relationship(a:Dictionary,b:Dictionary):
    a.special_until=day+7
    b.special_until=day+7
    log_event("Nasce "+child.name+".")
+
+func learn_action(a:Dictionary,kind:String,reward:float):
+ if not TASK_LABELS.has(kind):return
+ a.action_values[kind]=clampf(float(a.action_values.get(kind,0))*.85+reward*.3,-12,12)
+
+func procedural_exchange(a:Dictionary,b:Dictionary):
+ var v=villages[a.clan]
+ var first=""
+ var second=""
+ if a.grief_until>day:
+  first="Mi manca chi non è più qui."
+  second="Non devi affrontare tutto da solo."
+ elif a.hunger>65 or v.food<float(count(a.clan)):
+  first="Temo che le scorte non bastino."
+  second="Cerchiamo altro cibo per il villaggio."
+ elif a.stress>70 and b.stress>65:
+  first="Sono stanco di queste difficoltà."
+  second="Proviamo a trovare una soluzione."
+ elif a.partner==b.id:
+  first="Come sta la nostra famiglia?"
+  second="La nostra casa è importante per me."
+ elif a.genes[0]>.65:
+  first=["Cosa c'è oltre le colline?","Vorrei capire come funziona il cielo.","Possiamo inventare qualcosa di nuovo."][posmod(int(a.tasks_done)+day,3)]
+  second="Proviamoci insieme." if b.genes[0]>.5 else "Prima pensiamo al villaggio."
+ elif a.health<65 or b.health<65:
+  first="Ti senti meglio oggi?"
+  second="Un po' di riposo mi farebbe bene."
+ else:
+  first=["È bello ritrovarsi.","Hai visto il nuovo giorno?","Che cosa hai fatto oggi?"][posmod(int(a.id)+int(a.tasks_done)+day,3)]
+  second=["Mi piace vivere qui.","Vorrei riposare un po'.","Ho ancora tante cose da fare."][posmod(int(b.id)+day,3)]
+ for citizen in [a,b]:
+  record_dialogue(citizen,a.name,first)
+  record_dialogue(citizen,b.name,second)
+ a.last_speech=first
+ b.last_speech=second
+ a.special_memory=first
+ b.special_memory=second
+ a.special_until=day+2
+ b.special_until=day+2
+
+func storyteller():
+ for clan in range(2):
+  var v=villages[clan]
+  var inhabitants=people.filter(func(a):return a.clan==clan)
+  if inhabitants.is_empty():continue
+  var stress=0.0
+  var sick=0
+  for a in inhabitants:
+   stress+=float(a.stress)
+   if a.sick>0:sick+=1
+  var focus="RICERCA"
+  var message="Il consiglio incoraggia nuove scoperte."
+  if v.food<float(inhabitants.size())*1.5:
+   focus="CIBO"
+   message="Il consiglio chiede di rifornire il magazzino."
+  elif sick>=maxi(2,int(inhabitants.size()/4)):
+   focus="CURA"
+   message="Il consiglio organizza le cure."
+  elif v.houses*4<inhabitants.size():
+   focus="CASA"
+   message="Il consiglio vuole nuove dimore."
+  elif stress/float(inhabitants.size())>40:
+   focus="SOCIALE"
+   message="Il consiglio invita gli abitanti a sostenersi."
+  if str(v.get("council_focus",""))!=focus:
+   v["council_focus"]=focus
+   log_event(CLANs_name(clan)+": "+message)

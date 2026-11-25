@@ -75,12 +75,6 @@ var objective:Label
 var hint:Label
 var power_label:Label
 var input:LineEdit
-var model:LineEdit
-var request:HTTPRequest
-var request_target=-1
-var request_partner=-1
-var ai_is_social=false
-var pending_conversations:Array=[]
 var audio:AudioStreamPlayer
 var cursor:MeshInstance3D
 var weather_timer=0.0
@@ -111,16 +105,7 @@ var hover_elapsed=0.0
 var event_player:AudioStreamPlayer
 var event_sounds:Dictionary={}
 var atlas_window:AcceptDialog
-var portable_ai=false
-var ai_test=false
-var ai_reply_received=false
-var ai_autonomy=true
-var ai_busy=false
-var ai_is_autonomous=false
-var ai_cooldown=0.0
-var last_ai_day=-1
 var absent_progress=false
-var ai_button:Button
 var toast_panel:PanelContainer
 var toast_label:Label
 var toast_time=0.0
@@ -191,21 +176,13 @@ const POWER_TIPS={"Osserva":"Seleziona un abitante senza modificarlo.","Vita":"C
 
 func _ready():
  benchmark_mode="--benchmark" in OS.get_cmdline_user_args() or "--benchmark-test" in OS.get_cmdline_user_args()
- portable_ai="--portable-ai" in OS.get_cmdline_user_args() and not benchmark_mode
- ai_test="--ai-test" in OS.get_cmdline_user_args()
- test_mode="--self-test" in OS.get_cmdline_user_args() or ai_test
+ test_mode="--self-test" in OS.get_cmdline_user_args()
  load_catalog()
  setup_environment()
  setup_ui()
  if not test_mode and not benchmark_mode and not "--capture" in OS.get_cmdline_user_args():restore_settings()
- request=HTTPRequest.new()
- add_child(request)
- request.timeout=90
- request.request_completed.connect(ai_response)
  new_world(47,0)
- if ai_test:
-  call_deferred("self_test_ai")
- elif test_mode:
+ if test_mode:
   call_deferred("self_test")
  elif benchmark_mode:
   autosave_enabled=false
@@ -523,7 +500,6 @@ func make_terrain():
  sea.material_override.set_shader_parameter("height_map",ImageTexture.create_from_image(depth_image))
 
 func new_world(seed_value:int,which:int):
- reset_ai_request()
  set_tour(false)
  unlimited=false
  if is_instance_valid(unlimited_toggle):unlimited_toggle.set_pressed_no_signal(false)
@@ -1038,9 +1014,6 @@ func _process(delta:float):
   fps_clock=0.0
   if is_instance_valid(fps_label):fps_label.text=str(Engine.get_frames_per_second())+" FPS"
  if tour:update_tour(delta)
- ai_cooldown=maxf(0,ai_cooldown-delta)
- if speed>0 and portable_ai and ai_autonomy and not ai_busy and sim.day>=3 and sim.day-last_ai_day>=3 and ai_cooldown<=0:
-  ask_autonomous()
  if toast_time>0:
   toast_time-=delta
   if toast_time<=0 and is_instance_valid(toast_panel):toast_panel.hide()
@@ -1726,18 +1699,6 @@ func setup_ui():
  chat.add_child(input)
  button(chat,"Invia messaggio",send_message)
  input.text_submitted.connect(func(_message):send_message())
- model=LineEdit.new()
- model.text="qwen2.5:1.5b"
- model.placeholder_text="Modello Ollama locale"
- chat.add_child(model)
- model.visible=not portable_ai
- ai_button=button(chat,"Risposta generativa" if portable_ai else "Risposta generativa (Ollama)",ask_ai)
- if portable_ai:
-  var autonomy=CheckButton.new()
-  autonomy.text="Iniziativa autonoma AI"
-  autonomy.button_pressed=ai_autonomy
-  autonomy.toggled.connect(func(on):ai_autonomy=on;store_settings())
-  chat.add_child(autonomy)
  button(chat,"Segnali delle creature",show_signals)
  text_label(chat,"Seleziona un abitante prima di parlargli.",12).autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
  var bottom=panel(hud,Rect2(14,769,1412,117),.91)
@@ -1832,7 +1793,7 @@ func refresh():
   details.text+="\nSocialità: "+str(int(a.get("social_need",0)))+"% · Esperienza: "+str(int(a.get("skill",0)))+"%"
   if int(a.get("social_target",-1))>=0:details.text+="\nIncontro: "+family_names([a.social_target])
  objective.text=["ETERNITÀ  —  Nessun limite di durata.","ALLEANZA  —  Giorno 90 · pace 70% · entrambi i popoli nell'era Regni.","OLTRE IL CIELO  —  Giorno 100 · era Contatto.","ULTIMA SCINTILLA  —  Giorno 120 · almeno 24 sopravvissuti."][sim.mode]
- if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nINTENZIONE AI: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
+ if not a.is_empty() and int(a.get("intention_until",0))>sim.day:details.text+="\n\nPRIORITÀ PERSONALE: "+str(a.get("intention",""))+" · fino al giorno "+str(a.intention_until)
  if sim.mode==0:
   if sim.people.is_empty():objective.text="ETERNITÀ — Mondo disabitato. Usa Vita per ricominciare."
   elif sim.legacy_cycles>0:objective.text+="  ·  Cicli del futuro: "+str(sim.legacy_cycles)
@@ -2004,76 +1965,6 @@ func send_message():
  input.clear()
  refresh()
 
-func ask_ai():
- if ai_busy:
-  hint.text="AI occupata: attendi la risposta."
-  return
- var a=sim.find(selected)
- if a.is_empty():
-  hint.text="Seleziona una creatura."
-  return
- var prompt="Interpreta un personaggio immaginario di GENESIS 47. Nome %s, popolo %s, età %d, fede %d, obiettivo %s. Ricordi %s. Messaggio del Creatore: %s. Rispondi in italiano in prima persona, massimo 45 parole. Puoi dissentire. Non fingere di agire fuori dal gioco."%[a.name,Sim.CLANS[a.clan],int(a.age),int(a.faith),a.goal,"; ".join(a.memories),input.text]
- var payload={"model":model.text.strip_edges(),"prompt":prompt,"stream":false,"options":{"num_predict":100}}
- var endpoint="http://127.0.0.1:11434/api/generate"
- if portable_ai:
-  endpoint="http://127.0.0.1:17847/v1/chat/completions"
-  payload={"model":"genesis-local","messages":[{"role":"system","content":"Interpreta una creatura immaginaria del gioco, rispondi brevemente in italiano e non uscire dal personaggio."},{"role":"user","content":prompt}],"stream":false,"max_tokens":100,"temperature":.72}
- var err=request.request(endpoint,["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
- if err==OK:
-  request_target=a.id
-  ai_busy=true
-  ai_is_autonomous=false
-  if ai_button!=null:ai_button.disabled=true
-  sim.remember(a,"Il Creatore: "+input.text.left(300))
-  sim.record_dialogue(a,"Creatore",input.text)
-  input.clear()
-  refresh_dialogue(a)
-  hint.text="AI locale in elaborazione..."
- else:hint.text="AI locale occupata o assente."
-
-func ai_response(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray):
- var autonomous=ai_is_autonomous
- var social=ai_is_social
- ai_is_social=false
- ai_busy=false
- ai_is_autonomous=false
- if ai_button!=null:ai_button.disabled=false
- if result!=HTTPRequest.RESULT_SUCCESS or code!=200:
-  hint.text="AI locale non disponibile. Usa il dialogo offline o avvia il gioco con AI portatile."
-  return
- var data=JSON.parse_string(body.get_string_from_utf8())
- var a=sim.find(request_target)
- if data is Dictionary and not a.is_empty():
-  var reply=str(data.get("response","")).strip_edges().left(650)
-  if portable_ai:
-   var choices=data.get("choices",[])
-   if not choices.is_empty():reply=str(choices[0].get("message",{}).get("content","")).strip_edges().left(650)
-  if reply!="":
-   ai_reply_received=true
-   if social:
-    apply_generated_exchange(a,sim.find(request_partner),reply)
-    refresh()
-    return
-   if autonomous:
-    var intent=reply.split("|",true,1)[0].strip_edges().to_upper()
-    if not intent in ["RICERCA","CIBO","CURA","PACE","ESPLORA"]:
-     hint.text="La creatura non ha formulato una decisione valida."
-     return
-    var thought=reply.split("|",true,1)[1].strip_edges() if reply.contains("|") else "Ho scelto una nuova priorità."
-    if sim.adopt_intention(a,intent,thought):
-     a.special_memory=thought.left(90)
-     a.special_until=sim.day+3
-     sim.record_dialogue(a,a.name+" · AI",thought)
-     if actors.has(a.id):life_bubble(actors[a.id].node.position,"IDEA: "+thought.left(60),Color("b6dcf2"))
-     notify_event("INIZIATIVA AUTONOMA",a.name+" · "+intent.to_lower())
-    refresh()
-    return
-   sim.remember(a,reply)
-   sim.record_dialogue(a,a.name+" · AI",reply)
-   sim.log_event(a.name+" [AI]: "+reply)
-   hint.text="Risposta generativa ricevuta."
- refresh()
-
 func save_game(show_hint:bool):
  save_path(SAVE_PREFIX+str(slot)+".json",show_hint)
 
@@ -2136,7 +2027,6 @@ func load_path(p:String)->bool:
   if not data is Dictionary or not candidate.import_state(data):
    hint.text="Salvataggio non valido."
    return false
- reset_ai_request()
  set_tour(false)
  sim=candidate
  var advanced=0
@@ -2320,6 +2210,7 @@ func self_test():
  if not test_life_upgrade():failed=true
  if not test_integrated_upgrade():failed=true
  if not test_exchange_and_inventory():failed=true
+ if not test_behavior_brain():failed=true
  if not test_live_world():failed=true
  unlimited=true
  var test_path="user://genesis47_test.json"
@@ -2401,7 +2292,7 @@ func populate_powers(i:int):
   b.tooltip_text=POWER_TIPS.get(name_value,"")
   power_buttons.append(b)
 func show_help():
- open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nOllama è facoltativo. Il mondo non ha bisogno di Internet e continua autonomamente.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
+ open_dialog("GUIDA AL CREATORE","BENVENUTO IN GENESIS 47\n\n1. Osserva la vita: clicca un abitante o premi Casuale, poi Segui.\n2. Usa la mappa per raggiungere una zona.\n3. Scegli una categoria di poteri. Il numero indica il costo in energia. Clicca il mondo per intervenire.\n4. Accelera il tempo e controlla le scoperte.\n5. Rispondi ai segnali degli abitanti: pace, guerra e conoscenza possono modificare il mondo.\n\nWASD = movimento | rotella = zoom | trascina il destro = rotazione\nSPAZIO = pausa | F1 = guida | F5 = salva | F9 = carica | F10 = cinema\n\nIl cervello comportamentale è integrato nel gioco. Non occorrono modelli, programmi esterni o Internet.\n\nOgni scenario ha un obiettivo nella barra inferiore. Puoi continuare anche dopo il finale.")
 func show_achievements():
  var entries=["Un mondo vivo","La via del commercio","Il secolo delle scoperte","La mano del Creatore","Eredità"]
  var lines=["TRAGUARDI  %d / %d"%[sim.achievements.size(),entries.size()]]
@@ -2675,7 +2566,6 @@ func restore_settings():
  autosave_enabled=bool(settings.get_value("game","autosave",true))
  onboarding_enabled=bool(settings.get_value("game","onboarding",true))
  absent_progress=bool(settings.get_value("game","absence",false))
- ai_autonomy=bool(settings.get_value("game","ai_autonomy",true))
  volume_value=float(settings.get_value("game","volume",50))
  audio.volume_db=linear_to_db(maxf(.001,volume_value/100.0))-17
  audio.stream_paused=bool(settings.get_value("game","muted",false))
@@ -2685,59 +2575,15 @@ func store_settings():
  settings.set_value("game","autosave",autosave_enabled)
  settings.set_value("game","onboarding",onboarding_enabled)
  settings.set_value("game","absence",absent_progress)
- settings.set_value("game","ai_autonomy",ai_autonomy)
  settings.set_value("game","volume",volume_value)
  settings.set_value("game","muted",audio.stream_paused)
  settings.save("user://genesis47_settings.cfg")
-
-func self_test_ai():
- if sim.people.is_empty():
-  get_tree().quit(1)
-  return
- selected=int(sim.people[0].id)
- input.text="Ciao, come ti senti oggi?"
- ask_ai()
- for i in range(180):
-  if ai_reply_received:break
-  await get_tree().create_timer(.5).timeout
- print("AI_TEST ", "PASS" if ai_reply_received else "FAIL")
- get_tree().quit(0 if ai_reply_received else 1)
 
 func notify_event(heading:String,message:String):
  if test_mode or not is_instance_valid(toast_panel):return
  toast_label.text=heading+"\n"+message
  toast_panel.show()
  toast_time=4.0
-
-func reset_ai_request():
- if is_instance_valid(request):request.cancel_request()
- request_target=-1
- request_partner=-1
- ai_is_social=false
- pending_conversations.clear()
- ai_busy=false
- ai_is_autonomous=false
- last_ai_day=-1
- ai_cooldown=0.0
- if is_instance_valid(ai_button):ai_button.disabled=false
-
-func ask_autonomous():
- if sim.people.is_empty() or not is_instance_valid(request) or ai_busy:return
- if request_social_exchange():return
- var adults=sim.people.filter(func(a):return a.age>=14 and int(a.get("intention_until",0))<=sim.day)
- if adults.is_empty():return
- var a=adults[rng.randi_range(0,adults.size()-1)]
- var v=sim.villages[a.clan]
- var prompt="Sei %s, creatura immaginaria autonoma del gioco. Salute %d, fame %d, umore %d, pace tra popoli %d, scorte %d, mestiere %s. Scegli una sola priorità tra RICERCA, CIBO, CURA, PACE, ESPLORA. Scrivi esattamente CODICE|una frase in italiano che spiega la tua scelta. Nessun altro testo."%[a.name,int(a.health),int(a.hunger),int(a.mood),int(sim.peace),int(v.food),a.role]
- var payload={"model":"genesis-local","messages":[{"role":"user","content":prompt}],"stream":false,"max_tokens":65,"temperature":.35}
- last_ai_day=sim.day
- ai_cooldown=12.0
- var err=request.request("http://127.0.0.1:17847/v1/chat/completions",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
- if err==OK:
-  request_target=a.id
-  ai_busy=true
-  ai_is_autonomous=true
-  if ai_button!=null:ai_button.disabled=true
 
 func family_names(ids:Array)->String:
  var names=[]
@@ -3360,6 +3206,7 @@ func cancel_task(a:Dictionary,r:Dictionary):
  if a.delivery and a.cargo!="":a.held_goods=a.cargo
  a.delivery=false
  a.cargo=""
+ if sim.spatial_autonomy and a.task!="":sim.learn_action(a,str(a.task),-2.0)
  a.last_task=a.task
  a.task=""
  a.task_stage="Decide"
@@ -3485,9 +3332,8 @@ func advance_actor_task(a:Dictionary,r:Dictionary,dt:float)->bool:
     completed_visible+=1
     if kind=="explore":discover_near(a,n.position)
     if kind=="social" and not test_mode:
-     if portable_ai and pending_conversations.size()<5 and target_id>=0:pending_conversations.append({"a":a.id,"b":target_id,"day":sim.day})
      life_bubble(n.position,str(a.special_memory).left(42),Color("d6edd0"))
-     if actors.has(target_id):life_bubble(actors[target_id].node.position,"Ti ascolto.",Color("f2d4a4"))
+     if actors.has(target_id):life_bubble(actors[target_id].node.position,str(sim.find(target_id).get("last_speech","Ti ascolto.")).left(42),Color("f2d4a4"))
     if kind=="house" and not test_mode:life_bubble(n.position,"NUOVA CASA",Color("f2d4a4"))
     if not test_mode and distance<40:spark(n.position+Vector3.UP*.45,Color("9bdfb6"),.28)
    leave_interior(r)
@@ -4323,54 +4169,14 @@ func test_live_world()->bool:
  sim.spatial_autonomy=false
  return days>=30 and living>0 and work>100
 
-func request_social_exchange()->bool:
- while not pending_conversations.is_empty():
-  var row=pending_conversations.pop_front()
-  if sim.day-int(row.day)>12:continue
-  var a=sim.find(int(row.a))
-  var b=sim.find(int(row.b))
-  if a.is_empty() or b.is_empty():continue
-  var prompt="Scrivi due battute brevi in italiano tra due creature immaginarie. %s: %s, umore %d. %s: %s, umore %d. Situazione: hanno appena parlato nel villaggio. Formato esatto: battuta della prima|risposta della seconda. Massimo 8 parole per battuta."%[a.name,a.role,int(a.mood),b.name,b.role,int(b.mood)]
-  var payload={"model":"genesis-local","messages":[{"role":"user","content":prompt}],"stream":false,"max_tokens":70,"temperature":.55}
-  var err=request.request("http://127.0.0.1:17847/v1/chat/completions",["Content-Type: application/json"],HTTPClient.METHOD_POST,JSON.stringify(payload))
-  if err!=OK:return false
-  request_target=a.id
-  request_partner=b.id
-  ai_busy=true
-  ai_is_social=true
-  ai_is_autonomous=false
-  ai_cooldown=12.0
-  last_ai_day=sim.day
-  if ai_button!=null:ai_button.disabled=true
-  return true
- return false
-
-func apply_generated_exchange(a:Dictionary,b:Dictionary,reply:String)->bool:
- if a.is_empty() or b.is_empty():return false
- var parts=reply.split("|",false,1)
- if parts.size()!=2:return false
- var first=parts[0].strip_edges().left(100)
- var second=parts[1].strip_edges().left(100)
- if first.is_empty() or second.is_empty():return false
- for citizen in [a,b]:
-  sim.record_dialogue(citizen,a.name+" · AI",first)
-  sim.record_dialogue(citizen,b.name+" · AI",second)
- a.special_memory=first
- b.special_memory=second
- a.special_until=sim.day+3
- b.special_until=sim.day+3
- if actors.has(a.id):life_bubble(actors[a.id].node.position,first.left(48),Color("b6dcf2"))
- if actors.has(b.id):life_bubble(actors[b.id].node.position,second.left(48),Color("d6e5c0"))
- return true
-
 func test_exchange_and_inventory()->bool:
  new_world(47,0)
  sim.spatial_autonomy=true
  var a=sim.people[0]
  var b=sim.people[1]
  var previous=a.dialogue.size()
- if not apply_generated_exchange(a,b,"Buon giorno.|Come stai?") or a.dialogue.size()!=previous+2:return false
- if apply_generated_exchange(a,b,"test senza separatore"):return false
+ sim.procedural_exchange(a,b)
+ if a.dialogue.size()!=previous+2 or b.get("last_speech","")=="" :return false
  var r=actors[a.id]
  a.task="farm"
  a.cargo="Cibo"
@@ -4382,4 +4188,38 @@ func test_exchange_and_inventory()->bool:
  if sample.find(int(a.id)).held_goods!="Cibo":return false
  print("EXCHANGE_INVENTORY_TEST dialogue=true retained_cargo=true saved=true")
  sim.spatial_autonomy=false
+ return true
+
+func test_behavior_brain()->bool:
+ var sample=Sim.new()
+ sample.start(47,0)
+ sample.spatial_autonomy=true
+ var a=sample.people[0]
+ a.hunger=96.0
+ a.fatigue=10.0
+ a.health=100.0
+ if sample.choose_task(a,{"eat":1.0,"farm":2.0,"sleep":1.0}).kind!="eat":return false
+ sample.learn_action(a,"farm",8.0)
+ sample.learn_action(a,"gather",-8.0)
+ if float(a.action_values.farm)<=0 or float(a.action_values.gather)>=0:return false
+ var v=sample.villages[a.clan]
+ v.wood=0.0
+ v.houses=0
+ a.hunger=0.0
+ a.fatigue=0.0
+ a.boredom=0.0
+ a.stress=0.0
+ a.social_need=0.0
+ var plan=sample.choose_task(a,{"gather":1.0,"house":1.0})
+ if plan.kind!="gather" or a.plan_goal!="house":return false
+ v.wood=30.0
+ if sample.choose_task(a,{"gather":1.0,"house":1.0}).kind!="house":return false
+ var copy=Sim.new()
+ if not copy.import_state(JSON.parse_string(JSON.stringify(sample.export_state()))):return false
+ if copy.people[0].plan_goal!="house" or float(copy.people[0].action_values.farm)<=0:return false
+ sample.day=14
+ v.food=0
+ sample.storyteller()
+ if v.get("council_focus","")!="CIBO":return false
+ print("BRAIN_TEST priorities=true learning=true prerequisite_plan=true persistence=true storyteller=true")
  return true

@@ -7,8 +7,7 @@ Nella pagina Actions, scarica l'artifact GENESIS-47-Windows dopo il completament
 - WASD: movimento della telecamera; tasto destro trascinato: rotazione; rotella: zoom.
 - Clicca una creatura in modalità Osserva; scegli un potere e clicca sul terreno.
 - Spazio: pausa; F10: nascondi/mostra interfaccia.
-- Tre slot di salvataggio; il gioco continua autonomamente anche senza AI.
-- L'opzione generativa usa Ollama sulla macchina locale (qwen2.5:1.5b consigliato). LLM e Ollama non inclusi; il dialogo procedurale offline è sempre disponibile.
+- Tre slot di salvataggio; il gioco funziona interamente con il cervello comportamentale integrato.
 - Nessun servizio a pagamento, chiave API o abbonamento richiesto.
 
 ## Build
@@ -17,10 +16,7 @@ Il progetto resta in collaudo fino a verifica delle build e delle prestazioni re
 Crediti: ASSET-CREDITS.md.
 
 ## Aggiornamento 1.1
-Atlante ricercabile, autosalvataggio separato e recupero copia precedente, impostazioni persistenti, nubi, effetti sonori originali, particelle e luce d'impatto. Il gioco è completamente offline senza il modello generativo; per l'opzione AI installare Ollama e il modello locale separatamente.
-
-## Gioco con AI portatile
-Apri GENESIS47.exe per giocare subito offline. Per il modello linguistico reale, avvia GIOCA-CON-AI.bat: al primo avvio scarica 491 MB del modello Qwen2.5-0.5B-Instruct-GGUF (Apache-2.0), verifica SHA256 e avvia llama.cpp b6000 (MIT), incluso nel pacchetto. Nessun account o servizio a pagamento; non richiede amministratore o Ollama. Il server ascolta soltanto su 127.0.0.1 ed è terminato alla chiusura del gioco. Il modello piccolo può produrre risposte imperfette. La simulazione offline non dipende dall’AI.
+Atlante ricercabile, autosalvataggio separato e recupero copia precedente, impostazioni persistenti, nubi, effetti sonori originali, particelle e luce d'impatto. Il gioco funziona completamente offline.
 
 ## Eternità (modalità principale)
 Nessun limite di giorni o generazioni. Raggiungere l’era finale non arresta il gioco; i cicli del futuro continuano. Se tutte le creature muoiono, il tempo continua e puoi creare nuovi abitanti con Vita. Le tre sfide narrative hanno epiloghi facoltativi. Il limite tecnico è 160 abitanti contemporanei, non la durata.
@@ -64,3 +60,6 @@ Dimore modulari con quattro letti e vista degli interni quando si segue un resid
 Nuove attività: utensili con usura, educazione dei figli, guardia, scontri spaziali; raccolto influenzato da clima e strumenti; risparmi personali (contatore, non mercato completo); rivalità; cantieri progressivi; avamposti produttivi; incendio, tornado, terremoto, epidemia e tsunami a impulsi; pericoli persistenti; contagio di prossimità; preavviso meteorite; corretta versione nei rapporti. Test di crafting, incendio e 1.200 passi spaziali (circa 35 giorni). Modelli e animazioni restano stilizzati; non è una simulazione fisica di fluidi né un mondo a continenti multipli. Nessun servizio a pagamento.
 
 La consegna interrotta conserva il carico personale nei salvataggi; i dialoghi AI sono accodati solo dopo incontri realmente completati, con verifica del formato a due battute e ripiego sui dialoghi offline. La qualità delle battute dipende dal piccolo modello locale. Test di parsing e persistenza del carico.
+
+## 4.1 — Cervello integrato
+Rimossi HTTPRequest, Ollama, llama.cpp, Qwen e gli script di avvio AI. Avvio diretto con GENESIS47.exe. Dialoghi procedurali a due voci sensibili a bisogni, relazioni, stress, lutto e personalità; valori appresi dagli esiti delle attività; piano a prerequisiti per le abitazioni; priorità di consiglio adattate alle condizioni della comunità. Apprendimento leggero e pianificatore specifico, non un LLM o un motore GOAP generico. Il vecchio modello può essere eliminato manualmente da %LOCALAPPDATA%\\GENESIS47\\AI senza modificare i salvataggi. Le sezioni precedenti sono cronologia delle versioni, non istruzioni di avvio correnti.
