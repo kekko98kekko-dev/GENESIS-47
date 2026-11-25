@@ -212,7 +212,7 @@ func close(f:Dictionary):
 func daily():
  if not ocean.enabled:return
  for row in contracts.duplicate():
-  if ocean.world.sim.day>=int(row.due):settle_contract(row)
+  if not bool(row.get("physical",false)) and ocean.world.sim.day>=int(row.due):settle_contract(row)
  var ports=[0,1]
  for c in ocean.colonies:ports.append(int(c.id))
  for port in ports:
@@ -301,6 +301,9 @@ func cancel_job(key:String):
  if not jobs.has(key):return
  var job:Dictionary=jobs[key]
  var f=find(int(job.company))
+ if job.has("contract"):
+  var row=contract_by_id(int(job.contract))
+  if not row.is_empty():refund_contract(row)
  if not f.is_empty():
   for good in job.get("cargo",{}):
    if f.active:f.stock[good]=float(f.stock.get(good,0))+float(job.cargo[good])
@@ -325,7 +328,7 @@ func choose_job(port:int,a:Dictionary)->Dictionary:
   if jobs.values().any(func(j):return int(j.company)==int(f.id)):continue
   var recipe:Dictionary=RECIPES[f.recipe]
   var output=str(recipe.output)
-  if float(f.stock.get(output,0))>=.99 and ocean.balance(port,"cash")>=ocean.price(port,output) and ocean.balance(port,output)<ocean.target(port,output)*2:
+  if float(f.stock.get(output,0))>=.99 and (not customer_firm(f,output).is_empty() or (ocean.balance(port,"cash")>=ocean.price(port,output) and ocean.balance(port,output)<ocean.target(port,output)*2)):
    return {"company":int(f.id),"stage":"output_pickup","cargo":{},"remaining":0.0,"path":[],"index":0,"revision":-1,"quantity":1.0}
   if float(f.stock.get(output,0))>=8 or float(f.cash)<.8:continue
   var ratio=1.0/float(recipe.quantity)
@@ -367,6 +370,12 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
  var w=ocean.world
  var stage=str(job.stage)
  var destination=warehouse(port) if stage in ["warehouse","output_delivery"] else factory(f)
+ if stage=="contract_delivery":
+  var contract=contract_by_id(int(job.get("contract",-1)))
+  if contract.is_empty():cancel_job(key);return -1
+  var buyer=find(int(contract.buyer))
+  if buyer.is_empty() or not buyer.active:cancel_job(key);return -1
+  destination=factory(buyer)
  if int(job.revision)!=int(w.nav_version):
   job.path=[]
   var start:Vector2i=w.near_cell(node.position)
@@ -392,7 +401,7 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
    budget-=length
    job.index+=1
  if int(job.index)<job.path.size():
-  a["industry_action"]="deliver" if not job.cargo.is_empty() else "explore"
+  a["industry_action"]="deliver" if not job.cargo.is_empty() or stage=="contract_delivery" else "explore"
   a.task_stage="Trasporto industriale"
   return 1
  var recipe:Dictionary=RECIPES[f.recipe]
@@ -440,9 +449,23 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
    jobs.erase(key)
   "output_pickup":
    if float(f.stock.get(output,0))<1:cancel_job(key);return -1
-   f.stock[output]-=1
-   job.cargo[output]=1.0
-   set_stage(job,"output_delivery")
+   var buyer=customer_firm(f,output)
+   if not buyer.is_empty() and make_contract(int(f.id),int(buyer.id),output,1.0):
+    var contract:Dictionary=contracts.back()
+    contract["physical"]=true
+    job["contract"]=int(contract.id)
+    set_stage(job,"contract_delivery")
+   else:
+    f.stock[output]-=1
+    job.cargo[output]=1.0
+    set_stage(job,"output_delivery")
+  "contract_delivery":
+   var contract=contract_by_id(int(job.get("contract",-1)))
+   if contract.is_empty():cancel_job(key);return -1
+   var q=float(contract.quantity)
+   settle_contract(contract)
+   delivered_units+=q
+   jobs.erase(key)
   "output_delivery":
    # Sale occurs only after physical arrival at warehouse.
    var q=float(job.cargo.get(output,0))
@@ -454,3 +477,31 @@ func advance(port:int,a:Dictionary,node:Node3D,dt:float)->int:
  a["industry_action"]="industry"
  a.task_stage="In corso"
  return 0
+
+
+func customer_firm(f:Dictionary,good:String)->Dictionary:
+ for other in companies:
+  if not other.active or int(other.id)==int(f.id) or int(other.port)!=int(f.port):continue
+  var inputs:Dictionary=RECIPES[other.recipe].input
+  if not inputs.has(good):continue
+  if float(other.stock.get(good,0))>=float(inputs[good])*2:continue
+  if float(other.cash)<ocean.price(int(f.port),good)*.92:continue
+  return other
+ return {}
+
+func contract_by_id(id:int)->Dictionary:
+ for row in contracts:
+  if int(row.id)==id:return row
+ return {}
+
+func refund_contract(row:Dictionary):
+ var seller=find(int(row.seller))
+ var buyer=find(int(row.buyer))
+ var good=str(row.good)
+ if not seller.is_empty():
+  if seller.active:seller.stock[good]=float(seller.stock.get(good,0))+float(row.quantity)
+  else:ocean.change(int(seller.port),good,float(row.quantity))
+ if not buyer.is_empty():
+  if buyer.active:buyer.cash+=float(row.escrow)
+  else:ocean.change(int(buyer.port),"cash",float(row.escrow))
+ contracts.erase(row)
