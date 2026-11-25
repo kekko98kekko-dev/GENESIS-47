@@ -1149,6 +1149,7 @@ func step_day():
   sim.day+=1
   sim.season=["Primavera","Estate","Autunno","Inverno"][int(sim.day/30)%4]
   origins.daily()
+  if sim.day%15==0 and autosave_enabled and not test_mode:save_path("user://genesis47_auto.json",false)
   refresh()
   return
  var old_tech=sim.discoveries.size()
@@ -3885,6 +3886,7 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
   if dist>radius:continue
   a.health-=damage*(1.0-.65*dist/radius)
   a.stress=minf(100,float(a.stress)+60)
+  if damage>=35 and a.health>0:a["scars"]=mini(3,int(a.get("scars",0))+1)
   a.special_memory="Sono sopravvissuto a "+kind
   a.special_until=sim.day+5
   if a.health>0 and sim.spatial_autonomy:
@@ -3915,6 +3917,7 @@ func disaster(p:Vector3,kind:String,radius:float,damage:float,terrain_delta:floa
  for row in planted.duplicate():
   if Vector2(p.x-float(row.x),p.z-float(row.z)).length()<=radius:planted.erase(row)
  destroyed_total+=destroyed
+ if not test_mode and damage>=65:districts.damage(p,radius)
  ocean.damage_colonies(p,radius,damage,kind)
  if not test_mode:debris.spawn(p,clampf(damage/50.0,.6,2.0),kind)
  if terrain_radius>0:alter_ground(p,terrain_delta,terrain_radius)
