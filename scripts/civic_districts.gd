@@ -1,4 +1,5 @@
 extends RefCounted
+const Artisan=preload("res://scripts/artisan_kit.gd")
 # Civic districts grow from actual population, housing and technology.
 var world
 var root:Node3D
@@ -59,20 +60,37 @@ func sync():
      b.rotation.z=float(j-2)*.16
     continue
    var tint=Color("78afa5") if clan==0 else Color("b78a60")
-   var stone=Color("b4b8a8") if clan==0 else Color("c7ae8b")
+   var stone=Color("a9aa96") if clan==0 else Color("c7ae8b")
+   var accent=Color("365f5e") if clan==0 else Color("955333")
    world.block(n,stone,Vector3(0,.10,0),Vector3(3.5,.20,3.5))
    for j in range(3):
     var h=1.7+maxf(0,era-2)*.8+float(j%2)*.55
     var x=(j-1)*1.05
-    world.block(n,stone,Vector3(x,h*.5,0),Vector3(.86,h,1.45))
+    var facade=world.block(n,stone,Vector3(x,h*.5,0),Vector3(.86,h,1.45))
+    facade.material_override=world.architecture_material(stone,.85,0)
+    for side in [-1,1]:
+     world.block(n,accent,Vector3(x+side*.43,h*.5,.76),Vector3(.09,h,.09))
+     for level in range(1,ceili(h/.56)):
+      var y=level*.56
+      if y<h-.12:world.block(n,Color("d3b875"),Vector3(x+side*.19,y,.755),Vector3(.21,.29,.05),.08)
     if era<4:
-     world.cone(n,tint,Vector3(x,h+.38,0),.75,.76,.08,clan*2+6)
+     var roof_base=Node3D.new()
+     n.add_child(roof_base)
+     roof_base.position=Vector3(x,h,0)
+     roof_base.scale=Vector3(.43,.69,.64)
+     Artisan.roof(roof_base,accent,0.0,j%2)
     else:
      world.block(n,tint,Vector3(x,h+.11,0),Vector3(1.0,.22,1.60))
      for floor_index in range(2+era):
       var y=.4+floor_index*.46
       if y<h:world.block(n,Color("476e78"),Vector3(x,y,.75),Vector3(.64,.18,.045),.25)
      if era>=5:world.cone(n,tint,Vector3(x,h+.48,0),.10,.7,.02,6,.3)
+   if era>=3 and int(row.index) in [1,3,5]:
+    for side in [-1,1]:
+     var tower=world.cone(n,stone,Vector3(side*1.40,1.7,-.58),.34,3.4,.30,10)
+     tower.material_override=world.architecture_material(stone,.85,0)
+     world.cone(n,accent,Vector3(side*1.4,3.73,-.58),.51,.92,.025,10)
+     for j in range(3):world.block(n,Color("4b5d5a"),Vector3(side*1.4,1.0+j*.75,-.25),Vector3(.12,.28,.05))
    var door=Vector3(0,.1,1.4)
    for side in [-1,1]:world.block(n,tint,door+Vector3(side*1.25,.40,0),Vector3(.25,.6,.25))
    for stripe in range(5):world.block(n,tint if stripe%2==0 else Color("e7d8b7"),Vector3(-.64+stripe*.32,1.05,1.45),Vector3(.32,.11,.62))
