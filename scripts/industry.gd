@@ -210,9 +210,9 @@ func daily():
     if ocean.balance(port,"cash")<36:break
     if int(ocean.world.sim.villages[ocean.port_clan(port)].tech)<(4 if recipe in ["forge","mechanics"] else 2):continue
     var founder=-1
-   for a in population(port):
-    if float(a.age)>=18 and float(a.coins)>=30:founder=int(a.id);break
-   if create_company(port,recipe,18.0,founder):break
+    for a in population(port):
+     if float(a.age)>=18 and float(a.coins)>=30:founder=int(a.id);break
+    if create_company(port,recipe,18.0,founder):break
  for f in companies:
   if not f.active:continue
   if ocean.world.sim.day%7==0:hire(f)
